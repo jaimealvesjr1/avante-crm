@@ -76,7 +76,11 @@ export default function App() {
   const [activeStoreId, setActiveStoreId] = useState(null);
   const [newHistoryDay, setNewHistoryDay] = useState('');
   const [newHistoryRevenue, setNewHistoryRevenue] = useState('');
-  const [chartTab, setChartTab] = useState('pacing'); // 'pacing' | 'monthly' | 'notes'
+  const [chartTab, setChartTab] = useState('pacing'); 
+  
+  const [activeNoteStoreId, setActiveNoteStoreId] = useState(null);
+  const [notesModalOpen, setNotesModalOpen] = useState(false);
+  const [newNoteText, setNewNoteText] = useState('');
 
   const fileInputRef = useRef(null);
 
@@ -241,7 +245,14 @@ const dashboardData = useMemo(() => {
       return acc + (s.fixedFee > 0 ? s.fixedFee : lastGmv * (s.feePercent / 100));
     }, 0);
     
-    const totalAgencyCurrent = processedStores.reduce((acc, s) => acc + (s.fixedFee > 0 ? s.fixedFee : (s.currentRevenue || 0) * (s.feePercent / 100)), 0);
+    const totalAgencyCurrent = processedStores.reduce((acc, s) => {
+      if (s.fixedFee > 0) {
+        const dailyFixedFee = s.fixedFee / daysInMonth;
+        return acc + (dailyFixedFee * currentDay);
+      } else {
+        return acc + ((s.currentRevenue || 0) * (s.feePercent / 100));
+      }
+    }, 0);
     
     return { groupedClients, totalTarget, totalProjected, totalAgencyRevenue, totalGlobalAds, globalRoas, totalAgencyLastMonth, totalAgencyCurrent };
   }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy]);
@@ -259,7 +270,7 @@ const dashboardData = useMemo(() => {
   const generateStoreWhatsAppLink = (row) => `https://wa.me/?text=${encodeURIComponent(`Olá, equipe da *${row.client}*!\nAvaliamos a loja *${row.store}* até o dia ${currentDay}.\nProjeção: ${formatCurrency(row.projectedGmv)} / Meta: ${formatCurrency(row.gmvTarget)}.\n${row.status === 'danger' ? 'Precisamos alinhar ações urgentes de Ads/Estoque.' : row.status === 'warning' ? 'Podemos otimizar as campanhas da semana?' : 'Vocês estão voando! Vamos manter a tração.'}`)}`;
   
   const generateClientWhatsAppLink = (group) => {
-    let text = `Olá, equipe da *${group.client}*! Aqui é a Agência Avante.\n\nSegue o resumo do nosso desempenho até o dia ${currentDay}:\n\n`;
+    let text = `Olá, equipe da *${group.client}*! Aqui é a Equipe Avante - B2X.\n\nSegue o resumo do nosso desempenho até o dia ${currentDay}:\n\n`;
     
     group.stores.forEach(store => {
       text += `🏪 *${store.store}*\n`;
@@ -301,21 +312,49 @@ const dashboardData = useMemo(() => {
   const activeStoreMonthlyData = useMemo(() => (!activeStore || !activeStore.monthlyHistory) ? [] : activeStore.monthlyHistory.map(h => ({ month: h.month, revenue: Math.round(h.gmv) })), [activeStore]);
 
   const exportBackup = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(stores));
-    const a = document.createElement('a'); a.href = dataStr; a.download = `avante_crm_backup_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a); a.click(); a.remove();
+    try {
+      const dataStr = JSON.stringify(stores, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `avante_crm_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      alert("Erro ao gerar o arquivo de exportação.");
+    }
   };
+
   const importBackup = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
     const fileReader = new FileReader();
-    if (!e.target.files[0]) return;
-    fileReader.readAsText(e.target.files[0], "UTF-8");
-    fileReader.onload = ev => {
+    fileReader.onload = (ev) => {
       try {
         const imported = JSON.parse(ev.target.result);
-        if (Array.isArray(imported)) { setStores(imported.map(s => ({...s, history: s.history || [], notes: s.notes || [], monthlyHistory: s.monthlyHistory || []}))); alert("Backup restaurado com sucesso!"); }
-      } catch (err) { alert("Erro ao importar."); }
-      e.target.value = null; 
+        if (Array.isArray(imported)) {
+          // Garante que todas as chaves existam para evitar quebras de renderização
+          setStores(imported.map(s => ({
+            ...s, 
+            history: s.history || [], 
+            notes: s.notes || [], 
+            monthlyHistory: s.monthlyHistory || []
+          })));
+          alert("✅ Dados restaurados com sucesso!");
+        } else {
+          alert("❌ Formato de arquivo inválido.");
+        }
+      } catch (err) { 
+        alert("❌ Erro ao ler o arquivo JSON."); 
+      } finally {
+        e.target.value = null; // Limpa o input APÓS a leitura
+      }
     };
+    fileReader.readAsText(file, "UTF-8");
   };
 
   return (
@@ -341,9 +380,13 @@ const dashboardData = useMemo(() => {
           </div>
 
           <div className="flex gap-3">
-            <button onClick={exportBackup} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-gray-600"><Download size={14} /> Exportar</button>
+            <button onClick={exportBackup} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-gray-600">
+              <Upload size={14} /> Exportar
+            </button>
             <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
-            <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"><Upload size={14} /> Importar</button>
+            <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+              <Download size={14} /> Importar
+            </button>
           </div>
         </div>
 
@@ -371,9 +414,9 @@ const dashboardData = useMemo(() => {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
-              {/* Gráfico 1: Receita da Agência Avante */}
+              {/* Gráfico 1: Receita da equipe Avante */}
               <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 h-[350px] flex flex-col">
-                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><DollarSign size={16} className="text-green-400"/> Faturamento Agência Avante</h3>
+                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><DollarSign size={16} className="text-green-400"/> Faturamento Equipe Avante</h3>
                 <div className="flex-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={[
@@ -385,7 +428,7 @@ const dashboardData = useMemo(() => {
                       <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
                       <XAxis dataKey="name" stroke="#9CA3AF" fontSize={10} interval={0} />
                       <YAxis stroke="#9CA3AF" fontSize={10} tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
-                      <RechartsTooltip cursor={{ fill: '#374151', opacity: 0.4 }} contentStyle={{ backgroundColor: '#1F2937', borderColor: '#374151', borderRadius: '8px' }} formatter={(value) => [formatCurrency(value), 'Faturamento Agência']} />
+                      <RechartsTooltip cursor={{ fill: '#374151', opacity: 0.4 }} contentStyle={{ backgroundColor: '#1F2937', borderColor: '#374151', borderRadius: '8px' }} formatter={(value) => [formatCurrency(value), 'Faturamento Equipe Avante']} />
                       <Bar dataKey="valor" radius={[4, 4, 0, 0]}>
                         { [0,1,2,3].map(i => <Cell key={`cell-${i}`} fill={['#6B7280', '#3B82F6', '#8B5CF6', '#10B981'][i]} />) }
                       </Bar>
@@ -615,10 +658,6 @@ const dashboardData = useMemo(() => {
                                     ) : (
                                       <div className="flex flex-col gap-1 opacity-20 group-hover/row:opacity-100 transition-opacity">
                                         <div className="flex gap-1">
-                                          <button onClick={() => openNotesModal(row)} className={`p-1.5 rounded transition-colors relative ${row.notes?.length > 0 ? 'bg-indigo-900/50 text-indigo-400 hover:bg-indigo-800' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`} title="Diário de Bordo (Anotações)">
-                                            <BookOpen size={14} />
-                                            {row.notes?.length > 0 && <span className="absolute -top-1 -right-1 bg-indigo-500 text-white text-[8px] font-bold w-3 h-3 flex items-center justify-center rounded-full">{row.notes.length}</span>}
-                                          </button>
                                           <a href={generateStoreWhatsAppLink(row)} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-gray-800 hover:bg-green-600/20 text-green-500 rounded transition-colors"><MessageCircle size={14} /></a>
                                         </div>
                                         <div className="flex gap-1">
