@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { TrendingUp, DollarSign, Target, AlertTriangle, CheckCircle, Clock, Activity, MessageCircle, Search, Download, Upload, Save, Plus, History, X, Trash2, ChevronDown, ChevronRight, BarChart2, CalendarDays, ArchiveRestore, Edit2, Check, BookOpen, PieChart as PieChartIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
-import { db } from './firebase';
+import { db, auth } from './firebase';
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
 // Base de Dados Completa: 14 Clientes, 42 Lojas (Jan, Fev, Mar extraídos da planilha)
@@ -53,22 +54,63 @@ const initialStores = [
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1', '#14B8A6', '#84CC16', '#F43F5E'];
 
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  
   const [stores, setStores] = useState(initialStores);
+  const [isDbLoading, setIsDbLoading] = useState(true); 
 
-// Use este useEffect para buscar os dados uma única vez ao iniciar
-useEffect(() => {
-  const loadStores = async () => {
-    const querySnapshot = await getDocs(collection(db, "stores"));
-    const storesFromFirebase = querySnapshot.docs.map(doc => doc.data());
-    
-    if (storesFromFirebase.length > 0) {
-      setStores(storesFromFirebase);
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      setAuthError(''); // Limpa erros
+    } catch (error) {
+      setAuthError('Email ou senha incorretos.');
     }
   };
-  loadStores();
-}, []);
 
-  const [activeView, setActiveView] = useState('operacional'); // 'operacional' | 'dashboard'
+  const handleLogout = async () => {
+    await signOut(auth);
+  };
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadData = async () => {
+      try {
+        const docRef = doc(db, "crm", "avante_data");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setStores(docSnap.data().stores);
+        }
+      } catch (error) {
+        console.error("Erro ao puxar dados da nuvem:", error);
+      } finally {
+        setIsDbLoading(false);
+      }
+    };
+    loadData();
+  }, [user]);
+
+  useEffect(() => {
+    if (!isDbLoading && user) {
+      setDoc(doc(db, "crm", "avante_data"), { stores });
+    }
+  }, [stores, isDbLoading, user]);
+
+  const [activeView, setActiveView] = useState('operacional'); 
   const [globalGrowth, setGlobalGrowth] = useState(10);
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [currentDay, setCurrentDay] = useState(11);
@@ -92,10 +134,6 @@ useEffect(() => {
   const [newNoteText, setNewNoteText] = useState('');
 
   const fileInputRef = useRef(null);
-
-  useEffect(() => {
-    localStorage.setItem('avante_gestao_data_v4', JSON.stringify(stores));
-  }, [stores]);
 
   const toggleClientExpansion = (clientName) => {
     setExpandedClients(prev => prev.includes(clientName) ? prev.filter(c => c !== clientName) : [...prev, clientName]);
@@ -366,6 +404,42 @@ const dashboardData = useMemo(() => {
     fileReader.readAsText(file, "UTF-8");
   };
 
+  if (authLoading) {
+    return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center font-bold">Carregando CRM Avante...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4 font-sans text-gray-200">
+        <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl w-full max-w-md">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-white flex items-center justify-center gap-2">
+              <Activity className="text-green-500" /> CRM Avante
+            </h1>
+            <p className="text-gray-400 text-sm mt-2">Área restrita da equipe</p>
+          </div>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full bg-gray-900 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="seu@email.com" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Senha</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full bg-gray-900 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="••••••••" />
+            </div>
+            
+            {authError && <p className="text-red-400 text-sm font-bold text-center">{authError}</p>}
+            
+            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg transition-colors mt-4">
+              Entrar no Sistema
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-900 p-4 md:p-8 font-sans text-gray-200 pb-24">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -395,6 +469,9 @@ const dashboardData = useMemo(() => {
             <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
             <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
               <Download size={14} /> Importar
+            </button>
+            <button onClick={handleLogout} className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-lg transition-transform hover:scale-105">
+              <X size={16} /> Sair
             </button>
           </div>
         </div>
