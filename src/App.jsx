@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, DollarSign, Target, AlertTriangle, CheckCircle, Clock, Activity, MessageCircle, Search, Download, Upload, Save, Plus, History, X, Trash2, ChevronDown, ChevronRight, BarChart2, CalendarDays, ArchiveRestore, Edit2, Check, BookOpen, PieChart as PieChartIcon } from 'lucide-react';
+import { TrendingUp, DollarSign, Target, AlertTriangle, CheckCircle, Clock, Activity, MessageCircle, Search, Download, Upload, Save, Plus, History, X, Trash2, ChevronDown, ChevronRight, BarChart2, CalendarDays, ArchiveRestore, Edit2, Check, BookOpen, PieChart as PieChartIcon, Users } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
-import { db, auth } from './firebase';
-import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+import { db, auth, secondaryAuth } from './firebase';
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
 // Base de Dados Completa: 14 Clientes, 42 Lojas (Jan, Fev, Mar extraídos da planilha)
@@ -134,6 +134,28 @@ export default function App() {
   const [newNoteText, setNewNoteText] = useState('');
 
   const fileInputRef = useRef(null);
+
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [adminMessage, setAdminMessage] = useState('');
+
+  // DEFINE QUEM É O ADMIN (Coloque o seu e-mail de acesso aqui)
+  const isAdmin = user?.email === 'jaimejunior.ide@gmail.com';
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    try {
+      // Cria na via secundária sem deslogar você
+      await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPassword);
+      await signOut(secondaryAuth); // Desloga o membro recém criado do fundo
+      
+      setAdminMessage('✅ Acesso criado! O membro já pode logar no sistema.');
+      setNewUserEmail('');
+      setNewUserPassword('');
+    } catch (error) {
+      setAdminMessage('❌ Erro: A senha deve ter no mínimo 6 caracteres ou o e-mail já existe.');
+    }
+  };
 
   const toggleClientExpansion = (clientName) => {
     setExpandedClients(prev => prev.includes(clientName) ? prev.filter(c => c !== clientName) : [...prev, clientName]);
@@ -447,9 +469,7 @@ const dashboardData = useMemo(() => {
         {/* Cabecalho Principal e Switcher de Visão */}
         <div className="flex flex-col md:flex-row justify-between items-center bg-gray-800 p-4 rounded-xl border border-gray-700 gap-4 shadow-md">
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-green-500 bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-700">
-              <Save size={16} /> <span className="text-sm font-semibold">Salvo Local</span>
-            </div>
+            {/* O AVISO "SALVO LOCAL" FOI REMOVIDO DAQUI */}
             <button onClick={closeMonth} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-lg transition-transform hover:scale-105">
               <ArchiveRestore size={16} /> Fechar Mês Atual
             </button>
@@ -460,6 +480,12 @@ const dashboardData = useMemo(() => {
             <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 transition-colors ${activeView === 'dashboard' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
               <PieChartIcon size={16}/> Visão Executiva
             </button>
+            {/* NOVO BOTÃO DE ADMIN APARECE SÓ PRA VOCÊ */}
+            {isAdmin && (
+              <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 transition-colors ${activeView === 'admin' ? 'bg-amber-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+                <Users size={16}/> Equipe
+              </button>
+            )}
           </div>
 
           <div className="flex gap-3">
@@ -475,6 +501,32 @@ const dashboardData = useMemo(() => {
             </button>
           </div>
         </div>
+
+        {/* VISÃO ADMIN (Adicione logo abaixo do cabeçalho de cima) */}
+        {activeView === 'admin' && isAdmin && (
+          <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-lg animate-in fade-in duration-300">
+            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2"><Users className="text-amber-500" /> Gestão de Equipe</h2>
+            <p className="text-gray-400 text-sm mb-6">Crie logins para os membros da sua equipe operarem o CRM. Assim que criado, a pessoa já pode acessar pelo link oficial.</p>
+
+            <form onSubmit={handleCreateUser} className="bg-gray-900 p-6 rounded-lg border border-gray-700 max-w-md">
+              <h3 className="text-white font-semibold mb-4">Novo Acesso Operacional</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">E-mail</label>
+                  <input type="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} required className="w-full bg-gray-800 border border-gray-600 text-white rounded p-2 outline-none focus:border-amber-500" placeholder="exemplo@equipeavante.com" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Senha Provisória</label>
+                  <input type="text" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} required minLength="6" className="w-full bg-gray-800 border border-gray-600 text-white rounded p-2 outline-none focus:border-amber-500" placeholder="No mínimo 6 caracteres" />
+                </div>
+                <button type="submit" className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 px-4 rounded transition-colors mt-2">
+                  Gerar Acesso
+                </button>
+                {adminMessage && <p className={`text-sm mt-3 text-center font-semibold ${adminMessage.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>{adminMessage}</p>}
+              </div>
+            </form>
+          </div>
+        )}
 
         {/* VISÃO DASHBOARD EXECUTIVO */}
         {activeView === 'dashboard' && (
