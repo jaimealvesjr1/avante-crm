@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { TrendingUp, DollarSign, Target, AlertTriangle, CheckCircle, Clock, Activity, MessageCircle, Search, Download, Upload, Save, Plus, History, X, Trash2, ChevronDown, ChevronRight, BarChart2, CalendarDays, ArchiveRestore, Edit2, Check, BookOpen, PieChart as PieChartIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { db } from './firebase';
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 // Base de Dados Completa: 14 Clientes, 42 Lojas (Jan, Fev, Mar extraídos da planilha)
 const initialStores = [
@@ -51,13 +53,20 @@ const initialStores = [
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1', '#14B8A6', '#84CC16', '#F43F5E'];
 
 export default function App() {
-  const [stores, setStores] = useState(() => {
-    const savedData = localStorage.getItem('avante_gestao_data_v4');
-    if (savedData) {
-      try { return JSON.parse(savedData); } catch (e) { return initialStores; }
+  const [stores, setStores] = useState(initialStores);
+
+// Use este useEffect para buscar os dados uma única vez ao iniciar
+useEffect(() => {
+  const loadStores = async () => {
+    const querySnapshot = await getDocs(collection(db, "stores"));
+    const storesFromFirebase = querySnapshot.docs.map(doc => doc.data());
+    
+    if (storesFromFirebase.length > 0) {
+      setStores(storesFromFirebase);
     }
-    return initialStores;
-  });
+  };
+  loadStores();
+}, []);
 
   const [activeView, setActiveView] = useState('operacional'); // 'operacional' | 'dashboard'
   const [globalGrowth, setGlobalGrowth] = useState(10);
