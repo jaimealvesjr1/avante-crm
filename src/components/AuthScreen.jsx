@@ -12,9 +12,13 @@ export default function AuthScreen({
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4 font-sans text-gray-200">
       <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl w-full max-w-md">
         <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-                CRM Avante
-            </h1>
+          <div className="flex justify-center mb-4">
+            <img 
+              src="/logo.png" 
+              alt="Logo Avante" 
+              className="h-20 w-20 object-contain rounded-full border-2 border-gray-700 shadow-lg" 
+            />
+          </div>
           <p className="text-gray-400 text-sm mt-2">Área restrita da equipe</p>
         </div>
         

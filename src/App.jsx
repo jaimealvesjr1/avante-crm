@@ -1,9 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { TrendingUp, DollarSign, Target, AlertTriangle, CheckCircle, Clock, Activity, MessageCircle, Search, Download, Upload, Save, Plus, History, X, Trash2, ChevronDown, ChevronRight, BarChart2, CalendarDays, ArchiveRestore, Edit2, Check, BookOpen, PieChart as PieChartIcon, Users } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc } from "firebase/firestore";
 import { Toaster, toast } from 'react-hot-toast';
 
 import ActionModal from './components/ActionModal';
@@ -85,9 +84,7 @@ export default function App() {
           if (docSnap.exists()) {
             setUserRole(docSnap.data().role || 'Visualizador');
           }
-        } catch (e) {
-          console.error("Erro ao buscar cargo", e);
-        }
+        } catch (e) { console.error("Erro ao buscar cargo", e); }
       }
       setAuthLoading(false);
     });
@@ -95,29 +92,43 @@ export default function App() {
   }, []);
 
   const isAdmin = user?.email === 'jaimejunior.ide@gmail.com';
-  const canEdit = userRole === 'Gerente' || isAdmin; // A CHAVE MESTRA!
+  const canEdit = userRole === 'Gerente' || isAdmin;
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = onSnapshot(collection(db, "stores"), (snapshot) => {
+      if (!snapshot.empty) {
+        const storesFromFirebase = snapshot.docs.map(doc => doc.data());
+        setStores(storesFromFirebase.sort((a, b) => b.id - a.id));
+      } else {
+        setStores(initialStores);
+      }
+      setIsDbLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      setAuthError('');
+    } catch (error) { setAuthError('E-mail ou senha incorretos.'); }
+  };
+
+  const handleLogout = async () => { await signOut(auth); };
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
       await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPassword);
-      
       await setDoc(doc(db, "equipe", newUserEmail.toLowerCase()), {
-        email: newUserEmail.toLowerCase(),
-        role: 'Visualizador', // Agora o padrão é Visualizador
-        createdAt: new Date().toLocaleDateString('pt-BR')
+        email: newUserEmail.toLowerCase(), role: 'Visualizador', createdAt: new Date().toLocaleDateString('pt-BR')
       });
-
       await signOut(secondaryAuth); 
-      setAdminMessage('✅ Acesso criado! O membro já pode fazer login.');
+      toast.success('✅ Acesso criado como Visualizador!');
       setNewUserEmail(''); setNewUserPassword('');
-    } catch (error) {
-      setAdminMessage('❌ Erro: A senha deve ter no mínimo 6 caracteres ou o e-mail já existe.');
-    }
-  };
-
-  const handleLogout = async () => {
-    await signOut(auth);
+    } catch (error) { toast.error('❌ Erro ao criar usuário.'); }
   };
 
   useEffect(() => {
@@ -155,22 +166,19 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('gmv');
   const [expandedClients, setExpandedClients] = useState([]);
-  
   const [editingClient, setEditingClient] = useState(null);
   const [clientEditValue, setClientEditValue] = useState('');
   const [editingStoreId, setEditingStoreId] = useState(null);
   const [storeEditData, setStoreEditData] = useState({});
-
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [activeStoreId, setActiveStoreId] = useState(null);
   const [newHistoryDay, setNewHistoryDay] = useState('');
   const [newHistoryRevenue, setNewHistoryRevenue] = useState('');
   const [chartTab, setChartTab] = useState('pacing'); 
-  
   const [activeNoteStoreId, setActiveNoteStoreId] = useState(null);
-  const [notesModalOpen, setNotesModalOpen] = useState(false);
   const [newNoteText, setNewNoteText] = useState('');
-
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
   const fileInputRef = useRef(null);
 
   const toggleClientExpansion = (clientName) => {
@@ -616,7 +624,6 @@ export default function App() {
             setNewUserEmail={setNewUserEmail}
             newUserPassword={newUserPassword}
             setNewUserPassword={setNewUserPassword}
-            adminMessage={adminMessage}
           />
         )}
 

@@ -5,7 +5,7 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { toast } from 'react-hot-toast';
 
-export default function AdminPanel({ handleCreateUser, newUserEmail, setNewUserEmail, newUserPassword, setNewUserPassword, adminMessage }) {
+export default function AdminPanel({ handleCreateUser, newUserEmail, setNewUserEmail, newUserPassword, setNewUserPassword }) {
   const [teamList, setTeamList] = useState([]);
 
   useEffect(() => {
@@ -72,7 +72,6 @@ export default function AdminPanel({ handleCreateUser, newUserEmail, setNewUserE
             <button type="submit" className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 px-4 rounded transition-colors mt-2">
               Gerar Acesso
             </button>
-            {adminMessage && <p className={`text-sm mt-3 text-center font-semibold ${adminMessage.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>{adminMessage}</p>}
           </div>
         </form>
 
