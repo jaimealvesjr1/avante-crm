@@ -3,9 +3,16 @@ import { TrendingUp, DollarSign, Target, AlertTriangle, CheckCircle, Clock, Acti
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { Toaster, toast } from 'react-hot-toast';
 
-// Base de Dados Completa: 14 Clientes, 42 Lojas (Jan, Fev, Mar extraídos da planilha)
+import ActionModal from './components/ActionModal';
+import ExecutiveDashboard from './components/ExecutiveDashboard';
+import AuthScreen from './components/AuthScreen';
+import AdminPanel from './components/AdminPanel';
+import OperationalTable from './components/OperationalTable';
+import HistoryModal from './components/HistoryModal';
+
 const initialStores = [
   { id: 1, client: 'AMAIA', store: 'SHOPEE', gmvBase: 11967, feePercent: 1.5, fixedFee: 0, currentRevenue: 0, adsInvestment: 0, history: [], notes: [], monthlyHistory: [{month: 'Jan', gmv: 14861}, {month: 'Fev', gmv: 8729}, {month: 'Mar', gmv: 11967}] },
   { id: 2, client: 'AMAIA', store: 'SHEIN', gmvBase: 13288, feePercent: 1.5, fixedFee: 0, currentRevenue: 0, adsInvestment: 0, history: [], notes: [], monthlyHistory: [{month: 'Jan', gmv: 10463}, {month: 'Fev', gmv: 11589}, {month: 'Mar', gmv: 13288}] },
@@ -59,6 +66,9 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [modalConfig, setModalConfig] = useState({
+    isOpen: false, title: '', message: '', isPrompt: false, promptValue: '', promptPlaceholder: '', confirmText: '', isDanger: false, onConfirm: () => {}
+  });
   
   const [stores, setStores] = useState(initialStores);
   const [isDbLoading, setIsDbLoading] = useState(true); 
@@ -88,27 +98,30 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    const loadData = async () => {
+    const unsubscribe = onSnapshot(collection(db, "stores"), (snapshot) => {
       try {
-        const docRef = doc(db, "crm", "avante_data");
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setStores(docSnap.data().stores);
+        if (!snapshot.empty) {
+          const storesFromFirebase = snapshot.docs.map(doc => doc.data());
+          setStores(storesFromFirebase.sort((a, b) => b.id - a.id));
+        } else {
+          setStores(initialStores);
         }
       } catch (error) {
-        console.error("Erro ao puxar dados da nuvem:", error);
+        console.error("Erro ao processar dados em tempo real:", error);
       } finally {
         setIsDbLoading(false);
       }
-    };
-    loadData();
+    }, (error) => {
+      console.error("Erro na conexão em tempo real:", error);
+    });
+
+    return () => unsubscribe();
   }, [user]);
 
-  useEffect(() => {
-    if (!isDbLoading && user) {
-      setDoc(doc(db, "crm", "avante_data"), { stores });
-    }
-  }, [stores, isDbLoading, user]);
+  const updateStoreInCloud = (updatedStore) => {
+    if (!user) return;
+    setDoc(doc(db, "stores", updatedStore.id.toString()), updatedStore).catch(e => console.error("Erro ao salvar:", e));
+  };
 
   const [activeView, setActiveView] = useState('operacional'); 
   const [globalGrowth, setGlobalGrowth] = useState(10);
@@ -145,13 +158,17 @@ export default function App() {
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
-      // Cria na via secundária sem deslogar você
       await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPassword);
-      await signOut(secondaryAuth); // Desloga o membro recém criado do fundo
       
-      setAdminMessage('✅ Acesso criado! O membro já pode logar no sistema.');
-      setNewUserEmail('');
-      setNewUserPassword('');
+      await setDoc(doc(db, "equipe", newUserEmail.toLowerCase()), {
+        email: newUserEmail.toLowerCase(),
+        role: 'Operador',
+        createdAt: new Date().toLocaleDateString('pt-BR')
+      });
+
+      await signOut(secondaryAuth); 
+      setAdminMessage('✅ Acesso criado! O membro já pode fazer login.');
+      setNewUserEmail(''); setNewUserPassword('');
     } catch (error) {
       setAdminMessage('❌ Erro: A senha deve ter no mínimo 6 caracteres ou o e-mail já existe.');
     }
@@ -192,7 +209,15 @@ export default function App() {
 
   const handleStoreChange = (id, field, value) => {
     const finalValue = value !== '' ? Number(value) : value;
-    setStores(stores.map(s => s.id === id ? { ...s, [field]: finalValue } : s));
+    const updatedStores = stores.map(s => {
+      if (s.id === id) {
+        const novaLoja = { ...s, [field]: finalValue };
+        updateStoreInCloud(novaLoja);
+        return novaLoja;
+      }
+      return s;
+    });
+    setStores(updatedStores);
   };
 
   const addNewStore = () => {
@@ -208,20 +233,65 @@ export default function App() {
     if(!expandedClients.includes(clientName)) toggleClientExpansion(clientName);
   };
 
-  const deleteStore = (id, storeName) => { if(window.confirm(`Apagar permanentemente a loja ${storeName}?`)) setStores(stores.filter(s => s.id !== id)); };
-  const deleteClient = (clientName) => { if(window.confirm(`🚨 Apagar o cliente ${clientName} e TODAS as suas lojas?`)) setStores(stores.filter(s => s.client !== clientName)); };
+  const deleteStore = (id, storeName) => {
+    setModalConfig({
+      isOpen: true, title: 'Apagar Loja', isDanger: true, confirmText: 'Apagar Loja',
+      message: `Tem a certeza que deseja apagar permanentemente a loja ${storeName}? Esta ação não pode ser desfeita.`,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, "stores", id.toString()));
+          toast.success(`Loja ${storeName} apagada.`);
+          setModalConfig({ isOpen: false });
+        } catch (e) { toast.error("Erro ao apagar na base de dados."); }
+      }
+    });
+  };
+
+  const deleteClient = (clientName) => {
+    setModalConfig({
+      isOpen: true, title: 'Apagar Cliente', isDanger: true, confirmText: 'Apagar Tudo',
+      message: `🚨 Atenção! Tem a certeza que deseja apagar o cliente ${clientName} e TODAS as suas lojas?`,
+      onConfirm: async () => {
+        try {
+          const clientStores = stores.filter(s => s.client === clientName);
+          for (const s of clientStores) {
+            await deleteDoc(doc(db, "stores", s.id.toString()));
+          }
+          toast.success(`Cliente ${clientName} removido do CRM.`);
+          setModalConfig({ isOpen: false });
+        } catch (e) { toast.error("Erro ao apagar o cliente."); }
+      }
+    });
+  };
 
   const closeMonth = () => {
-    const monthName = prompt("MÊS DE FECHAMENTO\n\nDigite o nome do mês que está sendo fechado agora (Ex: Abr/26):");
-    if(!monthName) return;
-    if(window.confirm(`Isso salvará o histórico mensal e zerará os lançamentos do painel para o próximo mês.\nDeseja continuar?`)) {
-      setStores(stores.map(s => {
-        const finalRevenue = s.currentRevenue || 0;
-        return { ...s, monthlyHistory: [...(s.monthlyHistory || []), { month: monthName, gmv: finalRevenue }], gmvBase: finalRevenue > 0 ? finalRevenue : s.gmvBase, currentRevenue: 0, adsInvestment: 0, history: [] };
-      }));
-      setCurrentDay(1);
-      alert("✅ Mês fechado com sucesso!");
-    }
+    setModalConfig({
+      isOpen: true, title: 'Fechar Mês Atual', isDanger: false, confirmText: 'Processar Fecho', isPrompt: true, promptPlaceholder: 'Ex: Abr/26',
+      message: 'Isto guardará o histórico mensal atual e irá zerar os faturamentos do painel para iniciar o próximo mês.\n\nDigite o nome do mês que está a ser fechado:',
+      onConfirm: async (monthName) => {
+        if (!monthName) { toast.error("É obrigatório digitar o nome do mês."); return; }
+        
+        try {
+          const updatedStores = stores.map(s => {
+            const finalRevenue = s.currentRevenue || 0;
+            return {
+              ...s,
+              monthlyHistory: [...(s.monthlyHistory || []), { month: monthName, gmv: finalRevenue }],
+              gmvBase: finalRevenue > 0 ? finalRevenue : s.gmvBase,
+              currentRevenue: 0, adsInvestment: 0, history: []
+            };
+          });
+
+          for (const store of updatedStores) {
+            await setDoc(doc(db, "stores", store.id.toString()), store);
+          }
+
+          setCurrentDay(1);
+          toast.success(`Mês de ${monthName} fechado com sucesso!`);
+          setModalConfig({ isOpen: false });
+        } catch (e) { toast.error("Erro ao processar o fecho do mês."); }
+      }
+    });
   };
 
   // Diário de Bordo Functions
@@ -256,7 +326,8 @@ export default function App() {
   const getTier = (gmv) => { if (gmv >= 80000) return 'A'; if (gmv >= 30000) return 'B'; return 'C'; };
   const formatCurrency = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value || 0);
 
-const dashboardData = useMemo(() => {
+// LÓGICA DE DADOS E RECOMENDAÇÕES ASSERTIVAS
+  const dashboardData = useMemo(() => {
     let totalTarget = 0, totalProjected = 0, totalAgencyRevenue = 0, totalGlobalAds = 0;
     const filteredRows = stores.filter(row => {
       if (!searchTerm) return true;
@@ -273,16 +344,33 @@ const dashboardData = useMemo(() => {
       const revenueTarget = store.fixedFee > 0 ? store.fixedFee : gmvTarget * (store.feePercent / 100);
       const projectedAgencyRevenue = store.fixedFee > 0 ? store.fixedFee : projectedGmv * (store.feePercent / 100);
       const percentReached = gmvTarget > 0 ? (projectedGmv / gmvTarget) * 100 : 0;
+      const currentRoas = store.adsInvestment > 0 ? (store.currentRevenue / store.adsInvestment) : 0;
       
-      let status = 'danger', recommendation = 'Aplicar cupons agressivos.';
-      if (percentReached >= 95) { status = 'success'; recommendation = 'Monitorar. Manter Ads.'; }
-      else if (percentReached >= 80) { status = 'warning'; recommendation = getTier(safeGmvBase) === 'A' ? 'Auditoria Estoque. Otimizar Custo Ads.' : 'Aumentar lances Ads.'; }
-      else if (getTier(safeGmvBase) === 'A') recommendation = 'URGENTE: Reunião. Injetar Verba Extra Ads.';
+      let status = 'danger', recommendation = '';
+      
+      // NOVA LÓGICA DE RECOMENDAÇÕES (CRUZAMENTO DE MÉTRICAS)
+      if (percentReached >= 100) {
+        status = 'success';
+        recommendation = (currentRoas > 0 && currentRoas < 5) ? 'Meta batida, mas ROAS baixo. Reduzir Ads e focar na margem.' : 'Excelente tração. Escalar verba para superar a meta.';
+      } else if (percentReached >= 85) {
+        status = 'success';
+        recommendation = 'Ritmo bom. Aplicar cupons ou ofertas relâmpago para garantir os 100%.';
+      } else if (percentReached >= 70) {
+        status = 'warning';
+        if (currentRoas > 8) recommendation = `ROAS alto (${currentRoas.toFixed(1)}x) mas ritmo lento. Aumentar orçamento de Ads URGENTE!`;
+        else if (store.adsInvestment === 0) recommendation = 'Queda de tráfego. Necessário iniciar campanhas de Ads imediatamente.';
+        else recommendation = 'Auditar competitividade (Preço/Frete) e otimizar campanhas estagnadas.';
+      } else {
+        status = 'danger';
+        if (currentRoas > 0 && currentRoas < 4) recommendation = 'Pausar campanhas ineficientes. Revisar curva A, precificação e estoque.';
+        else if (store.adsInvestment === 0) recommendation = 'Sem oxigênio na loja. Injetar tráfego pago ou revisar o catálogo urgente.';
+        else recommendation = 'ALERTA: Agendar reunião com o cliente para realinhamento total de estratégia.';
+      }
 
       totalTarget += gmvTarget; totalProjected += projectedGmv; totalAgencyRevenue += projectedAgencyRevenue;
       totalGlobalAds += (store.adsInvestment || 0);
 
-      return { ...store, gmvTarget, projectedGmv, projectedAgencyRevenue, percentReached, status, tier: getTier(safeGmvBase), recommendation };
+      return { ...store, gmvTarget, projectedGmv, projectedAgencyRevenue, percentReached, status, tier: getTier(safeGmvBase), recommendation, currentRoas };
     });
 
     const groups = {};
@@ -297,7 +385,7 @@ const dashboardData = useMemo(() => {
     const groupedClients = Object.values(groups).map(group => {
       const percentReached = group.totalGmvTarget > 0 ? (group.totalProjectedGmv / group.totalGmvTarget) * 100 : 0;
       const roas = group.totalAds > 0 ? (group.totalCurrentRevenue / group.totalAds).toFixed(1) : 0;
-      return { ...group, percentReached, status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger', roas };
+      return { ...group, percentReached, status: percentReached >= 90 ? 'success' : percentReached >= 75 ? 'warning' : 'danger', roas };
     }).sort((a, b) => {
       if (sortBy === 'name') return a.client.localeCompare(b.client);
       if (sortBy === 'status') {
@@ -309,6 +397,7 @@ const dashboardData = useMemo(() => {
 
     const globalRoas = totalGlobalAds > 0 ? (processedStores.reduce((acc, s) => acc + (s.currentRevenue || 0), 0) / totalGlobalAds).toFixed(1) : 0;
     
+    // ... [As variáveis totalAgencyLastMonth e totalAgencyCurrent continuam aqui sem alteração] ...
     const totalAgencyLastMonth = processedStores.reduce((acc, s) => {
       const lastGmv = s.monthlyHistory && s.monthlyHistory.length > 0 ? s.monthlyHistory[s.monthlyHistory.length - 1].gmv : 0;
       return acc + (s.fixedFee > 0 ? s.fixedFee : lastGmv * (s.feePercent / 100));
@@ -326,38 +415,59 @@ const dashboardData = useMemo(() => {
     return { groupedClients, totalTarget, totalProjected, totalAgencyRevenue, totalGlobalAds, globalRoas, totalAgencyLastMonth, totalAgencyCurrent };
   }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy]);
 
-  // Dados para o Gráfico de Pizza (Dashboard Global)
-  const pieData = useMemo(() => {
-    return dashboardData.groupedClients.map(g => ({ name: g.client, value: g.totalProjectedGmv })).filter(g => g.value > 0).sort((a, b) => b.value - a.value);
-  }, [dashboardData]);
 
-  // Dados para o Gráfico de ROAS (Dashboard Global)
-  const roasData = useMemo(() => {
-    return dashboardData.groupedClients.filter(g => g.totalAds > 0).map(g => ({ name: g.client, roas: Number(g.roas) })).sort((a, b) => b.roas - a.roas);
-  }, [dashboardData]);
+  // NOVAS MENSAGENS DE WHATSAPP (EXECUTIVE REPORT)
+  const generateStoreWhatsAppLink = (row) => {
+    const diasRestantes = daysInMonth - currentDay;
+    const gap = row.gmvTarget - row.currentRevenue;
+    
+    let text = `Olá, equipe da *${row.client}*!\n\nSegue o status da loja *${row.store}* atualizado até o dia ${currentDay}:\n\n`;
+    text += `💰 *Faturado:* ${formatCurrency(row.currentRevenue)}\n`;
+    text += `📈 *Projeção de Fechamento:* ${formatCurrency(row.projectedGmv)}\n`;
+    text += `🎯 *Meta do Mês:* ${formatCurrency(row.gmvTarget)}\n`;
+    if (gap > 0) text += `⏳ *Faltam:* ${formatCurrency(gap)} em ${diasRestantes} dias.\n`;
+    else text += `✅ *Meta Batida!*\n`;
+    
+    if (row.adsInvestment > 0) {
+      text += `\n📊 *Performance Ads:*\nInvestido: ${formatCurrency(row.adsInvestment)} | ROAS: ${row.currentRoas.toFixed(1)}x\n`;
+    }
 
-  const generateStoreWhatsAppLink = (row) => `https://wa.me/?text=${encodeURIComponent(`Olá, equipe da *${row.client}*!\nAvaliamos a loja *${row.store}* até o dia ${currentDay}.\nProjeção: ${formatCurrency(row.projectedGmv)} / Meta: ${formatCurrency(row.gmvTarget)}.\n${row.status === 'danger' ? 'Precisamos alinhar ações urgentes de Ads/Estoque.' : row.status === 'warning' ? 'Podemos otimizar as campanhas da semana?' : 'Vocês estão voando! Vamos manter a tração.'}`)}`;
+    text += `\n*Análise Avante:* ${row.recommendation}`;
+    return `https://wa.me/?text=${encodeURIComponent(text)}`;
+  };
   
   const generateClientWhatsAppLink = (group) => {
-    let text = `Olá, equipe da *${group.client}*! Aqui é a Equipe Avante - B2X.\n\nSegue o resumo do nosso desempenho até o dia ${currentDay}:\n\n`;
+    const diasRestantes = daysInMonth - currentDay;
+    let text = `Olá, equipe da *${group.client}*! Aqui é o Jaime da Avante - B2X.\n`;
+    text += `Resumo da nossa operação (Dia ${currentDay}/${daysInMonth}):\n\n`;
     
     group.stores.forEach(store => {
-      text += `🏪 *${store.store}*\n`;
-      text += `Faturado: ${formatCurrency(store.currentRevenue)}\n`;
-      text += `Projeção: ${formatCurrency(store.projectedGmv)} (Meta: ${formatCurrency(store.gmvTarget)})\n\n`;
+      const gap = store.gmvTarget - store.currentRevenue;
+      text += `🏪 *${store.store}* ${store.marketplace ? `(${store.marketplace})` : ''}\n`;
+      text += `▪️ Atual: ${formatCurrency(store.currentRevenue)} | Projeção: ${formatCurrency(store.projectedGmv)}\n`;
+      text += `▪️ Meta: ${formatCurrency(store.gmvTarget)} ${gap > 0 ? `(Faltam ${formatCurrency(gap)})` : '(Meta Batida ✅)'}\n`;
+      if (store.adsInvestment > 0) {
+         text += `▪️ Ads: ${formatCurrency(store.adsInvestment)} | ROAS: ${(store.currentRevenue / store.adsInvestment).toFixed(1)}x\n`;
+      }
+      text += `\n`;
     });
 
-    text += `📊 *RESUMO GERAL*\n`;
-    text += `Faturado Total: *${formatCurrency(group.totalCurrentRevenue)}*\n`;
-    text += `Projeção Total: *${formatCurrency(group.totalProjectedGmv)}*\n`;
-    text += `Meta Global: *${formatCurrency(group.totalGmvTarget)}*\n\n`;
+    const gapGlobal = group.totalGmvTarget - group.totalCurrentRevenue;
+    text += `📊 *VISÃO GLOBAL DO GRUPO*\n`;
+    text += `Faturado: *${formatCurrency(group.totalCurrentRevenue)}*\n`;
+    text += `Projeção: *${formatCurrency(group.totalProjectedGmv)}*\n`;
+    text += `Meta: *${formatCurrency(group.totalGmvTarget)}*\n`;
+    if (group.totalAds > 0) {
+      text += `Investimento Global: ${formatCurrency(group.totalAds)} (ROAS: ${group.roas}x)\n`;
+    }
     
+    text += `\n`;
     if (group.status === 'danger') {
-        text += `🚨 Como estamos abaixo da meta agrupada, precisamos alinhar urgentemente algumas ações conjuntas. Podemos falar hoje?`;
+        text += `🚨 *Atenção:* Nosso ritmo global de vendas exige ação imediata nestes ${diasRestantes} dias restantes. Precisamos alinhar uma estratégia mais agressiva (verbas ou campanhas) o quanto antes.`;
     } else if (group.status === 'warning') {
-        text += `⚠️ Estamos um pouquinho abaixo do ritmo esperado na visão geral. Sugerimos aplicar algumas otimizações. Tudo bem?`;
+        text += `⚠️ *Aviso:* Nosso ritmo está levemente abaixo do necessário. Se fizermos otimizações de campanhas e estoque nesta semana, conseguimos reverter e bater a meta final.`;
     } else {
-        text += `✅ Vocês estão voando! 🚀 Vamos ultrapassar a meta global! Vamos manter a estratégia.`;
+        text += `✅ *Excelente:* A operação global está com uma ótima tração! A meta está muito bem encaminhada. Vamos manter a estratégia e otimizar as margens.`;
     }
 
     return `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -393,7 +503,7 @@ const dashboardData = useMemo(() => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
-      alert("Erro ao gerar o arquivo de exportação.");
+      toast.error("Erro ao gerar o ficheiro de exportação.");
     }
   };
 
@@ -402,71 +512,59 @@ const dashboardData = useMemo(() => {
     if (!file) return;
     
     const fileReader = new FileReader();
-    fileReader.onload = (ev) => {
+    fileReader.onload = async (ev) => {
       try {
         const imported = JSON.parse(ev.target.result);
         if (Array.isArray(imported)) {
-          // Garante que todas as chaves existam para evitar quebras de renderização
-          setStores(imported.map(s => ({
+          
+          const formattedStores = imported.map(s => ({
             ...s, 
             history: s.history || [], 
             notes: s.notes || [], 
             monthlyHistory: s.monthlyHistory || []
-          })));
-          alert("✅ Dados restaurados com sucesso!");
+          }));
+
+          setStores(formattedStores);
+
+          if (user) {
+            for (const store of formattedStores) {
+              await setDoc(doc(db, "stores", store.id.toString()), store);
+            }
+          }
+
+          toast.success("Dados restaurados e salvos na nuvem com sucesso!");
         } else {
-          alert("❌ Formato de arquivo inválido.");
+          toast.error("Formato de ficheiro inválido.");
         }
       } catch (err) { 
-        alert("❌ Erro ao ler o arquivo JSON."); 
+        toast.error("Erro ao ler o ficheiro JSON."); 
       } finally {
-        e.target.value = null; // Limpa o input APÓS a leitura
+        e.target.value = null;
       }
     };
     fileReader.readAsText(file, "UTF-8");
   };
 
-  if (authLoading) {
-    return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center font-bold">Carregando CRM Avante...</div>;
-  }
-
-  if (!user) {
+  if (authLoading || !user) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4 font-sans text-gray-200">
-        <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl w-full max-w-md">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-white flex items-center justify-center gap-2">
-              <Activity className="text-green-500" /> CRM Avante
-            </h1>
-            <p className="text-gray-400 text-sm mt-2">Área restrita da equipe</p>
-          </div>
-          
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full bg-gray-900 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="seu@email.com" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Senha</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full bg-gray-900 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="••••••••" />
-            </div>
-            
-            {authError && <p className="text-red-400 text-sm font-bold text-center">{authError}</p>}
-            
-            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg transition-colors mt-4">
-              Entrar no Sistema
-            </button>
-          </form>
-        </div>
-      </div>
+      <AuthScreen 
+        email={email} 
+        setEmail={setEmail} 
+        password={password} 
+        setPassword={setPassword} 
+        handleLogin={handleLogin} 
+        authError={authError} 
+        authLoading={authLoading} 
+      />
     );
   }
 
   return (
     <div className="min-h-screen bg-gray-900 p-4 md:p-8 font-sans text-gray-200 pb-24">
+      <Toaster position="top-right" toastOptions={{ style: { background: '#1F2937', color: '#fff', border: '1px solid #374151' } }} />
+      
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Cabecalho Principal e Switcher de Visão */}
         <div className="flex flex-col md:flex-row justify-between items-center bg-gray-800 p-4 rounded-xl border border-gray-700 gap-4 shadow-md">
           <div className="flex items-center gap-4">
             {/* O AVISO "SALVO LOCAL" FOI REMOVIDO DAQUI */}
@@ -502,443 +600,64 @@ const dashboardData = useMemo(() => {
           </div>
         </div>
 
-        {/* VISÃO ADMIN (Adicione logo abaixo do cabeçalho de cima) */}
+        {/* VISÃO ADMIN */}
         {activeView === 'admin' && isAdmin && (
-          <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-lg animate-in fade-in duration-300">
-            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2"><Users className="text-amber-500" /> Gestão de Equipe</h2>
-            <p className="text-gray-400 text-sm mb-6">Crie logins para os membros da sua equipe operarem o CRM. Assim que criado, a pessoa já pode acessar pelo link oficial.</p>
-
-            <form onSubmit={handleCreateUser} className="bg-gray-900 p-6 rounded-lg border border-gray-700 max-w-md">
-              <h3 className="text-white font-semibold mb-4">Novo Acesso Operacional</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">E-mail</label>
-                  <input type="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} required className="w-full bg-gray-800 border border-gray-600 text-white rounded p-2 outline-none focus:border-amber-500" placeholder="exemplo@equipeavante.com" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Senha Provisória</label>
-                  <input type="text" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} required minLength="6" className="w-full bg-gray-800 border border-gray-600 text-white rounded p-2 outline-none focus:border-amber-500" placeholder="No mínimo 6 caracteres" />
-                </div>
-                <button type="submit" className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 px-4 rounded transition-colors mt-2">
-                  Gerar Acesso
-                </button>
-                {adminMessage && <p className={`text-sm mt-3 text-center font-semibold ${adminMessage.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>{adminMessage}</p>}
-              </div>
-            </form>
-          </div>
+          <AdminPanel 
+            handleCreateUser={handleCreateUser}
+            newUserEmail={newUserEmail}
+            setNewUserEmail={setNewUserEmail}
+            newUserPassword={newUserPassword}
+            setNewUserPassword={setNewUserPassword}
+            adminMessage={adminMessage}
+          />
         )}
 
         {/* VISÃO DASHBOARD EXECUTIVO */}
         {activeView === 'dashboard' && (
-          <div className="space-y-6 animate-in fade-in zoom-in duration-300">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 flex items-center gap-4">
-                <div className="p-3 bg-blue-900/50 rounded-lg text-blue-400"><Target size={24} /></div>
-                <div><p className="text-sm font-medium text-gray-400">Meta Global</p><h3 className="text-xl font-bold text-white">{formatCurrency(dashboardData.totalTarget)}</h3></div>
-              </div>
-              <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 flex items-center gap-4">
-                <div className="p-3 bg-purple-900/50 rounded-lg text-purple-400"><TrendingUp size={24} /></div>
-                <div><p className="text-sm font-medium text-gray-400">Projeção Final</p><h3 className="text-xl font-bold text-white">{formatCurrency(dashboardData.totalProjected)}</h3></div>
-              </div>
-              <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 flex items-center gap-4">
-                <div className="p-3 bg-amber-900/50 rounded-lg text-amber-400"><Activity size={24} /></div>
-                <div><p className="text-sm font-medium text-gray-400">Investimento Ads</p><h3 className="text-xl font-bold text-white">{formatCurrency(dashboardData.totalGlobalAds)}</h3></div>
-              </div>
-              <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 flex items-center gap-4">
-                <div className="p-3 bg-green-900/50 rounded-lg text-green-400"><DollarSign size={24} /></div>
-                <div><p className="text-sm font-medium text-gray-400">ROAS Global (Médio)</p><h3 className="text-xl font-bold text-green-400">{dashboardData.globalRoas}x</h3></div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              
-              {/* Gráfico 1: Receita da equipe Avante */}
-              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 h-[350px] flex flex-col">
-                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><DollarSign size={16} className="text-green-400"/> Faturamento Equipe Avante</h3>
-                <div className="flex-1">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={[
-                      { name: 'Mês Passado', valor: dashboardData.totalAgencyLastMonth, fill: '#6B7280' },
-                      { name: 'Atual (Hoje)', valor: dashboardData.totalAgencyCurrent, fill: '#3B82F6' },
-                      { name: 'Projeção (Fim do Mês)', valor: dashboardData.totalAgencyRevenue, fill: '#8B5CF6' },
-                      { name: 'Meta Global', valor: dashboardData.totalAgencyRevenue * (dashboardData.totalTarget / dashboardData.totalProjected), fill: '#10B981' }
-                    ]} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                      <XAxis dataKey="name" stroke="#9CA3AF" fontSize={10} interval={0} />
-                      <YAxis stroke="#9CA3AF" fontSize={10} tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
-                      <RechartsTooltip cursor={{ fill: '#374151', opacity: 0.4 }} contentStyle={{ backgroundColor: '#1F2937', borderColor: '#374151', borderRadius: '8px' }} formatter={(value) => [formatCurrency(value), 'Faturamento Equipe Avante']} />
-                      <Bar dataKey="valor" radius={[4, 4, 0, 0]}>
-                        { [0,1,2,3].map(i => <Cell key={`cell-${i}`} fill={['#6B7280', '#3B82F6', '#8B5CF6', '#10B981'][i]} />) }
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Gráfico 2: Representatividade */}
-              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 h-[350px] flex flex-col">
-                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><PieChartIcon size={16} className="text-blue-400"/> Dependência por Cliente</h3>
-                <div className="flex-1">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2} dataKey="value" stroke="none" label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                        {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                      </Pie>
-                      <RechartsTooltip formatter={(value) => formatCurrency(value)} contentStyle={{ backgroundColor: '#1F2937', borderColor: '#374151', borderRadius: '8px' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Gráfico 3: ROAS */}
-              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 h-[350px] flex flex-col">
-                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><Activity size={16} className="text-amber-400"/> Ranking ROAS (Ads)</h3>
-                <div className="flex-1">
-                  {roasData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={roasData} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={false} />
-                        <XAxis type="number" stroke="#9CA3AF" fontSize={10} tickFormatter={(val) => `${val}x`} />
-                        <YAxis dataKey="name" type="category" stroke="#9CA3AF" width={80} fontSize={10} />
-                        <RechartsTooltip cursor={{ fill: '#374151', opacity: 0.4 }} contentStyle={{ backgroundColor: '#1F2937', borderColor: '#374151', borderRadius: '8px' }} formatter={(value) => [`${value}x`, 'ROAS']} />
-                        <Bar dataKey="roas" fill="#F59E0B" radius={[0, 4, 4, 0]} barSize={16} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-gray-500 text-xs">Nenhum investimento registrado.</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+          <ExecutiveDashboard 
+            dashboardData={dashboardData} 
+            formatCurrency={formatCurrency} 
+            pieData={pieData} 
+            roasData={roasData} 
+            COLORS={COLORS} 
+          />
         )}
 
-        {/* VISÃO OPERACIONAL (Tabela) */}
+        {/* VISÃO OPERACIONAL */}
         {activeView === 'operacional' && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            {/* Controles Principais */}
-            <div className="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
-              <div>
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2"><Activity className="text-green-500" /> CRM Avante - Operação</h1>
-                <p className="text-gray-400 mt-1">Gestão de Contas, Diário de Bordo e Ads</p>
-              </div>
-              <div className="flex flex-wrap items-end gap-4 w-full xl:w-auto">
-                <div className="flex flex-col grow xl:grow-0">
-                  <label className="text-xs font-semibold text-gray-400 uppercase mb-1">Buscar Conta / Loja</label>
-                  <div className="relative flex gap-2">
-                    <div className="relative grow">
-                      <Search className="absolute left-3 top-2.5 text-gray-500" size={16} />
-                      <input type="text" placeholder="Pesquisar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full xl:w-48 bg-gray-900 border border-gray-600 text-white rounded-lg p-2 pl-9 focus:ring-2 focus:ring-blue-500 outline-none h-[42px]" />
-                    </div>
-                    <button onClick={addNewStore} className="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-1 transition-colors h-[42px] whitespace-nowrap"><Plus size={18} /> Add Loja</button>
-                  </div>
-                </div>
-                <div className="flex gap-4 bg-gray-900 p-3 rounded-lg border border-gray-700">
-                  <div className="flex flex-col">
-                    <label className="text-xs font-semibold text-gray-400 uppercase">Ordenar</label>
-                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-gray-800 border border-gray-600 text-white rounded p-1 font-bold outline-none h-[30px] text-xs">
-                      <option value="gmv">Tamanho (GMV)</option>
-                      <option value="status">Status (Críticos)</option>
-                      <option value="name">Alfabética</option>
-                    </select>
-                  </div>
-                  <div className="flex flex-col"><label className="text-xs font-semibold text-gray-400 uppercase">Dia Atual</label><input type="number" value={currentDay} onChange={(e) => setCurrentDay(Number(e.target.value))} className="w-16 bg-gray-800 border border-gray-600 text-white rounded p-1 text-center font-bold outline-none h-[30px]" /></div>
-                  <div className="flex flex-col"><label className="text-xs font-semibold text-gray-400 uppercase">Cresc. %</label><input type="number" value={globalGrowth} onChange={(e) => setGlobalGrowth(Number(e.target.value))} className="w-16 bg-blue-900 border border-blue-600 text-blue-200 rounded p-1 text-center font-bold outline-none h-[30px]" /></div>
-                </div>
-              </div>
-            </div>
-
-            {/* TABELA ACCORDION */}
-            <div className="bg-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[1100px]">
-                  <thead>
-                    <tr className="bg-gray-900 text-gray-400 text-xs uppercase tracking-wider border-b border-gray-700">
-                      <th className="p-4 font-semibold w-1/4">Conta / Cliente (Expandir)</th>
-                      <th className="p-4 font-semibold text-center w-24">Lojas/Tier</th>
-                      <th className="p-4 font-semibold text-center w-24">Cresc. (%)</th>
-                      <th className="p-4 font-semibold">Base / Meta (Mês)</th>
-                      <th className="p-4 font-semibold text-blue-400">Faturado & Ads</th>
-                      <th className="p-4 font-semibold text-purple-400">Projeção Final</th>
-                      <th className="p-4 font-semibold w-1/4">Ações / Relacionamento</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-700/50 text-sm">
-                    {dashboardData.groupedClients.length > 0 ? (
-                      dashboardData.groupedClients.map((group) => {
-                        const isExpanded = expandedClients.includes(group.client);
-                        return (
-                          <React.Fragment key={group.client}>
-                            {/* LINHA DO CLIENTE (PAI) */}
-                            <tr className="bg-gray-800 hover:bg-gray-750 transition-colors cursor-pointer group" onClick={() => toggleClientExpansion(group.client)}>
-                              <td className="p-4 border-l-4 border-blue-500">
-                                <div className="flex items-center gap-3">
-                                  <div className="text-gray-400 group-hover:text-white transition-colors">{isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}</div>
-                                  <div className="mt-1">
-                                    {group.status === 'success' && <CheckCircle className="text-green-500" size={18} />}
-                                    {group.status === 'warning' && <Clock className="text-amber-500" size={18} />}
-                                    {group.status === 'danger' && <AlertTriangle className="text-red-500" size={18} />}
-                                  </div>
-                                  <div onClick={e => e.stopPropagation()} className="flex-1">
-                                    {editingClient === group.client ? (
-                                      <div className="flex items-center gap-2">
-                                        <input type="text" value={clientEditValue} onChange={e => setClientEditValue(e.target.value.toUpperCase())} className="bg-gray-900 border border-blue-500 rounded px-2 py-1 outline-none text-white font-bold w-full" autoFocus />
-                                        <button onClick={() => saveClientEdit(group.client)} className="p-1 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={16}/></button>
-                                        <button onClick={() => setEditingClient(null)} className="p-1 bg-gray-600 hover:bg-gray-500 text-white rounded"><X size={16}/></button>
-                                      </div>
-                                    ) : (
-                                      <div className="font-bold text-gray-100 text-base flex items-center gap-2 group-hover:text-blue-100">
-                                        {group.client}
-                                        <button onClick={() => startEditingClient(group.client)} className="text-gray-500 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Editar Nome"><Edit2 size={14}/></button>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-4 text-center"><span className="px-2 py-1 rounded text-xs font-bold bg-gray-900 text-gray-400 border border-gray-700">{group.stores.length} Loja{group.stores.length > 1 ? 's' : ''}</span></td>
-                              <td className="p-4 text-center text-gray-500">-</td>
-                              <td className="p-4"><div className="flex flex-col gap-0.5"><div className="text-xs text-gray-500">Base: {formatCurrency(group.totalGmvBase)}</div><div className="font-bold text-gray-300">Meta: {formatCurrency(group.totalGmvTarget)}</div></div></td>
-                              <td className="p-4">
-                                <div className="font-bold text-blue-400 text-lg leading-none mb-1">{formatCurrency(group.totalCurrentRevenue)}</div>
-                                <div className="text-[10px] text-gray-500">Ads: {formatCurrency(group.totalAds)}</div>
-                              </td>
-                              <td className="p-4">
-                                <div className={`font-bold text-lg leading-none mb-1 ${group.status === 'success' ? 'text-green-400' : group.status === 'warning' ? 'text-amber-400' : 'text-red-400'}`}>{formatCurrency(group.totalProjectedGmv)}</div>
-                                <div className="text-[10px] text-gray-500">{group.percentReached.toFixed(1)}% Meta | ROAS: <span className="font-bold text-gray-400">{group.roas}x</span></div>
-                              </td>
-                              <td className="p-4" onClick={e => e.stopPropagation()}>
-                                <div className="flex items-center gap-2">
-                                  {/* NOVO BOTÃO: Adicionar Loja Específica */}
-                                  <button onClick={() => addNewStoreToClient(group.client)} className="p-2 text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition-colors" title="Adicionar Nova Loja a este Cliente">
-                                    <Plus size={16} />
-                                  </button>
-                                  
-                                  <a href={generateClientWhatsAppLink(group)} target="_blank" rel="noopener noreferrer" className={`flex-1 flex items-center justify-center gap-1 text-xs font-bold py-2 px-2 rounded-lg shadow-sm transition-transform hover:scale-105 ${group.status === 'danger' ? 'bg-red-600 text-white' : group.status === 'warning' ? 'bg-amber-600 text-white' : 'bg-green-600 text-white'}`}>
-                                    <MessageCircle size={14} /> Resumo Conta
-                                  </a>
-                                  <button onClick={() => deleteClient(group.client)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-gray-700 rounded transition-colors" title="Apagar Cliente Inteiro">
-                                    <Trash2 size={16} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-
-                            {/* LINHAS DAS LOJAS (FILHOS) */}
-                            {isExpanded && group.stores.map((row) => (
-                              <tr key={row.id} className="bg-gray-900/50 hover:bg-gray-800/80 transition-colors group/row">
-                                <td className="p-4 pl-12 relative">
-                                  <div className="absolute left-6 top-0 bottom-0 w-px bg-gray-700"></div><div className="absolute left-6 top-1/2 w-4 h-px bg-gray-700"></div>
-                                  <div className="flex items-center gap-3">
-                                    <div>
-                                      {row.status === 'success' && <CheckCircle className="text-green-500/70" size={16} />}
-                                      {row.status === 'warning' && <Clock className="text-amber-500/70" size={16} />}
-                                      {row.status === 'danger' && <AlertTriangle className="text-red-500/70" size={16} />}
-                                    </div>
-                                    {editingStoreId === row.id ? (
-                                      <div className="flex flex-col gap-1 w-full bg-gray-950 p-2 rounded border border-blue-900">
-                                        <input type="text" value={storeEditData.store} onChange={(e) => setStoreEditData({...storeEditData, store: e.target.value})} className="bg-gray-800 border border-gray-600 rounded px-1 outline-none text-white text-sm font-semibold" placeholder="Nome da Loja" />
-                                        <div className="text-[10px] text-gray-400 flex items-center gap-1">
-                                          Fee: <input type="number" step="0.1" value={storeEditData.feePercent} onChange={(e) => setStoreEditData({...storeEditData, feePercent: e.target.value})} className="w-12 bg-gray-800 border border-gray-600 rounded px-1 outline-none" />%
-                                          Canal: <select value={storeEditData.marketplace || ''} onChange={(e) => setStoreEditData({...storeEditData, marketplace: e.target.value})} className="bg-gray-800 border border-gray-600 rounded px-1 outline-none text-[9px]"><option value="">N/A</option><option value="Shopee">Shopee</option><option value="Meli">Meli</option><option value="Shein">Shein</option><option value="TikTok">TikTok</option></select>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-col gap-1 w-full">
-                                        <span className="font-semibold text-gray-300">{row.store} {row.marketplace && <span className="bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded text-[8px] ml-1">{row.marketplace}</span>}</span>
-                                        <span className="text-[10px] text-gray-500">Fee: {row.feePercent}%</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="p-4 text-center"><span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${row.tier === 'A' ? 'bg-indigo-900/50 text-indigo-400 border border-indigo-800' : row.tier === 'B' ? 'bg-gray-800 text-gray-400 border border-gray-700' : 'bg-gray-900 text-gray-600 border border-gray-800'}`}>Tier {row.tier}</span></td>
-                                <td className="p-4 text-center">
-                                  <input type="number" value={row.customGrowth !== undefined ? row.customGrowth : ''} placeholder={globalGrowth.toString()} onChange={(e) => handleStoreChange(row.id, 'customGrowth', e.target.value)} className={`w-14 border rounded p-1 text-center focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium text-xs ${row.customGrowth !== undefined && row.customGrowth !== '' ? 'bg-blue-900/30 border-blue-600 text-blue-300' : 'bg-gray-800 border-gray-700 text-gray-400'}`} />
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex flex-col gap-1">
-                                    {editingStoreId === row.id ? (
-                                      <div className="text-[11px] text-blue-400 flex items-center gap-1">Base: R$ <input type="number" value={storeEditData.gmvBase} onChange={(e) => setStoreEditData({...storeEditData, gmvBase: e.target.value})} className="w-20 bg-gray-800 border border-gray-600 rounded px-1 outline-none text-white" /></div>
-                                    ) : (
-                                      <div className="text-[11px] text-gray-500">Base: {formatCurrency(row.gmvBase)}</div>
-                                    )}
-                                    <div className="font-medium text-gray-300 text-sm">Meta: {formatCurrency(row.gmvTarget)}</div>
-                                  </div>
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex items-start gap-2">
-                                    <div className="flex flex-col gap-1.5">
-                                      {/* AUTO-SAVE ADICIONADO NO onBlur */}
-                                      <input type="number" value={row.currentRevenue || ''} onChange={(e) => handleStoreChange(row.id, 'currentRevenue', e.target.value)} onBlur={(e) => autoSaveHistory(row.id, e.target.value)} className="w-24 bg-gray-950 border border-gray-700 text-blue-300 rounded p-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold text-sm" placeholder="R$ Atual" />
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-[9px] text-gray-500">Ads R$:</span>
-                                        <input type="number" value={row.adsInvestment || ''} onChange={(e) => handleStoreChange(row.id, 'adsInvestment', e.target.value)} className="w-16 bg-gray-800 border border-gray-700 text-gray-300 rounded p-1 focus:outline-none focus:border-amber-500 text-xs" placeholder="0" />
-                                      </div>
-                                    </div>
-                                    <button onClick={() => openHistoryModal(row)} className={`p-1.5 mt-1 rounded transition-colors relative group ${row.history?.length > 0 ? 'bg-blue-900/50 text-blue-400 hover:bg-blue-800' : 'bg-gray-800 text-gray-500 hover:bg-gray-700'}`} title="Dashboard e Diário">
-                                      <BarChart2 size={16} />
-                                    </button>
-                                  </div>
-                                </td>
-                                <td className="p-4">
-                                  <div className={`font-bold text-sm leading-none mb-1 ${row.status === 'success' ? 'text-green-400/80' : row.status === 'warning' ? 'text-amber-400/80' : 'text-red-400/80'}`}>
-                                    {formatCurrency(row.projectedGmv)}
-                                  </div>
-                                  <div className="text-[10px] text-gray-500">ROAS: <span className="font-bold text-gray-400">{row.adsInvestment > 0 ? (row.currentRevenue / row.adsInvestment).toFixed(1) : 0}x</span></div>
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex items-center gap-2">
-                                    <div className="flex-1 text-[11px] p-1.5 rounded bg-gray-900 border border-gray-800 text-gray-400 leading-tight">{row.recommendation}</div>
-                                    {editingStoreId === row.id ? (
-                                      <div className="flex flex-col gap-1">
-                                        <button onClick={() => saveStoreEdit(row.id)} className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={14}/></button>
-                                        <button onClick={() => setEditingStoreId(null)} className="p-1.5 bg-gray-600 hover:bg-gray-500 text-white rounded"><X size={14}/></button>
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-col gap-1 opacity-20 group-hover/row:opacity-100 transition-opacity">
-                                        <div className="flex gap-1">
-                                          <a href={generateStoreWhatsAppLink(row)} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-gray-800 hover:bg-green-600/20 text-green-500 rounded transition-colors"><MessageCircle size={14} /></a>
-                                        </div>
-                                        <div className="flex gap-1">
-                                          <button onClick={() => startEditingStore(row)} className="p-1.5 bg-gray-800 hover:bg-blue-900/40 text-gray-400 hover:text-blue-400 rounded transition-colors"><Edit2 size={14} /></button>
-                                          <button onClick={() => deleteStore(row.id, row.store)} className="p-1.5 bg-gray-800 hover:bg-red-900/40 text-gray-500 hover:text-red-400 rounded transition-colors"><Trash2 size={14} /></button>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </React.Fragment>
-                        );
-                      })
-                    ) : (
-                      <tr><td colSpan="7" className="p-8 text-center text-gray-500">Nenhuma conta encontrada.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+          <OperationalTable 
+            searchTerm={searchTerm} setSearchTerm={setSearchTerm}
+            addNewStore={addNewStore} sortBy={sortBy} setSortBy={setSortBy}
+            currentDay={currentDay} setCurrentDay={setCurrentDay}
+            globalGrowth={globalGrowth} setGlobalGrowth={setGlobalGrowth}
+            dashboardData={dashboardData} expandedClients={expandedClients}
+            toggleClientExpansion={toggleClientExpansion} editingClient={editingClient}
+            clientEditValue={clientEditValue} setClientEditValue={setClientEditValue}
+            saveClientEdit={saveClientEdit} startEditingClient={startEditingClient}
+            setEditingClient={setEditingClient} addNewStoreToClient={addNewStoreToClient}
+            generateClientWhatsAppLink={generateClientWhatsAppLink} deleteClient={deleteClient}
+            editingStoreId={editingStoreId} storeEditData={storeEditData}
+            setStoreEditData={setStoreEditData} handleStoreChange={handleStoreChange}
+            autoSaveHistory={autoSaveHistory} openHistoryModal={openHistoryModal}
+            formatCurrency={formatCurrency} generateStoreWhatsAppLink={generateStoreWhatsAppLink}
+            startEditingStore={startEditingStore} saveStoreEdit={saveStoreEdit}
+            deleteStore={deleteStore} setEditingStoreId={setEditingStoreId}
+          />
         )}
       </div>
 
-      {/* MODAL COM ABAS: PACING vs MENSAL */}
-      {historyModalOpen && activeStore && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 w-full max-w-3xl overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
-              <div className="flex items-center gap-6">
-                <div><h3 className="text-lg font-bold text-white">Dashboard Analítico</h3><p className="text-xs text-gray-400 mt-1">{activeStore.client} - {activeStore.store}</p></div>
-                <div className="flex bg-gray-800 rounded-lg p-1 border border-gray-700 ml-4">
-                  <button onClick={() => setChartTab('pacing')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${chartTab === 'pacing' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Pacing</button>
-                  <button onClick={() => setChartTab('monthly')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${chartTab === 'monthly' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>Mensal</button>
-                  <button onClick={() => setChartTab('notes')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors flex items-center gap-1 ${chartTab === 'notes' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'}`}>
-                    Diário {activeStore.notes?.length > 0 && `(${activeStore.notes.length})`}
-                  </button>
-                </div>
-              </div>
-              <button onClick={() => setHistoryModalOpen(false)} className="p-1 hover:bg-gray-700 rounded-lg transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button>
-            </div>
-            <div className="p-5">
-              {chartTab === 'pacing' && (
-                <div className="flex flex-col md:flex-row gap-5">
-                  <div className="flex-1 flex flex-col">
-                    <h4 className="text-sm font-semibold text-gray-300 mb-3 flex justify-between"><span>Curva de Velocidade</span><span className="text-xs font-normal text-gray-500">Meta: {formatCurrency(activeStore.gmvTarget)}</span></h4>
-                    <div className="h-64 w-full bg-gray-900 rounded-lg p-3 border border-gray-700">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={activeStorePacingData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                          <XAxis dataKey="day" stroke="#9CA3AF" fontSize={10} tickMargin={10} />
-                          <YAxis stroke="#9CA3AF" fontSize={10} tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
-                          <RechartsTooltip contentStyle={{ backgroundColor: '#1F2937', borderColor: '#374151', borderRadius: '8px' }} itemStyle={{ color: '#fff', fontSize: '12px' }} formatter={(value) => formatCurrency(value)} labelFormatter={(label) => `Dia ${label}`} />
-                          <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                          <Line type="monotone" dataKey="ideal" name="Meta Ideal" stroke="#6B7280" strokeWidth={2} dot={false} strokeDasharray="5 5" />
-                          <Line type="monotone" dataKey="actual" name="Realizado" stroke="#10B981" strokeWidth={3} dot={{ r: 3, fill: '#10B981' }} activeDot={{ r: 6 }} connectNulls />
-                          <ReferenceLine x={currentDay} stroke="#3B82F6" strokeDasharray="3 3" label={{ position: 'top', value: 'Hoje', fill: '#3B82F6', fontSize: 10 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                  <div className="w-full md:w-64 flex flex-col gap-4">
-                    <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
-                      <h4 className="text-sm font-semibold text-gray-300 mb-2">Check-in Diário</h4>
-                      <div className="flex gap-2 items-end">
-                        <div className="w-16"><label className="text-[10px] text-gray-500 mb-1 block">Dia</label><input type="number" value={newHistoryDay} onChange={e => setNewHistoryDay(e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm" /></div>
-                        <div className="flex-1"><label className="text-[10px] text-gray-500 mb-1 block">R$ Acumulado</label><input type="number" value={newHistoryRevenue} onChange={e => setNewHistoryRevenue(e.target.value)} placeholder="15000" className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm" /></div>
-                        <button onClick={addHistoryEntry} className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded text-sm h-[34px]"><Plus size={16}/></button>
-                      </div>
-                    </div>
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                      <h4 className="text-sm font-semibold text-gray-300 mb-2">Arquivo</h4>
-                      <div className="flex-1 overflow-y-auto pr-1 space-y-2 max-h-40">
-                        {activeStore.history?.length > 0 ? activeStore.history.map(h => (
-                          <div key={h.id} className="flex justify-between items-center bg-gray-700/30 p-2 rounded border border-gray-700">
-                            <div className="font-bold text-gray-200 text-xs">Dia {h.day}</div>
-                            <div className="flex items-center gap-3"><span className="font-bold text-green-400 text-xs">{formatCurrency(h.revenue)}</span><button onClick={() => deleteHistoryEntry(activeStore.id, h.id)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button></div>
-                          </div>
-                        )) : <div className="text-center p-4 border border-dashed border-gray-700 rounded text-gray-500 text-xs">Sem lançamentos.</div>}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {chartTab === 'monthly' && (
-                <div className="flex flex-col">
-                  <div className="flex justify-between items-end mb-4">
-                    <h4 className="text-sm font-semibold text-gray-300">Fechamentos Anteriores</h4>
-                    <div className="text-xs text-gray-500 flex items-center gap-1"><CalendarDays size={14} /> Dados históricos da loja</div>
-                  </div>
-                  <div className="h-72 w-full bg-gray-900 rounded-lg p-4 border border-gray-700 flex flex-col justify-center items-center">
-                    {activeStoreMonthlyData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={activeStoreMonthlyData} margin={{ top: 20, right: 20, left: -10, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                          <XAxis dataKey="month" stroke="#9CA3AF" tickMargin={10} />
-                          <YAxis stroke="#9CA3AF" tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
-                          <RechartsTooltip cursor={{ fill: '#374151', opacity: 0.4 }} contentStyle={{ backgroundColor: '#1F2937', borderColor: '#374151', borderRadius: '8px', color: '#fff' }} formatter={(value) => [formatCurrency(value), 'Faturamento']} />
-                          <Bar dataKey="revenue" fill="#8B5CF6" radius={[4, 4, 0, 0]} barSize={50} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="text-gray-500 text-center flex flex-col items-center gap-2"><ArchiveRestore size={32} className="opacity-50" /><p>Nenhum histórico mensal.</p></div>
-                    )}
-                  </div>
-                </div>
-              )}
-              {chartTab === 'notes' && (
-                <div className="flex flex-col h-72">
-                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 mb-4">
-                    {activeStore.notes && activeStore.notes.length > 0 ? (
-                      activeStore.notes.map(note => (
-                        <div key={note.id} className="bg-gray-900 p-3 rounded-lg border border-gray-700 relative group">
-                          <div className="text-[10px] font-bold text-indigo-400 mb-1">{note.date}</div>
-                          <p className="text-sm text-gray-300">{note.text}</p>
-                          <button onClick={() => setStores(stores.map(s => s.id === activeStore.id ? { ...s, notes: s.notes.filter(n => n.id !== note.id) } : s))} className="absolute top-2 right-2 p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="h-full flex items-center justify-center text-gray-500 text-sm border border-dashed border-gray-700 rounded-lg">Nenhuma anotação registrada.</div>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <input type="text" value={newNoteText || ''} onChange={e => setNewNoteText(e.target.value)} onKeyDown={e => {
-                        if(e.key === 'Enter' && newNoteText.trim()) {
-                            setStores(stores.map(s => s.id === activeStore.id ? { ...s, notes: [...(s.notes || []), { id: Date.now(), date: new Date().toLocaleDateString('pt-BR'), text: newNoteText }] } : s));
-                            setNewNoteText('');
-                        }
-                    }} placeholder="Registre ocorrências de estoque, conversas sobre ads..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
-                    <button onClick={() => {
-                        if(!newNoteText.trim()) return;
-                        setStores(stores.map(s => s.id === activeStore.id ? { ...s, notes: [...(s.notes || []), { id: Date.now(), date: new Date().toLocaleDateString('pt-BR'), text: newNoteText }] } : s));
-                        setNewNoteText('');
-                    }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg font-bold transition-colors">Salvar</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODAL ANALÍTICO (HISTÓRICO E DIÁRIO) */}
+      <HistoryModal 
+        historyModalOpen={historyModalOpen} setHistoryModalOpen={setHistoryModalOpen}
+        activeStore={activeStore} chartTab={chartTab} setChartTab={setChartTab}
+        formatCurrency={formatCurrency} activeStorePacingData={activeStorePacingData}
+        currentDay={currentDay} newHistoryDay={newHistoryDay} setNewHistoryDay={setNewHistoryDay}
+        newHistoryRevenue={newHistoryRevenue} setNewHistoryRevenue={setNewHistoryRevenue}
+        addHistoryEntry={addHistoryEntry} deleteHistoryEntry={deleteHistoryEntry}
+        activeStoreMonthlyData={activeStoreMonthlyData} newNoteText={newNoteText}
+        setNewNoteText={setNewNoteText} addNote={addNote} deleteNote={deleteNote}
+      />
+      <ActionModal config={modalConfig} setConfig={setModalConfig} />
     </div>
   );
 }
