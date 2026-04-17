@@ -3,6 +3,7 @@ import { X, Plus, Trash2, CalendarDays, ArchiveRestore, BarChart2 } from 'lucide
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar } from 'recharts';
 
 export default function HistoryModal({
+  canEdit,
   historyModalOpen, setHistoryModalOpen, activeStore, chartTab, setChartTab,
   formatCurrency, activeStorePacingData, currentDay, newHistoryDay, setNewHistoryDay,
   newHistoryRevenue, setNewHistoryRevenue, addHistoryEntry, deleteHistoryEntry,
@@ -50,21 +51,26 @@ export default function HistoryModal({
                 </div>
               </div>
               <div className="w-full md:w-64 flex flex-col gap-4">
-                <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
-                  <h4 className="text-sm font-semibold text-gray-300 mb-2">Check-in Diário</h4>
-                  <div className="flex gap-2 items-end">
-                    <div className="w-16"><label className="text-[10px] text-gray-500 mb-1 block">Dia</label><input type="number" value={newHistoryDay} onChange={e => setNewHistoryDay(e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm" /></div>
-                    <div className="flex-1"><label className="text-[10px] text-gray-500 mb-1 block">R$ Acumulado</label><input type="number" value={newHistoryRevenue} onChange={e => setNewHistoryRevenue(e.target.value)} placeholder="15000" className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm" /></div>
-                    <button onClick={addHistoryEntry} className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded text-sm h-[34px]"><Plus size={16}/></button>
+                {canEdit && (
+                  <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Check-in Diário</h4>
+                    <div className="flex gap-2 items-end">
+                      <div className="w-16"><label className="text-[10px] text-gray-500 mb-1 block">Dia</label><input type="number" value={newHistoryDay} onChange={e => setNewHistoryDay(e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm" /></div>
+                      <div className="flex-1"><label className="text-[10px] text-gray-500 mb-1 block">R$ Acumulado</label><input type="number" value={newHistoryRevenue} onChange={e => setNewHistoryRevenue(e.target.value)} placeholder="15000" className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm" /></div>
+                      <button onClick={addHistoryEntry} className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded text-sm h-[34px]"><Plus size={16}/></button>
+                    </div>
                   </div>
-                </div>
+                )}
                 <div className="flex-1 flex flex-col overflow-hidden">
                   <h4 className="text-sm font-semibold text-gray-300 mb-2">Arquivo</h4>
                   <div className="flex-1 overflow-y-auto pr-1 space-y-2 max-h-40">
                     {activeStore.history?.length > 0 ? activeStore.history.map(h => (
                       <div key={h.id} className="flex justify-between items-center bg-gray-700/30 p-2 rounded border border-gray-700">
                         <div className="font-bold text-gray-200 text-xs">Dia {h.day}</div>
-                        <div className="flex items-center gap-3"><span className="font-bold text-green-400 text-xs">{formatCurrency(h.revenue)}</span><button onClick={() => deleteHistoryEntry(activeStore.id, h.id)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button></div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-green-400 text-xs">{formatCurrency(h.revenue)}</span>
+                          {canEdit && <button onClick={() => deleteHistoryEntry(activeStore.id, h.id)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button>}
+                        </div>
                       </div>
                     )) : <div className="text-center p-4 border border-dashed border-gray-700 rounded text-gray-500 text-xs">Sem lançamentos.</div>}
                   </div>
@@ -103,24 +109,26 @@ export default function HistoryModal({
                     <div key={note.id} className="bg-gray-900 p-3 rounded-lg border border-gray-700 relative group">
                       <div className="text-[10px] font-bold text-indigo-400 mb-1">{note.date}</div>
                       <p className="text-sm text-gray-300">{note.text}</p>
-                      <button onClick={() => deleteNote(activeStore.id, note.id)} className="absolute top-2 right-2 p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
+                      {canEdit && <button onClick={() => deleteNote(activeStore.id, note.id)} className="absolute top-2 right-2 p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>}
                     </div>
                   ))
                 ) : (
                   <div className="h-full flex items-center justify-center text-gray-500 text-sm border border-dashed border-gray-700 rounded-lg">Nenhuma anotação registrada.</div>
                 )}
               </div>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={newNoteText || ''} 
-                  onChange={e => setNewNoteText(e.target.value)} 
-                  onKeyDown={e => e.key === 'Enter' && addNote()} 
-                  placeholder="Registre ocorrências de estoque, conversas sobre ads..." 
-                  className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" 
-                />
-                <button onClick={addNote} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg font-bold transition-colors">Salvar</button>
-              </div>
+              {canEdit && (
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={newNoteText || ''} 
+                    onChange={e => setNewNoteText(e.target.value)} 
+                    onKeyDown={e => e.key === 'Enter' && addNote()} 
+                    placeholder="Registre ocorrências de estoque, conversas sobre ads..." 
+                    className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" 
+                  />
+                  <button onClick={addNote} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg font-bold transition-colors">Salvar</button>
+                </div>
+              )}
             </div>
           )}
         </div>

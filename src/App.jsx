@@ -3,7 +3,7 @@ import { TrendingUp, DollarSign, Target, AlertTriangle, CheckCircle, Clock, Acti
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, updateDoc } from "firebase/firestore";
 import { Toaster, toast } from 'react-hot-toast';
 
 import ActionModal from './components/ActionModal';
@@ -73,21 +73,46 @@ export default function App() {
   const [stores, setStores] = useState(initialStores);
   const [isDbLoading, setIsDbLoading] = useState(true); 
 
+  const [userRole, setUserRole] = useState('Visualizador');
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        try {
+          const docRef = doc(db, "equipe", currentUser.email.toLowerCase());
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            setUserRole(docSnap.data().role || 'Visualizador');
+          }
+        } catch (e) {
+          console.error("Erro ao buscar cargo", e);
+        }
+      }
       setAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  const handleLogin = async (e) => {
+  const isAdmin = user?.email === 'jaimejunior.ide@gmail.com';
+  const canEdit = userRole === 'Gerente' || isAdmin; // A CHAVE MESTRA!
+
+  const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      setAuthError(''); // Limpa erros
+      await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPassword);
+      
+      await setDoc(doc(db, "equipe", newUserEmail.toLowerCase()), {
+        email: newUserEmail.toLowerCase(),
+        role: 'Visualizador', // Agora o padrão é Visualizador
+        createdAt: new Date().toLocaleDateString('pt-BR')
+      });
+
+      await signOut(secondaryAuth); 
+      setAdminMessage('✅ Acesso criado! O membro já pode fazer login.');
+      setNewUserEmail(''); setNewUserPassword('');
     } catch (error) {
-      setAuthError('Email ou senha incorretos.');
+      setAdminMessage('❌ Erro: A senha deve ter no mínimo 6 caracteres ou o e-mail já existe.');
     }
   };
 
@@ -147,32 +172,6 @@ export default function App() {
   const [newNoteText, setNewNoteText] = useState('');
 
   const fileInputRef = useRef(null);
-
-  const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserPassword, setNewUserPassword] = useState('');
-  const [adminMessage, setAdminMessage] = useState('');
-
-  // DEFINE QUEM É O ADMIN (Coloque o seu e-mail de acesso aqui)
-  const isAdmin = user?.email === 'jaimejunior.ide@gmail.com';
-
-  const handleCreateUser = async (e) => {
-    e.preventDefault();
-    try {
-      await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPassword);
-      
-      await setDoc(doc(db, "equipe", newUserEmail.toLowerCase()), {
-        email: newUserEmail.toLowerCase(),
-        role: 'Operador',
-        createdAt: new Date().toLocaleDateString('pt-BR')
-      });
-
-      await signOut(secondaryAuth); 
-      setAdminMessage('✅ Acesso criado! O membro já pode fazer login.');
-      setNewUserEmail(''); setNewUserPassword('');
-    } catch (error) {
-      setAdminMessage('❌ Erro: A senha deve ter no mínimo 6 caracteres ou o e-mail já existe.');
-    }
-  };
 
   const toggleClientExpansion = (clientName) => {
     setExpandedClients(prev => prev.includes(clientName) ? prev.filter(c => c !== clientName) : [...prev, clientName]);
@@ -416,7 +415,15 @@ export default function App() {
   }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy]);
 
 
-  // NOVAS MENSAGENS DE WHATSAPP (EXECUTIVE REPORT)
+  const pieData = useMemo(() => {
+    return dashboardData.groupedClients.map(g => ({ name: g.client, value: g.totalProjectedGmv })).filter(g => g.value > 0).sort((a, b) => b.value - a.value);
+  }, [dashboardData]);
+
+  const roasData = useMemo(() => {
+    return dashboardData.groupedClients.filter(g => g.totalAds > 0).map(g => ({ name: g.client, roas: Number(g.roas) })).sort((a, b) => b.roas - a.roas);
+  }, [dashboardData]);
+
+
   const generateStoreWhatsAppLink = (row) => {
     const diasRestantes = daysInMonth - currentDay;
     const gap = row.gmvTarget - row.currentRevenue;
@@ -567,10 +574,11 @@ export default function App() {
         
         <div className="flex flex-col md:flex-row justify-between items-center bg-gray-800 p-4 rounded-xl border border-gray-700 gap-4 shadow-md">
           <div className="flex items-center gap-4">
-            {/* O AVISO "SALVO LOCAL" FOI REMOVIDO DAQUI */}
-            <button onClick={closeMonth} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-lg transition-transform hover:scale-105">
-              <ArchiveRestore size={16} /> Fechar Mês Atual
-            </button>
+            {canEdit && (
+              <button onClick={closeMonth} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-lg transition-transform hover:scale-105">
+                <ArchiveRestore size={16} /> Fechar Mês Atual
+              </button>
+            )}
           </div>
           
           <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 mx-auto md:mx-0">
@@ -626,6 +634,7 @@ export default function App() {
         {/* VISÃO OPERACIONAL */}
         {activeView === 'operacional' && (
           <OperationalTable 
+            canEdit={canEdit}
             searchTerm={searchTerm} setSearchTerm={setSearchTerm}
             addNewStore={addNewStore} sortBy={sortBy} setSortBy={setSortBy}
             currentDay={currentDay} setCurrentDay={setCurrentDay}
@@ -648,6 +657,7 @@ export default function App() {
 
       {/* MODAL ANALÍTICO (HISTÓRICO E DIÁRIO) */}
       <HistoryModal 
+        canEdit={canEdit}
         historyModalOpen={historyModalOpen} setHistoryModalOpen={setHistoryModalOpen}
         activeStore={activeStore} chartTab={chartTab} setChartTab={setChartTab}
         formatCurrency={formatCurrency} activeStorePacingData={activeStorePacingData}

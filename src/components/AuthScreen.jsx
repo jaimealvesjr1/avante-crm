@@ -13,10 +13,9 @@ export default function AuthScreen({
       <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl w-full max-w-md">
         <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-                <img src="/logo.png" alt="Logo Avante" className="h-8 w-auto object-contain" /> 
                 CRM Avante
             </h1>
-          <p className="text-gray-400 text-sm mt-2">Área restrita da equipa</p>
+          <p className="text-gray-400 text-sm mt-2">Área restrita da equipe</p>
         </div>
         
         <form onSubmit={handleLogin} className="space-y-4">

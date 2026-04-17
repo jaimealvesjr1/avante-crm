@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Search, Plus, Activity, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, Edit2, Check, X, MessageCircle, Trash2, BarChart2, Filter } from 'lucide-react';
 
 export default function OperationalTable({
+  canEdit,
   searchTerm, setSearchTerm, addNewStore, sortBy, setSortBy, currentDay, setCurrentDay, globalGrowth, setGlobalGrowth,
   dashboardData, expandedClients, toggleClientExpansion, editingClient, clientEditValue, setClientEditValue,
   saveClientEdit, startEditingClient, setEditingClient, addNewStoreToClient, generateClientWhatsAppLink, deleteClient,
@@ -53,7 +54,9 @@ export default function OperationalTable({
                 <Search className="absolute left-3 top-2.5 text-gray-500" size={16} />
                 <input type="text" placeholder="Pesquisar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full xl:w-48 bg-gray-900 border border-gray-600 text-white rounded-lg p-2 pl-9 focus:ring-2 focus:ring-blue-500 outline-none h-[42px]" />
               </div>
-              <button onClick={addNewStore} className="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-1 transition-colors h-[42px] whitespace-nowrap"><Plus size={18} /> Add Loja</button>
+              {canEdit && (
+                <button onClick={addNewStore} className="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-1 transition-colors h-[42px] whitespace-nowrap"><Plus size={18} /> Add Loja</button>
+              )}
             </div>
           </div>
           
@@ -169,11 +172,11 @@ export default function OperationalTable({
                       </td>
                       <td className="p-4" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => addNewStoreToClient(group.client)} className="p-2 text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition-colors" title="Add Loja"><Plus size={16} /></button>
+                          {canEdit && <button onClick={() => addNewStoreToClient(group.client)} className="p-2 text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition-colors" title="Add Loja"><Plus size={16} /></button>}
                           <a href={generateClientWhatsAppLink(group)} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-1 text-xs font-bold py-1.5 px-3 rounded-lg shadow-sm transition-transform hover:scale-105 ${group.status === 'danger' ? 'bg-red-600' : group.status === 'warning' ? 'bg-amber-600' : 'bg-green-600'} text-white`}>
                             <MessageCircle size={14} /> Relatório
                           </a>
-                          <button onClick={() => deleteClient(group.client)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-gray-700 rounded transition-colors" title="Apagar Cliente"><Trash2 size={16} /></button>
+                          {canEdit && <button onClick={() => deleteClient(group.client)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-gray-700 rounded transition-colors" title="Apagar Cliente"><Trash2 size={16} /></button>}
                         </div>
                       </td>
                     </tr>
@@ -214,11 +217,15 @@ export default function OperationalTable({
                         </td>
                         <td className="p-4 text-center"><span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${row.tier === 'A' ? 'bg-indigo-900/50 text-indigo-400 border border-indigo-800' : row.tier === 'B' ? 'bg-gray-800 text-gray-400 border border-gray-700' : 'bg-gray-900 text-gray-600 border border-gray-800'}`}>Tier {row.tier}</span></td>
                         <td className="p-4 text-center">
-                          <input type="number" value={row.customGrowth !== undefined ? row.customGrowth : ''} placeholder={globalGrowth.toString()} onChange={(e) => handleStoreChange(row.id, 'customGrowth', e.target.value)} className={`w-14 border rounded p-1 text-center font-medium text-xs ${row.customGrowth !== undefined && row.customGrowth !== '' ? 'bg-blue-900/30 border-blue-600 text-blue-300' : 'bg-gray-800 border-gray-700 text-gray-400 outline-none focus:border-blue-500'}`} />
+                          {canEdit ? (
+                            <input type="number" value={row.customGrowth !== undefined ? row.customGrowth : ''} placeholder={globalGrowth.toString()} onChange={(e) => handleStoreChange(row.id, 'customGrowth', e.target.value)} className={`w-14 border rounded p-1 text-center font-medium text-xs ${row.customGrowth !== undefined && row.customGrowth !== '' ? 'bg-blue-900/30 border-blue-600 text-blue-300' : 'bg-gray-800 border-gray-700 text-gray-400 outline-none focus:border-blue-500'}`} />
+                          ) : (
+                            <span className="text-gray-400 font-medium text-xs">{row.customGrowth !== undefined && row.customGrowth !== '' ? row.customGrowth : globalGrowth}%</span>
+                          )}
                         </td>
                         <td className="p-4">
                           <div className="flex flex-col gap-1">
-                            {editingStoreId === row.id ? (
+                            {editingStoreId === row.id && canEdit ? (
                               <div className="text-[11px] text-blue-400 flex items-center gap-1">Base: <input type="number" value={storeEditData.gmvBase} onChange={(e) => setStoreEditData({...storeEditData, gmvBase: e.target.value})} className="w-20 bg-gray-800 border border-gray-600 rounded px-1 outline-none text-white text-center" /></div>
                             ) : (
                               <div className="text-[11px] text-gray-500">Base: {formatCurrency(row.gmvBase)}</div>
@@ -228,13 +235,20 @@ export default function OperationalTable({
                         </td>
                         <td className="p-4">
                           <div className="flex items-start gap-2">
-                            <div className="flex flex-col gap-1.5">
-                              <input type="number" value={row.currentRevenue || ''} onChange={(e) => handleStoreChange(row.id, 'currentRevenue', e.target.value)} onBlur={(e) => autoSaveHistory(row.id, e.target.value)} className="w-24 bg-gray-950 border border-gray-700 text-blue-300 rounded p-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold text-sm" placeholder="R$ Atual" />
-                              <div className="flex items-center gap-1">
-                                <span className="text-[9px] text-gray-500">Ads:</span>
-                                <input type="number" value={row.adsInvestment || ''} onChange={(e) => handleStoreChange(row.id, 'adsInvestment', e.target.value)} className="w-16 bg-gray-800 border border-gray-700 text-gray-300 rounded p-1 focus:outline-none focus:border-amber-500 text-xs" placeholder="0" />
+                            {canEdit ? (
+                              <div className="flex flex-col gap-1.5">
+                                <input type="number" value={row.currentRevenue || ''} onChange={(e) => handleStoreChange(row.id, 'currentRevenue', e.target.value)} onBlur={(e) => autoSaveHistory(row.id, e.target.value)} className="w-24 bg-gray-950 border border-gray-700 text-blue-300 rounded p-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold text-sm" placeholder="R$ Atual" />
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[9px] text-gray-500">Ads:</span>
+                                  <input type="number" value={row.adsInvestment || ''} onChange={(e) => handleStoreChange(row.id, 'adsInvestment', e.target.value)} className="w-16 bg-gray-800 border border-gray-700 text-gray-300 rounded p-1 focus:outline-none focus:border-amber-500 text-xs" placeholder="0" />
+                                </div>
                               </div>
-                            </div>
+                            ) : (
+                              <div className="flex flex-col gap-1.5">
+                                <div className="font-bold text-blue-300 text-sm">{formatCurrency(row.currentRevenue)}</div>
+                                <div className="text-[10px] text-gray-500">Ads: {formatCurrency(row.adsInvestment)}</div>
+                              </div>
+                            )}
                             <button onClick={() => openHistoryModal(row)} className={`p-1.5 mt-1 rounded transition-colors relative group border ${row.history?.length > 0 ? 'bg-blue-900/30 border-blue-800 text-blue-400 hover:bg-blue-800' : 'bg-gray-800 border-gray-700 text-gray-500 hover:bg-gray-700'}`} title="Abrir Dashboard da Loja"><BarChart2 size={16} /></button>
                           </div>
                         </td>
@@ -252,7 +266,7 @@ export default function OperationalTable({
                         <td className="p-4">
                           <div className="flex items-center gap-2">
                             <div className="flex-1 text-[10px] p-1.5 rounded bg-gray-900 border border-gray-800 text-gray-400 leading-tight italic line-clamp-2" title={row.recommendation}>{row.recommendation}</div>
-                            {editingStoreId === row.id ? (
+                            {editingStoreId === row.id && canEdit ? (
                               <div className="flex flex-col gap-1">
                                 <button onClick={() => saveStoreEdit(row.id)} className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={14}/></button>
                                 <button onClick={() => setEditingStoreId(null)} className="p-1.5 bg-gray-600 hover:bg-gray-500 text-white rounded"><X size={14}/></button>
@@ -260,10 +274,12 @@ export default function OperationalTable({
                             ) : (
                               <div className="flex flex-col gap-1 opacity-30 group-hover/row:opacity-100 transition-opacity">
                                 <div className="flex gap-1"><a href={generateStoreWhatsAppLink(row)} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-gray-800 hover:bg-green-600/20 text-green-500 rounded transition-colors"><MessageCircle size={14} /></a></div>
-                                <div className="flex gap-1">
-                                  <button onClick={() => startEditingStore(row)} className="p-1.5 bg-gray-800 hover:bg-blue-900/40 text-gray-400 hover:text-blue-400 rounded transition-colors"><Edit2 size={14} /></button>
-                                  <button onClick={() => deleteStore(row.id, row.store)} className="p-1.5 bg-gray-800 hover:bg-red-900/40 text-gray-500 hover:text-red-400 rounded transition-colors"><Trash2 size={14} /></button>
-                                </div>
+                                {canEdit && (
+                                  <div className="flex gap-1">
+                                    <button onClick={() => startEditingStore(row)} className="p-1.5 bg-gray-800 hover:bg-blue-900/40 text-gray-400 hover:text-blue-400 rounded transition-colors"><Edit2 size={14} /></button>
+                                    <button onClick={() => deleteStore(row.id, row.store)} className="p-1.5 bg-gray-800 hover:bg-red-900/40 text-gray-500 hover:text-red-400 rounded transition-colors"><Trash2 size={14} /></button>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
