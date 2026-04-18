@@ -249,11 +249,38 @@ export default function App() {
 
     const groupedClients = Object.values(groups).map(g => {
       const p = g.totalGmvTarget > 0 ? (g.totalProjectedGmv / g.totalGmvTarget) * 100 : 0;
-      return { ...g, percentReached: p, status: p >= 95 ? 'success' : p >= 80 ? 'warning' : 'danger', roas: g.totalAds > 0 ? (g.totalCurrentRevenue / g.totalAds).toFixed(1) : 0 };
-    }).sort((a, b) => b.totalGmvBase - a.totalGmvBase);
+      const groupStatus = p >= 95 ? 'success' : p >= 80 ? 'warning' : 'danger';
+      
+      // 1. ORDENAR AS LOJAS (FILHOS) DENTRO DO CLIENTE
+      const sortedStores = [...g.stores].sort((a, b) => {
+        if (sortBy === 'name') return a.store.localeCompare(b.store);
+        if (sortBy === 'status') {
+          const weight = { danger: 1, warning: 2, success: 3 };
+          return weight[a.status] - weight[b.status];
+        }
+        return (b.gmvBase || 0) - (a.gmvBase || 0);
+      });
+
+      return { 
+        ...g, 
+        percentReached: p, 
+        status: groupStatus, 
+        roas: g.totalAds > 0 ? (g.totalCurrentRevenue / g.totalAds).toFixed(1) : 0,
+        stores: sortedStores
+      };
+      
+    // 2. ORDENAR OS CLIENTES (PAIS)
+    }).sort((a, b) => {
+      if (sortBy === 'name') return a.client.localeCompare(b.client);
+      if (sortBy === 'status') {
+        const weight = { danger: 1, warning: 2, success: 3 };
+        return weight[a.status] - weight[b.status];
+      }
+      return (b.totalGmvBase || 0) - (a.totalGmvBase || 0);
+    });
 
     return { groupedClients, totalTarget, totalProjected, totalAgencyRevenue, totalGlobalAds, globalRoas: totalGlobalAds > 0 ? (totalProjected / totalGlobalAds).toFixed(1) : 0 };
-  }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm]);
+  }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy]);
 
   const pieData = useMemo(() => dashboardData.groupedClients.map(g => ({ name: g.client, value: g.totalProjectedGmv })).filter(g => g.value > 0), [dashboardData]);
   const roasData = useMemo(() => dashboardData.groupedClients.filter(g => g.totalAds > 0).map(g => ({ name: g.client, roas: Number(g.roas) })).sort((a, b) => b.roas - a.roas), [dashboardData]);
