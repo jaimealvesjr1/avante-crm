@@ -28,8 +28,10 @@ export default function App() {
   const [sortBy, setSortBy] = useState('gmv');
   const [expandedClients, setExpandedClients] = useState([]);
   
+  // ESTADO DE EDIÇÃO DE CLIENTE MODIFICADO PARA INCLUIR TAXAS
   const [editingClient, setEditingClient] = useState(null);
-  const [clientEditValue, setClientEditValue] = useState('');
+  const [clientEditData, setClientEditData] = useState({ name: '', feeType: 'percent', feePercent: 3, fixedFee: 0 });
+  
   const [editingStoreId, setEditingStoreId] = useState(null);
   const [storeEditData, setStoreEditData] = useState({});
 
@@ -47,8 +49,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
-  const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', isPrompt: false, onConfirm: () => {} });
-
+  
   const fileInputRef = useRef(null);
 
   const [user, setUser] = useState(null);
@@ -151,7 +152,13 @@ export default function App() {
   };
 
   const addNewStoreToClient = (clientName) => {
-    const newStore = { id: Date.now(), client: clientName, store: 'NOVA LOJA', gmvBase: 0, feeType: 'percent', feePercent: 1.5, fixedFee: 0, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], notes: [], monthlyHistory: [] };
+    // Herda a configuração de taxa do cliente ao invés do padrão 1.5%
+    const existingStore = stores.find(s => s.client === clientName);
+    const feeType = existingStore ? existingStore.feeType : 'percent';
+    const feePercent = existingStore ? existingStore.feePercent : 1.5;
+    const fixedFee = existingStore ? existingStore.fixedFee : 0;
+
+    const newStore = { id: Date.now(), client: clientName, store: 'NOVA LOJA', gmvBase: 0, feeType, feePercent, fixedFee, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], notes: [], monthlyHistory: [] };
     updateStoreInCloud(newStore);
     setStores(prev => [newStore, ...prev]);
     if(!expandedClients.includes(clientName)) toggleClientExpansion(clientName);
@@ -246,16 +253,47 @@ export default function App() {
   };
 
   const toggleClientExpansion = (c) => setExpandedClients(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c]);
-  const startEditingClient = (name) => { setEditingClient(name); setClientEditValue(name); };
-  const saveClientEdit = (oldName) => {
-    const upperNewName = clientEditValue.toUpperCase();
-    stores.forEach(s => { if(s.client === oldName) updateStoreInCloud({...s, client: upperNewName}); });
+  
+  // NOVAS FUNÇÕES DE EDIÇÃO DE CLIENTE COM BATCH WRITE
+  const startEditingClient = (group) => { 
+    setEditingClient(group.client); 
+    const sample = group.stores[0] || {};
+    setClientEditData({ 
+      name: group.client, 
+      feeType: sample.feeType || 'percent', 
+      feePercent: sample.feePercent || 0, 
+      fixedFee: sample.fixedFee || 0 
+    }); 
+  };
+  
+  const saveClientEdit = async (oldName) => {
+    const upperNewName = clientEditData.name.toUpperCase();
+    const batch = writeBatch(db);
+    
+    const updatedStores = stores.map(s => {
+      if(s.client === oldName) {
+         const updatedStore = {
+           ...s, 
+           client: upperNewName,
+           feeType: clientEditData.feeType,
+           feePercent: Number(clientEditData.feePercent),
+           fixedFee: Number(clientEditData.fixedFee)
+         };
+         batch.set(doc(db, "stores", s.id.toString()), updatedStore);
+         return updatedStore;
+      }
+      return s;
+    });
+    
+    await batch.commit().catch(e => console.error(e));
+    setStores(updatedStores);
     setEditingClient(null);
   };
-  const startEditingStore = (store) => { setEditingStoreId(store.id); setStoreEditData({ store: store.store, feeType: store.feeType || 'percent', feePercent: store.feePercent, fixedFee: store.fixedFee || 0, gmvBase: store.gmvBase, marketplace: store.marketplace || '' }); };
+
+  const startEditingStore = (store) => { setEditingStoreId(store.id); setStoreEditData({ store: store.store, gmvBase: store.gmvBase }); };
   const saveStoreEdit = (id) => {
     const target = stores.find(s => s.id === id);
-    if(target) updateStoreInCloud({...target, store: storeEditData.store.toUpperCase(), feeType: storeEditData.feeType, feePercent: Number(storeEditData.feePercent), fixedFee: Number(storeEditData.fixedFee), gmvBase: Number(storeEditData.gmvBase), marketplace: storeEditData.marketplace});
+    if(target) updateStoreInCloud({...target, store: storeEditData.store.toUpperCase(), gmvBase: Number(storeEditData.gmvBase)});
     setEditingStoreId(null);
   };
 
@@ -263,7 +301,6 @@ export default function App() {
 
   const formatCurrency = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value || 0);
 
-  // FUNÇÕES WHATSAPP E MODAL (AS QUE CAUSARAM O ERRO)
   const generateStoreWhatsAppLink = (row) => `https://wa.me/?text=${encodeURIComponent(`Olá, equipe da *${row.client}*!\nAvaliamos a loja *${row.store}* até o dia ${currentDay}.\nProjeção: ${formatCurrency(row.projectedGmv)} / Meta: ${formatCurrency(row.gmvTarget)}.\n${row.status === 'danger' ? 'Precisamos alinhar ações urgentes de Ads/Estoque.' : row.status === 'warning' ? 'Podemos otimizar as campanhas da semana?' : 'Vocês estão voando! Vamos manter a tração.'}`)}`;
   
   const generateClientWhatsAppLink = (group) => {
@@ -284,7 +321,7 @@ export default function App() {
 
   const dashboardData = useMemo(() => {
     let totalTarget = 0, totalProjected = 0, totalAgencyRevenue = 0, totalGlobalAds = 0;
-    let totalOrders = 0, totalUnits = 0; // Novos acumuladores
+    let totalOrders = 0, totalUnits = 0;
 
     const filteredRows = stores.filter(row => !searchTerm || row.client.toLowerCase().includes(searchTerm.toLowerCase()) || row.store.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -292,18 +329,16 @@ export default function App() {
       const growthRate = store.customGrowth !== undefined ? Number(store.customGrowth) : globalGrowth;
       const gmvTarget = (Number(store.gmvBase) || 0) * (1 + (growthRate / 100));
       const projectedGmv = currentDay > 0 ? ((Number(store.currentRevenue) || 0) / currentDay) * daysInMonth : 0;
-      const isFixed = store.feeType === 'fixed' || store.fixedFee > 0;
-      const projectedAgencyRevenue = isFixed ? Number(store.fixedFee) : projectedGmv * (Number(store.feePercent) / 100);
       const percentReached = gmvTarget > 0 ? (projectedGmv / gmvTarget) * 100 : 0;
       
       totalTarget += gmvTarget; 
       totalProjected += projectedGmv; 
-      totalAgencyRevenue += projectedAgencyRevenue; 
+      // Receita da agência removida do nível loja para evitar soma triplicada em fixos
       totalGlobalAds += (store.adsInvestment || 0);
       totalOrders += (store.orders || 0);
       totalUnits += (store.units || 0);
 
-      return { ...store, gmvTarget, projectedGmv, projectedAgencyRevenue, percentReached, status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger', tier: (store.gmvBase >= 80000 ? 'A' : store.gmvBase >= 30000 ? 'B' : 'C') };
+      return { ...store, gmvTarget, projectedGmv, percentReached, status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger', tier: (store.gmvBase >= 80000 ? 'A' : store.gmvBase >= 30000 ? 'B' : 'C') };
     });
 
     const groups = {};
@@ -323,6 +358,13 @@ export default function App() {
       const p = g.totalGmvTarget > 0 ? (g.totalProjectedGmv / g.totalGmvTarget) * 100 : 0;
       const groupStatus = p >= 95 ? 'success' : p >= 80 ? 'warning' : 'danger';
       
+      // NOVA LÓGICA DE RECEITA DA AGÊNCIA (Calculada apenas 1x por Cliente)
+      const sampleStore = g.stores[0];
+      const isFixed = sampleStore?.feeType === 'fixed' || sampleStore?.fixedFee > 0;
+      const groupAgencyRevenue = isFixed ? Number(sampleStore.fixedFee) : g.totalProjectedGmv * (Number(sampleStore.feePercent) / 100);
+      
+      totalAgencyRevenue += groupAgencyRevenue || 0;
+      
       const sortedStores = [...g.stores].sort((a, b) => {
         if (sortBy === 'name') return a.store.localeCompare(b.store);
         if (sortBy === 'status') {
@@ -337,7 +379,10 @@ export default function App() {
         percentReached: p, 
         status: groupStatus, 
         roas: g.totalAds > 0 ? (g.totalCurrentRevenue / g.totalAds).toFixed(1) : 0,
-        stores: sortedStores 
+        stores: sortedStores,
+        feeType: sampleStore?.feeType,
+        feePercent: sampleStore?.feePercent,
+        fixedFee: sampleStore?.fixedFee
       };
       
     }).sort((a, b) => {
@@ -427,8 +472,8 @@ export default function App() {
             deleteClient={deleteClient}
             startEditingClient={startEditingClient} 
             editingClient={editingClient} 
-            clientEditValue={clientEditValue} 
-            setClientEditValue={setClientEditValue} 
+            clientEditData={clientEditData} 
+            setClientEditData={setClientEditData} 
             saveClientEdit={saveClientEdit}
             startEditingStore={startEditingStore} 
             editingStoreId={editingStoreId} 

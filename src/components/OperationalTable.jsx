@@ -3,12 +3,12 @@ import { Search, Plus, Activity, CheckCircle, Clock, AlertTriangle, ChevronDown,
 
 export default function OperationalTable({
   canEdit,
-  searchTerm, setSearchTerm, addNewStore, sortBy, setSortBy, currentDay, setCurrentDay, globalGrowth, setGlobalGrowth,
-  dashboardData, expandedClients, toggleClientExpansion, editingClient, clientEditValue, setClientEditValue,
+  searchTerm, setSearchTerm, addNewStore, sortBy, setSortBy, currentDay, updateGlobalSettings, globalGrowth,
+  dashboardData, expandedClients, toggleClientExpansion, editingClient, clientEditData, setClientEditData,
   saveClientEdit, startEditingClient, addNewStoreToClient, deleteClient,
   editingStoreId, storeEditData, setStoreEditData,
   openHistoryModal,
-  formatCurrency, generateStoreWhatsAppLink, startEditingStore, saveStoreEdit, deleteStore, setEditingStoreId, generateClientWhatsAppLink, updateGlobalSettings, handleStoreChange
+  formatCurrency, generateStoreWhatsAppLink, startEditingStore, saveStoreEdit, deleteStore, setEditingStoreId, generateClientWhatsAppLink, handleStoreChange
 }) {
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -40,7 +40,7 @@ export default function OperationalTable({
                 <input type="text" placeholder="Pesquisar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full xl:w-64 bg-gray-900 border border-gray-600 text-white rounded-lg p-2.5 pl-10 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
               </div>
               {canEdit && (
-                <button onClick={addNewStore} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap"><Plus size={20} /> Add Loja</button>
+                <button onClick={addNewStore} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap"><Plus size={20} /> Add Conta</button>
               )}
             </div>
           </div>
@@ -92,10 +92,10 @@ export default function OperationalTable({
           <table className="w-full text-left border-collapse min-w-[1200px]">
             <thead>
               <tr className="bg-gray-900 text-gray-400 text-sm uppercase tracking-wider border-b border-gray-700">
-                <th className="py-5 px-4 font-semibold w-1/4">Conta / Cliente</th>
-                <th className="py-5 px-4 font-semibold text-center w-28">Lojas/Tier</th>
+                <th className="py-5 px-4 font-semibold w-[28%]">Conta / Cliente</th>
+                <th className="py-5 px-4 font-semibold text-center w-24">Lojas/Tier</th>
                 <th className="py-5 px-4 font-semibold text-center w-28">Cresc. (%)</th>
-                <th className="py-5 px-4 font-semibold">Base / Meta (Mês)</th>
+                <th className="py-5 px-4 font-semibold w-40">Base / Meta (Mês)</th>
                 <th className="py-5 px-4 font-semibold text-blue-400 w-64">Faturamento & Métricas</th>
                 <th className="py-5 px-4 font-semibold text-purple-400 w-56">Pacing / Projeção</th>
                 <th className="py-5 px-4 font-semibold w-1/4 text-center">Ações / Gestão</th>
@@ -106,7 +106,7 @@ export default function OperationalTable({
                 const isExpanded = expandedClients.includes(group.client);
                 return (
                   <React.Fragment key={group.client}>
-                    {/* LINHA DO CLIENTE (PAI) */}
+                    {/* LINHA DO CLIENTE (PAI) COM EDIÇÃO DE TAXA */}
                     <tr className="bg-gray-800 hover:bg-gray-750 transition-colors cursor-pointer group" onClick={() => toggleClientExpansion(group.client)}>
                       <td className="py-5 px-4 border-l-4 border-blue-500">
                         <div className="flex items-center gap-4">
@@ -118,15 +118,31 @@ export default function OperationalTable({
                           </div>
                           <div onClick={e => e.stopPropagation()} className="flex-1">
                             {editingClient === group.client ? (
-                              <div className="flex items-center gap-2">
-                                <input type="text" value={clientEditValue} onChange={e => setClientEditValue(e.target.value.toUpperCase())} className="bg-gray-900 border border-blue-500 rounded px-3 py-1.5 outline-none text-white font-bold w-full text-lg" autoFocus />
-                                <button onClick={() => saveClientEdit(group.client)} className="p-2 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={18}/></button>
-                                <button onClick={() => setEditingClient(null)} className="p-2 bg-gray-600 hover:bg-gray-500 text-white rounded"><X size={18}/></button>
+                              <div className="flex flex-wrap items-center gap-2 w-full bg-gray-950 p-2 rounded-lg border border-blue-900 shadow-xl z-10 relative">
+                                <input type="text" value={clientEditData.name} onChange={e => setClientEditData({...clientEditData, name: e.target.value.toUpperCase()})} className="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 outline-none text-white font-bold w-48 text-sm" placeholder="Nome do Cliente" autoFocus />
+                                <div className="h-6 w-px bg-gray-700 mx-1"></div>
+                                <span className="text-xs text-gray-400 font-medium">Cobrança:</span>
+                                <select value={clientEditData.feeType} onChange={(e) => setClientEditData({...clientEditData, feeType: e.target.value})} className="bg-gray-800 border border-gray-600 rounded p-1.5 outline-none text-xs font-semibold text-white cursor-pointer">
+                                  <option value="percent">% Fee</option>
+                                  <option value="fixed">R$ Fixo</option>
+                                </select>
+                                {clientEditData.feeType === 'fixed' ? (
+                                  <input type="number" value={clientEditData.fixedFee} onChange={(e) => setClientEditData({...clientEditData, fixedFee: e.target.value})} className="w-24 bg-gray-800 border border-gray-600 text-white rounded p-1.5 outline-none font-bold text-sm" placeholder="Valor R$" />
+                                ) : (
+                                  <input type="number" step="0.1" value={clientEditData.feePercent} onChange={(e) => setClientEditData({...clientEditData, feePercent: e.target.value})} className="w-20 bg-gray-800 border border-gray-600 text-white rounded p-1.5 outline-none font-bold text-sm" placeholder="%" />
+                                )}
+                                <div className="flex gap-1 ml-auto">
+                                  <button onClick={() => saveClientEdit(group.client)} className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded shadow-sm"><Check size={16}/></button>
+                                  <button onClick={() => setEditingClient(null)} className="p-1.5 bg-gray-600 hover:bg-gray-500 text-white rounded shadow-sm"><X size={16}/></button>
+                                </div>
                               </div>
                             ) : (
                               <div className="font-bold text-gray-100 text-lg flex items-center gap-3 group-hover:text-blue-100">
                                 {group.client}
-                                {canEdit && <button onClick={() => startEditingClient(group.client)} className="text-gray-500 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"><Edit2 size={16}/></button>}
+                                <span className="px-2 py-0.5 bg-gray-900 border border-gray-700 rounded text-xs text-gray-400 font-medium whitespace-nowrap shadow-sm">
+                                  {group.feeType === 'fixed' || group.fixedFee > 0 ? `Fee: R$ ${group.fixedFee}` : `Fee: ${group.feePercent}%`}
+                                </span>
+                                {canEdit && <button onClick={() => startEditingClient(group)} className="text-gray-500 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"><Edit2 size={16}/></button>}
                               </div>
                             )}
                           </div>
@@ -165,7 +181,7 @@ export default function OperationalTable({
                       </td>
                     </tr>
 
-                    {/* LINHAS DAS LOJAS (FILHOS) */}
+                    {/* LINHAS DAS LOJAS (FILHOS) SEM CAMPOS DE TAXA */}
                     {isExpanded && group.stores.map((row) => (
                       <tr key={row.id} className="bg-gray-900/40 hover:bg-gray-800/80 transition-colors group/row">
                         <td className="py-5 px-4 pl-14 relative">
@@ -177,28 +193,12 @@ export default function OperationalTable({
                               {row.status === 'danger' && <AlertTriangle className="text-red-500/70" size={18} />}
                             </div>
                             {editingStoreId === row.id && canEdit ? (
-                              <div className="flex flex-col gap-2 w-full bg-gray-950 p-3 rounded-lg border border-blue-900 shadow-xl z-10">
-                                <input type="text" value={storeEditData.store} onChange={(e) => setStoreEditData({...storeEditData, store: e.target.value})} className="bg-gray-800 border border-gray-600 rounded p-1.5 text-white font-semibold outline-none text-sm" placeholder="Nome Loja" />
-                                
-                                <div className="text-xs text-gray-400 flex items-center gap-2 mt-1">
-                                  <span className="font-medium">Comissão:</span>
-                                  <select value={storeEditData.feeType} onChange={(e) => setStoreEditData({...storeEditData, feeType: e.target.value})} className="bg-gray-800 border border-gray-600 rounded p-1.5 outline-none text-xs font-semibold text-white">
-                                    <option value="percent">% Fee</option>
-                                    <option value="fixed">R$ Fixo</option>
-                                  </select>
-                                  {storeEditData.feeType === 'fixed' ? (
-                                    <input type="number" value={storeEditData.fixedFee} onChange={(e) => setStoreEditData({...storeEditData, fixedFee: e.target.value})} className="w-20 bg-gray-800 border border-gray-600 text-white rounded p-1.5 outline-none font-bold text-sm" placeholder="Valor R$" />
-                                  ) : (
-                                    <input type="number" step="0.1" value={storeEditData.feePercent} onChange={(e) => setStoreEditData({...storeEditData, feePercent: e.target.value})} className="w-16 bg-gray-800 border border-gray-600 text-white rounded p-1.5 outline-none font-bold text-sm" placeholder="%" />
-                                  )}
-                                </div>
+                              <div className="flex flex-col gap-2 w-full bg-gray-950 p-2.5 rounded-lg border border-blue-900 shadow-xl z-10 relative">
+                                <input type="text" value={storeEditData.store} onChange={(e) => setStoreEditData({...storeEditData, store: e.target.value})} className="bg-gray-800 border border-gray-600 rounded p-1.5 text-white font-semibold outline-none text-sm w-full" placeholder="Nome Loja" autoFocus />
                               </div>
                             ) : (
                               <div className="flex flex-col gap-1 w-full">
                                 <span className="font-semibold text-gray-200 text-base">{row.store}</span>
-                                <span className="text-xs text-gray-500 font-medium">
-                                  {row.feeType === 'fixed' || row.fixedFee > 0 ? `Fee: R$ ${row.fixedFee}` : `Fee: ${row.feePercent}%`}
-                                </span>
                               </div>
                             )}
                           </div>
@@ -227,7 +227,6 @@ export default function OperationalTable({
                           </div>
                         </td>
 
-                        {/* NOVO LAYOUT DE MÉTRICAS - BADGES E TEXTO MAIOR */}
                         <td className="py-5 px-4">
                           <div className="font-bold text-blue-300 text-lg mb-2">{formatCurrency(row.currentRevenue)}</div>
                           <div className="flex flex-wrap gap-2 text-xs text-gray-300">
@@ -244,7 +243,6 @@ export default function OperationalTable({
                           <div className="text-xs text-gray-500 font-medium">ROAS: <span className="font-bold text-gray-300">{row.adsInvestment > 0 ? (row.currentRevenue / row.adsInvestment).toFixed(1) : 0}x</span></div>
                         </td>
 
-                        {/* Botões de Ação da Loja (Aumentados) */}
                         <td className="py-5 px-4">
                           <div className="flex items-center gap-2 justify-center">
                             <button onClick={() => openHistoryModal(row)} className={`p-2 rounded-lg transition-colors relative shadow-sm ${row.history?.length > 0 ? 'bg-blue-900/60 text-blue-300 hover:bg-blue-700' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`} title="Dashboard e Diário">

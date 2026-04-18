@@ -1,11 +1,9 @@
 import React from 'react';
-import { Target, TrendingUp, Activity, DollarSign, ShoppingCart, Package, CreditCard } from 'lucide-react';
+import { TrendingUp, Activity, ShoppingCart, CreditCard } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import GrowthSimulator from './GrowthSimulator.jsx';
+import AvanteStrategicSimulator from './AvanteStrategicSimulator';
 
 export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieData, roasData, COLORS }) {
-  const averageTicket = dashboardData.totalOrders > 0 ? dashboardData.totalProjected / (dashboardData.totalOrders * (30/1)) : 0;
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* GRID DE MÉTRICAS PRINCIPAIS */}
@@ -51,7 +49,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             </div>
             <div className="p-2 bg-purple-900/30 rounded-lg text-purple-400"><CreditCard size={20} /></div>
           </div>
-          <div className="mt-3 text-xs text-gray-500">Projeção baseada em Fee + Fixo</div>
+          <div className="mt-3 text-xs text-gray-500">Projeção unificada (Fixos + Variáveis)</div>
         </div>
       </div>
 
@@ -87,8 +85,10 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
         </div>
       </div>
 
-      {/* SIMULADOR DE CRESCIMENTO */}
-      <GrowthSimulator formatCurrency={formatCurrency} />
+      <AvanteStrategicSimulator 
+        formatCurrency={formatCurrency} 
+        groupedClients={dashboardData.groupedClients} 
+      />
 
     </div>
   );
