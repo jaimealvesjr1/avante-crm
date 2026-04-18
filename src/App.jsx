@@ -3,7 +3,7 @@ import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Downlo
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc } from "firebase/firestore";
+import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, writeBatch } from "firebase/firestore";
 import { Toaster, toast } from 'react-hot-toast';
 
 import ActionModal from './components/ActionModal';
@@ -23,7 +23,7 @@ export default function App() {
   const [activeView, setActiveView] = useState('operacional'); 
   const [globalGrowth, setGlobalGrowth] = useState(10);
   const [daysInMonth, setDaysInMonth] = useState(30);
-  const [currentDay, setCurrentDay] = useState(1);
+  const [currentDay, setCurrentDay] = useState(new Date().getDate());
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('gmv');
   const [expandedClients, setExpandedClients] = useState([]);
@@ -83,8 +83,7 @@ export default function App() {
     const unsubSettings = onSnapshot(doc(db, "settings", "global"), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if(data.currentDay) setCurrentDay(data.currentDay);
-        if(data.globalGrowth) setGlobalGrowth(data.globalGrowth);
+        if(data.globalGrowth !== undefined) setGlobalGrowth(data.globalGrowth);
       }
     });
     return () => { unsubStores(); unsubSettings(); };
@@ -98,15 +97,33 @@ export default function App() {
   const updateGlobalSettings = async (field, value) => {
     if (!canEdit) return;
     const newVal = Number(value);
-    field === 'day' ? setCurrentDay(newVal) : setGlobalGrowth(newVal);
-    await setDoc(doc(db, "settings", "global"), { 
-      currentDay: field === 'day' ? newVal : currentDay,
-      globalGrowth: field === 'growth' ? newVal : globalGrowth
-    }, { merge: true });
+    if (field === 'day') {
+      setCurrentDay(newVal);
+    } else {
+      setGlobalGrowth(newVal);
+      await setDoc(doc(db, "settings", "global"), { globalGrowth: newVal }, { merge: true });
+    }
   };
 
   const handleLogin = async (e) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); setAuthError(''); } catch (e) { setAuthError('E-mail ou senha incorretos.'); } };
   const handleLogout = () => signOut(auth);
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    try {
+      await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPassword);
+      await setDoc(doc(db, "equipe", newUserEmail.toLowerCase()), {
+        email: newUserEmail.toLowerCase(),
+        role: 'Visualizador',
+        createdAt: new Date().toLocaleDateString('pt-BR')
+      });
+      await signOut(secondaryAuth); 
+      toast.success('✅ Acesso criado com sucesso!');
+      setNewUserEmail(''); setNewUserPassword('');
+    } catch (error) {
+      toast.error('❌ Erro ao criar acesso. Verifique a senha ou se o e-mail já existe.');
+    }
+  };
 
   const handleStoreChange = (id, field, value) => {
     let finalValue = value;
@@ -140,21 +157,66 @@ export default function App() {
     if(!expandedClients.includes(clientName)) toggleClientExpansion(clientName);
   };
 
-  const handleSaveBatch = (updatedStores) => {
-    const finalUpdates = updatedStores.map(s => {
+  const handleSaveBatch = async (updatedStores, batchDay) => {
+    const batch = writeBatch(db);
+    updatedStores.forEach(s => {
       let newHistory = [...(s.history || [])];
-      const existingIndex = newHistory.findIndex(h => h.day === currentDay);
-      const histEntry = {
-        id: existingIndex >= 0 ? newHistory[existingIndex].id : Date.now() + Math.random(),
-        day: currentDay, revenue: s.currentRevenue, ads: s.adsInvestment, orders: s.orders, units: s.units, date: new Date().toLocaleDateString('pt-BR')
-      };
-      if (existingIndex >= 0) newHistory[existingIndex] = histEntry; else newHistory.push(histEntry);
+      const existingIndex = newHistory.findIndex(h => h.day === batchDay);
       
+      if (s.currentRevenue > 0 || s.adsInvestment > 0 || s.orders > 0 || s.units > 0) {
+        const histEntry = {
+          id: existingIndex >= 0 ? newHistory[existingIndex].id : Date.now() + Math.random(),
+          day: batchDay,
+          revenue: s.currentRevenue, 
+          ads: s.adsInvestment, 
+          orders: s.orders, 
+          units: s.units, 
+          date: new Date().toLocaleDateString('pt-BR')
+        };
+        if (existingIndex >= 0) newHistory[existingIndex] = histEntry; else newHistory.push(histEntry);
+      }
       const finalStore = { ...s, history: newHistory.sort((a, b) => a.day - b.day) };
-      updateStoreInCloud(finalStore);
-      return finalStore;
+      batch.set(doc(db, "stores", finalStore.id.toString()), finalStore);
     });
-    setStores(finalUpdates);
+    await batch.commit();
+    toast.success(`Apuração do dia ${batchDay} salva na nuvem!`);
+  };
+
+  const deleteClient = async (clientName) => { 
+    if(window.confirm(`🚨 Apagar o cliente ${clientName} e TODAS as suas lojas?`)){ 
+      const batch = writeBatch(db);
+      stores.forEach(s => { 
+        if(s.client === clientName) {
+          batch.delete(doc(db, "stores", s.id.toString()));
+        }
+      }); 
+      await batch.commit(); 
+    } 
+  };
+
+  const closeMonth = () => {
+    const monthName = prompt("MÊS DE FECHAMENTO\n\nDigite o nome do mês que está sendo fechado agora (Ex: Abr/26):");
+    if(!monthName) return;
+    if(window.confirm(`Isso salvará o histórico mensal e zerará os lançamentos do painel para o próximo mês.\nDeseja continuar?`)) {
+      const updatedStores = stores.map(s => {
+        const finalRevenue = s.currentRevenue || 0;
+        const newStore = { 
+          ...s, 
+          monthlyHistory: [...(s.monthlyHistory || []), { month: monthName, gmv: finalRevenue }], 
+          gmvBase: finalRevenue > 0 ? finalRevenue : s.gmvBase, 
+          currentRevenue: 0, 
+          adsInvestment: 0, 
+          orders: 0,
+          units: 0,
+          history: [] 
+        };
+        updateStoreInCloud(newStore);
+        return newStore;
+      });
+      setStores(updatedStores);
+      updateGlobalSettings('day', 1);
+      toast.success("✅ Mês fechado com sucesso!");
+    }
   };
 
   const exportBackup = () => {
@@ -198,7 +260,6 @@ export default function App() {
   };
 
   const deleteStore = async (id, storeName) => { if(window.confirm(`Apagar a loja ${storeName}?`)){ await deleteDoc(doc(db, "stores", id.toString())); setStores(stores.filter(s => s.id !== id)); } };
-  const deleteClient = async (clientName) => { if(window.confirm(`🚨 Apagar o cliente ${clientName} e TODAS as suas lojas?`)){ stores.forEach(s => { if(s.client===clientName) deleteDoc(doc(db, "stores", s.id.toString())); }); setStores(stores.filter(s => s.client !== clientName)); } };
 
   const formatCurrency = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value || 0);
 
@@ -223,6 +284,8 @@ export default function App() {
 
   const dashboardData = useMemo(() => {
     let totalTarget = 0, totalProjected = 0, totalAgencyRevenue = 0, totalGlobalAds = 0;
+    let totalOrders = 0, totalUnits = 0; // Novos acumuladores
+
     const filteredRows = stores.filter(row => !searchTerm || row.client.toLowerCase().includes(searchTerm.toLowerCase()) || row.store.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const processedStores = filteredRows.map(store => {
@@ -233,32 +296,40 @@ export default function App() {
       const projectedAgencyRevenue = isFixed ? Number(store.fixedFee) : projectedGmv * (Number(store.feePercent) / 100);
       const percentReached = gmvTarget > 0 ? (projectedGmv / gmvTarget) * 100 : 0;
       
-      let status = percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger';
-      totalTarget += gmvTarget; totalProjected += projectedGmv; totalAgencyRevenue += projectedAgencyRevenue; totalGlobalAds += (store.adsInvestment || 0);
-      return { ...store, gmvTarget, projectedGmv, projectedAgencyRevenue, percentReached, status, tier: (store.gmvBase >= 80000 ? 'A' : store.gmvBase >= 30000 ? 'B' : 'C') };
+      totalTarget += gmvTarget; 
+      totalProjected += projectedGmv; 
+      totalAgencyRevenue += projectedAgencyRevenue; 
+      totalGlobalAds += (store.adsInvestment || 0);
+      totalOrders += (store.orders || 0);
+      totalUnits += (store.units || 0);
+
+      return { ...store, gmvTarget, projectedGmv, projectedAgencyRevenue, percentReached, status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger', tier: (store.gmvBase >= 80000 ? 'A' : store.gmvBase >= 30000 ? 'B' : 'C') };
     });
 
     const groups = {};
     processedStores.forEach(s => {
-      if (!groups[s.client]) groups[s.client] = { client: s.client, stores: [], totalGmvBase: 0, totalGmvTarget: 0, totalCurrentRevenue: 0, totalProjectedGmv: 0, totalAds: 0 };
+      if (!groups[s.client]) groups[s.client] = { client: s.client, stores: [], totalGmvBase: 0, totalGmvTarget: 0, totalCurrentRevenue: 0, totalProjectedGmv: 0, totalAds: 0, totalOrders: 0, totalUnits: 0 };
       groups[s.client].stores.push(s);
-      groups[s.client].totalGmvBase += s.gmvBase || 0; groups[s.client].totalGmvTarget += s.gmvTarget;
-      groups[s.client].totalCurrentRevenue += s.currentRevenue || 0; groups[s.client].totalProjectedGmv += s.projectedGmv;
+      groups[s.client].totalGmvBase += s.gmvBase || 0; 
+      groups[s.client].totalGmvTarget += s.gmvTarget;
+      groups[s.client].totalCurrentRevenue += s.currentRevenue || 0; 
+      groups[s.client].totalProjectedGmv += s.projectedGmv;
       groups[s.client].totalAds += s.adsInvestment || 0;
+      groups[s.client].totalOrders += s.orders || 0;
+      groups[s.client].totalUnits += s.units || 0;
     });
 
     const groupedClients = Object.values(groups).map(g => {
       const p = g.totalGmvTarget > 0 ? (g.totalProjectedGmv / g.totalGmvTarget) * 100 : 0;
       const groupStatus = p >= 95 ? 'success' : p >= 80 ? 'warning' : 'danger';
       
-      // 1. ORDENAR AS LOJAS (FILHOS) DENTRO DO CLIENTE
       const sortedStores = [...g.stores].sort((a, b) => {
         if (sortBy === 'name') return a.store.localeCompare(b.store);
         if (sortBy === 'status') {
           const weight = { danger: 1, warning: 2, success: 3 };
           return weight[a.status] - weight[b.status];
         }
-        return (b.gmvBase || 0) - (a.gmvBase || 0);
+        return (b.gmvBase || 0) - (a.gmvBase || 0); 
       });
 
       return { 
@@ -266,20 +337,23 @@ export default function App() {
         percentReached: p, 
         status: groupStatus, 
         roas: g.totalAds > 0 ? (g.totalCurrentRevenue / g.totalAds).toFixed(1) : 0,
-        stores: sortedStores
+        stores: sortedStores 
       };
       
-    // 2. ORDENAR OS CLIENTES (PAIS)
     }).sort((a, b) => {
       if (sortBy === 'name') return a.client.localeCompare(b.client);
       if (sortBy === 'status') {
         const weight = { danger: 1, warning: 2, success: 3 };
         return weight[a.status] - weight[b.status];
       }
-      return (b.totalGmvBase || 0) - (a.totalGmvBase || 0);
+      return (b.totalGmvBase || 0) - (a.totalGmvBase || 0); 
     });
 
-    return { groupedClients, totalTarget, totalProjected, totalAgencyRevenue, totalGlobalAds, globalRoas: totalGlobalAds > 0 ? (totalProjected / totalGlobalAds).toFixed(1) : 0 };
+    return { 
+      groupedClients, totalTarget, totalProjected, totalAgencyRevenue, totalGlobalAds, 
+      totalOrders, totalUnits, 
+      globalRoas: totalGlobalAds > 0 ? (processedStores.reduce((acc, s) => acc + (s.currentRevenue || 0), 0) / totalGlobalAds).toFixed(1) : 0 
+    };
   }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy]);
 
   const pieData = useMemo(() => dashboardData.groupedClients.map(g => ({ name: g.client, value: g.totalProjectedGmv })).filter(g => g.value > 0), [dashboardData]);
@@ -314,6 +388,9 @@ export default function App() {
             <button onClick={() => setIsBatchMode(true)} className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all">
               <Zap size={16} /> Lançamento em Lote
             </button>
+            <button onClick={closeMonth} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all">
+              <ArchiveRestore size={16} /> Fechar Mês
+            </button>
           </div>
           
           <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 mx-auto md:mx-0">
@@ -330,17 +407,37 @@ export default function App() {
         </div>
 
         {activeView === 'dashboard' && <ExecutiveDashboard dashboardData={dashboardData} formatCurrency={formatCurrency} pieData={pieData} roasData={roasData} COLORS={COLORS} />}
-        {activeView === 'admin' && isAdmin && <AdminPanel handleCreateUser={()=>{}} newUserEmail={newUserEmail} setNewUserEmail={setNewUserEmail} newUserPassword={newUserPassword} setNewUserPassword={setNewUserPassword} />}
+        {activeView === 'admin' && isAdmin && <AdminPanel handleCreateUser={handleCreateUser} newUserEmail={newUserEmail} setNewUserEmail={setNewUserEmail} newUserPassword={newUserPassword} setNewUserPassword={setNewUserPassword} />}
 
         {activeView === 'operacional' && (
           <OperationalTable 
-            canEdit={canEdit} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dashboardData={dashboardData} expandedClients={expandedClients} 
-            setExpandedClients={setExpandedClients} formatCurrency={formatCurrency} currentDay={currentDay} setCurrentDay={setCurrentDay} globalGrowth={globalGrowth} setGlobalGrowth={setGlobalGrowth} updateGlobalSettings={updateGlobalSettings}
-            addNewStore={addNewStore} addNewStoreToClient={addNewStoreToClient} deleteStore={deleteStore} deleteClient={deleteClient}
-            startEditingClient={startEditingClient} editingClient={editingClient} clientEditValue={clientEditValue} setClientEditValue={setClientEditValue} saveClientEdit={saveClientEdit}
-            startEditingStore={startEditingStore} editingStoreId={editingStoreId} setEditingStoreId={setEditingStoreId} storeEditData={storeEditData} setStoreEditData={setStoreEditData} saveStoreEdit={saveStoreEdit}
+            canEdit={canEdit} 
+            searchTerm={searchTerm} 
+            setSearchTerm={setSearchTerm} 
+            dashboardData={dashboardData} 
+            expandedClients={expandedClients} 
             toggleClientExpansion={toggleClientExpansion}
-            stores={stores} sortBy={sortBy} setSortBy={setSortBy}
+            formatCurrency={formatCurrency} 
+            currentDay={currentDay} 
+            globalGrowth={globalGrowth} 
+            updateGlobalSettings={updateGlobalSettings}
+            addNewStore={addNewStore} 
+            addNewStoreToClient={addNewStoreToClient} 
+            deleteStore={deleteStore} 
+            deleteClient={deleteClient}
+            startEditingClient={startEditingClient} 
+            editingClient={editingClient} 
+            clientEditValue={clientEditValue} 
+            setClientEditValue={setClientEditValue} 
+            saveClientEdit={saveClientEdit}
+            startEditingStore={startEditingStore} 
+            editingStoreId={editingStoreId} 
+            setEditingStoreId={setEditingStoreId} 
+            storeEditData={storeEditData} 
+            setStoreEditData={setStoreEditData} 
+            saveStoreEdit={saveStoreEdit}
+            sortBy={sortBy} 
+            setSortBy={setSortBy}
             handleStoreChange={handleStoreChange}
             openHistoryModal={openHistoryModal}
             generateStoreWhatsAppLink={generateStoreWhatsAppLink}
