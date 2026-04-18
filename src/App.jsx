@@ -28,7 +28,6 @@ export default function App() {
   const [sortBy, setSortBy] = useState('gmv');
   const [expandedClients, setExpandedClients] = useState([]);
   
-  // ESTADO DE EDIÇÃO DE CLIENTE MODIFICADO PARA INCLUIR TAXAS
   const [editingClient, setEditingClient] = useState(null);
   const [clientEditData, setClientEditData] = useState({ name: '', feeType: 'percent', feePercent: 3, fixedFee: 0 });
   
@@ -40,6 +39,9 @@ export default function App() {
   const [chartTab, setChartTab] = useState('pacing'); 
   const [newHistoryDay, setNewHistoryDay] = useState('');
   const [newHistoryRevenue, setNewHistoryRevenue] = useState('');
+  const [newHistoryAds, setNewHistoryAds] = useState('');
+  const [newHistoryOrders, setNewHistoryOrders] = useState('');
+  const [newHistoryUnits, setNewHistoryUnits] = useState('');
   const [newNoteText, setNewNoteText] = useState('');
   
   const [isBatchMode, setIsBatchMode] = useState(false);
@@ -152,7 +154,6 @@ export default function App() {
   };
 
   const addNewStoreToClient = (clientName) => {
-    // Herda a configuração de taxa do cliente ao invés do padrão 1.5%
     const existingStore = stores.find(s => s.client === clientName);
     const feeType = existingStore ? existingStore.feeType : 'percent';
     const feePercent = existingStore ? existingStore.feePercent : 1.5;
@@ -254,7 +255,6 @@ export default function App() {
 
   const toggleClientExpansion = (c) => setExpandedClients(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c]);
   
-  // NOVAS FUNÇÕES DE EDIÇÃO DE CLIENTE COM BATCH WRITE
   const startEditingClient = (group) => { 
     setEditingClient(group.client); 
     const sample = group.stores[0] || {};
@@ -317,15 +317,31 @@ export default function App() {
     return `https://wa.me/?text=${encodeURIComponent(text)}`;
   };
 
-  const openHistoryModal = (store) => { setActiveStoreId(store.id); setNewHistoryDay(currentDay); setNewHistoryRevenue(store.currentRevenue || ''); setChartTab('pacing'); setHistoryModalOpen(true); };
+  const openHistoryModal = (store) => { 
+    setActiveStoreId(store.id); 
+    setNewHistoryDay(currentDay); 
+    setNewHistoryRevenue(store.currentRevenue || ''); 
+    setNewHistoryAds(store.adsInvestment || '');
+    setNewHistoryOrders(store.orders || '');
+    setNewHistoryUnits(store.units || '');
+    setChartTab('pacing'); 
+    setHistoryModalOpen(true); 
+  };
 
   const dashboardData = useMemo(() => {
-    let totalTarget = 0, totalProjected = 0, totalAgencyRevenue = 0, totalGlobalAds = 0;
-    let totalOrders = 0, totalUnits = 0;
+    let totalTarget = 0, totalProjected = 0, totalGlobalAds = 0;
+    let totalOrders = 0, totalUnits = 0, totalCurrentRevenue = 0;
+    let totalAgencyRevenue = 0;       
+    let totalAgencyRevenueActual = 0; 
+    let lastMonthAgencyRevenue = 0;   
 
-    const filteredRows = stores.filter(row => !searchTerm || row.client.toLowerCase().includes(searchTerm.toLowerCase()) || row.store.toLowerCase().includes(searchTerm.toLowerCase()));
+    const filteredRows = stores.filter(row => 
+      !searchTerm || 
+      row.client.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      row.store.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
-    const processedStores = filteredRows.map(store => {
+  const processedStores = filteredRows.map(store => {
       const growthRate = store.customGrowth !== undefined ? Number(store.customGrowth) : globalGrowth;
       const gmvTarget = (Number(store.gmvBase) || 0) * (1 + (growthRate / 100));
       const projectedGmv = currentDay > 0 ? ((Number(store.currentRevenue) || 0) / currentDay) * daysInMonth : 0;
@@ -333,15 +349,22 @@ export default function App() {
       
       totalTarget += gmvTarget; 
       totalProjected += projectedGmv; 
-      // Receita da agência removida do nível loja para evitar soma triplicada em fixos
+      totalCurrentRevenue += (Number(store.currentRevenue) || 0); 
       totalGlobalAds += (store.adsInvestment || 0);
       totalOrders += (store.orders || 0);
       totalUnits += (store.units || 0);
 
-      return { ...store, gmvTarget, projectedGmv, percentReached, status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger', tier: (store.gmvBase >= 80000 ? 'A' : store.gmvBase >= 30000 ? 'B' : 'C') };
+      return { 
+        ...store, 
+        gmvTarget, 
+        projectedGmv, 
+        percentReached, 
+        status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger', 
+        tier: (store.gmvBase >= 80000 ? 'A' : store.gmvBase >= 30000 ? 'B' : 'C') 
+      };
     });
 
-    const groups = {};
+  const groups = {};
     processedStores.forEach(s => {
       if (!groups[s.client]) groups[s.client] = { client: s.client, stores: [], totalGmvBase: 0, totalGmvTarget: 0, totalCurrentRevenue: 0, totalProjectedGmv: 0, totalAds: 0, totalOrders: 0, totalUnits: 0 };
       groups[s.client].stores.push(s);
@@ -356,48 +379,49 @@ export default function App() {
 
     const groupedClients = Object.values(groups).map(g => {
       const p = g.totalGmvTarget > 0 ? (g.totalProjectedGmv / g.totalGmvTarget) * 100 : 0;
-      const groupStatus = p >= 95 ? 'success' : p >= 80 ? 'warning' : 'danger';
-      
-      // NOVA LÓGICA DE RECEITA DA AGÊNCIA (Calculada apenas 1x por Cliente)
       const sampleStore = g.stores[0];
-      const isFixed = sampleStore?.feeType === 'fixed' || sampleStore?.fixedFee > 0;
-      const groupAgencyRevenue = isFixed ? Number(sampleStore.fixedFee) : g.totalProjectedGmv * (Number(sampleStore.feePercent) / 100);
       
-      totalAgencyRevenue += groupAgencyRevenue || 0;
+      const feeType = sampleStore?.feeType || 'percent';
+      const feePercent = sampleStore?.feePercent || 0;
+      const fixedFee = sampleStore?.fixedFee || 0;
+
+      const isFixed = feeType === 'fixed' || fixedFee > 0;
       
-      const sortedStores = [...g.stores].sort((a, b) => {
-        if (sortBy === 'name') return a.store.localeCompare(b.store);
-        if (sortBy === 'status') {
-          const weight = { danger: 1, warning: 2, success: 3 };
-          return weight[a.status] - weight[b.status];
-        }
-        return (b.gmvBase || 0) - (a.gmvBase || 0); 
-      });
+      const lastMonthEntry = sampleStore?.monthlyHistory?.slice(-1)[0];
+      const lastMonthGMV = lastMonthEntry ? lastMonthEntry.gmv : (g.totalGmvBase || 0);
+      const lastMonthAgency = isFixed ? Number(fixedFee) : lastMonthGMV * (Number(feePercent) / 100);
+      lastMonthAgencyRevenue += lastMonthAgency;
+
+      const actualAgency = isFixed ? Number(fixedFee) : g.totalCurrentRevenue * (Number(feePercent) / 100);
+      const projectedAgency = isFixed ? Number(fixedFee) : g.totalProjectedGmv * (Number(feePercent) / 100);
+      
+      totalAgencyRevenueActual += actualAgency;
+      totalAgencyRevenue += projectedAgency;
 
       return { 
         ...g, 
         percentReached: p, 
-        status: groupStatus, 
+        feeType, feePercent, fixedFee, 
+        status: p >= 95 ? 'success' : p >= 80 ? 'warning' : 'danger', 
         roas: g.totalAds > 0 ? (g.totalCurrentRevenue / g.totalAds).toFixed(1) : 0,
-        stores: sortedStores,
-        feeType: sampleStore?.feeType,
-        feePercent: sampleStore?.feePercent,
-        fixedFee: sampleStore?.fixedFee
+        stores: g.stores 
       };
-      
     }).sort((a, b) => {
       if (sortBy === 'name') return a.client.localeCompare(b.client);
       if (sortBy === 'status') {
         const weight = { danger: 1, warning: 2, success: 3 };
         return weight[a.status] - weight[b.status];
       }
-      return (b.totalGmvBase || 0) - (a.totalGmvBase || 0); 
+      return b.totalCurrentRevenue - a.totalCurrentRevenue;
     });
 
+    const agencyTarget = lastMonthAgencyRevenue * (1 + (globalGrowth / 100));
+
     return { 
-      groupedClients, totalTarget, totalProjected, totalAgencyRevenue, totalGlobalAds, 
-      totalOrders, totalUnits, 
-      globalRoas: totalGlobalAds > 0 ? (processedStores.reduce((acc, s) => acc + (s.currentRevenue || 0), 0) / totalGlobalAds).toFixed(1) : 0 
+      groupedClients, totalTarget, totalProjected, totalCurrentRevenue, 
+      totalAgencyRevenue, totalAgencyRevenueActual, agencyTarget, 
+      totalGlobalAds, totalOrders, totalUnits,
+      globalRoas: totalGlobalAds > 0 ? (totalCurrentRevenue / totalGlobalAds).toFixed(1) : 0 
     };
   }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy]);
 
@@ -495,10 +519,10 @@ export default function App() {
         <BatchEntry stores={stores} currentDay={currentDay} onSaveBatch={handleSaveBatch} onClose={() => setIsBatchMode(false)} />
       )}
 
-      {/* MODAL DE HISTÓRICO RESTAURADO */}
+      {/* MODAL DE HISTÓRICO RESTAURADO COM LANÇAMENTO INDIVIDUAL COMPLETO */}
       {historyModalOpen && activeStore && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 w-full max-w-3xl overflow-hidden flex flex-col">
+          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 w-full max-w-4xl overflow-hidden flex flex-col">
             <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
               <div className="flex items-center gap-6">
                 <div><h3 className="text-lg font-bold text-white">Dashboard Analítico</h3><p className="text-xs text-gray-400 mt-1">{activeStore.client} - {activeStore.store}</p></div>
@@ -515,6 +539,7 @@ export default function App() {
             <div className="p-5">
               {chartTab === 'pacing' && (
                 <div className="flex flex-col md:flex-row gap-5">
+                  {/* GRAFICO DE PACING */}
                   <div className="flex-1 flex flex-col">
                     <h4 className="text-sm font-semibold text-gray-300 mb-3 flex justify-between"><span>Curva de Velocidade</span></h4>
                     <div className="h-64 w-full bg-gray-900 rounded-lg p-3 border border-gray-700">
@@ -531,28 +556,96 @@ export default function App() {
                       </ResponsiveContainer>
                     </div>
                   </div>
-                  <div className="w-full md:w-64 flex flex-col gap-4">
+                  
+                  {/* LANÇAMENTO INDIVIDUAL (NOVO PONTO) */}
+                  <div className="w-full md:w-72 flex flex-col gap-4">
                     <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
-                      <h4 className="text-sm font-semibold text-gray-300 mb-2">Novo Ponto</h4>
-                      <div className="flex gap-2 items-end">
-                        <div className="w-16"><label className="text-[10px] text-gray-500 mb-1 block">Dia</label><input type="number" value={newHistoryDay} onChange={e => setNewHistoryDay(e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm" /></div>
-                        <div className="flex-1"><label className="text-[10px] text-gray-500 mb-1 block">R$ Acumulado</label><input type="number" value={newHistoryRevenue} onChange={e => setNewHistoryRevenue(e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm" /></div>
-                        <button onClick={() => {
-                          const entry = { id: Date.now(), day: Number(newHistoryDay), revenue: Number(newHistoryRevenue), date: new Date().toLocaleDateString('pt-BR') };
-                          updateStoreInCloud({...activeStore, history: [...(activeStore.history||[]), entry]});
-                          setStores(stores.map(s => s.id === activeStore.id ? {...s, history: [...(s.history||[]), entry].sort((a,b)=>a.day-b.day)} : s));
-                        }} className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded text-sm h-[34px]"><Plus size={16}/></button>
+                      <h4 className="text-sm font-semibold text-gray-300 mb-3">Lançamento Direto</h4>
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div>
+                          <label className="text-[10px] text-gray-500 mb-1 block uppercase font-bold">Dia do Mês</label>
+                          <input type="number" value={newHistoryDay} onChange={e => setNewHistoryDay(e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm font-bold" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-blue-400 mb-1 block uppercase font-bold">Faturamento (R$)</label>
+                          <input type="number" value={newHistoryRevenue} onChange={e => setNewHistoryRevenue(e.target.value)} className="w-full bg-blue-900/20 border border-blue-800 rounded p-1.5 text-blue-100 outline-none text-sm font-bold" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-amber-400 mb-1 block uppercase font-bold">Invest. Ads (R$)</label>
+                          <input type="number" value={newHistoryAds} onChange={e => setNewHistoryAds(e.target.value)} className="w-full bg-amber-900/20 border border-amber-800 rounded p-1.5 text-amber-100 outline-none text-sm font-bold" />
+                        </div>
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <label className="text-[10px] text-green-400 mb-1 block uppercase font-bold">Ped.</label>
+                            <input type="number" value={newHistoryOrders} onChange={e => setNewHistoryOrders(e.target.value)} className="w-full bg-green-900/20 border border-green-800 rounded p-1.5 text-green-100 outline-none text-sm font-bold" />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-purple-400 mb-1 block uppercase font-bold">Unid.</label>
+                            <input type="number" value={newHistoryUnits} onChange={e => setNewHistoryUnits(e.target.value)} className="w-full bg-purple-900/20 border border-purple-800 rounded p-1.5 text-purple-100 outline-none text-sm font-bold" />
+                          </div>
+                        </div>
                       </div>
+                      <button onClick={() => {
+                        const entryDay = Number(newHistoryDay);
+                        const entry = {
+                          id: Date.now() + Math.random(),
+                          day: entryDay,
+                          revenue: Number(newHistoryRevenue),
+                          ads: Number(newHistoryAds),
+                          orders: Number(newHistoryOrders),
+                          units: Number(newHistoryUnits),
+                          date: new Date().toLocaleDateString('pt-BR')
+                        };
+
+                        let updatedHistory = [...(activeStore.history || [])];
+                        const existingIndex = updatedHistory.findIndex(h => h.day === entryDay);
+                        
+                        if(existingIndex >= 0) {
+                          entry.id = updatedHistory[existingIndex].id; // Mantem o ID se for edição
+                          updatedHistory[existingIndex] = entry;
+                        } else {
+                          updatedHistory.push(entry);
+                        }
+
+                        const finalStore = {
+                          ...activeStore,
+                          history: updatedHistory.sort((a,b) => a.day - b.day)
+                        };
+
+                        // Se você salvar o dia que o CRM está operando agora, atualiza os campos vivos da tabela
+                        if(entryDay === currentDay) {
+                          finalStore.currentRevenue = entry.revenue;
+                          finalStore.adsInvestment = entry.ads;
+                          finalStore.orders = entry.orders;
+                          finalStore.units = entry.units;
+                        }
+
+                        updateStoreInCloud(finalStore);
+                        setStores(stores.map(s => s.id === activeStore.id ? finalStore : s));
+                        toast.success(`Lançamento salvo com sucesso!`);
+                      }} className="bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm w-full flex items-center justify-center gap-2 font-bold transition-all shadow-md"><Save size={16}/> Salvar Registro</button>
                     </div>
+
+                    {/* HISTÓRICO DE LANÇAMENTOS */}
                     <div className="flex-1 flex flex-col overflow-hidden">
                       <h4 className="text-sm font-semibold text-gray-300 mb-2">Arquivo</h4>
-                      <div className="flex-1 overflow-y-auto pr-1 space-y-2 max-h-40">
+                      <div className="flex-1 overflow-y-auto pr-1 space-y-2 max-h-40 custom-scrollbar">
                         {activeStore.history?.length > 0 ? activeStore.history.map(h => (
                           <div key={h.id} className="flex justify-between items-center bg-gray-700/30 p-2 rounded border border-gray-700">
                             <div className="font-bold text-gray-200 text-xs">Dia {h.day}</div>
-                            <div className="flex items-center gap-3"><span className="font-bold text-green-400 text-xs">{formatCurrency(h.revenue)}</span><button onClick={() => setStores(stores.map(s => s.id === activeStore.id ? {...s, history: s.history.filter(x => x.id !== h.id)} : s))} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button></div>
+                            <div className="flex items-center gap-4">
+                              <div className="text-right">
+                                <span className="font-bold text-blue-400 text-xs block">{formatCurrency(h.revenue)}</span>
+                                <span className="text-[9px] text-amber-400 block">Ads: {formatCurrency(h.ads || 0)}</span>
+                              </div>
+                              <button onClick={() => {
+                                const updatedStore = { ...activeStore, history: activeStore.history.filter(x => x.id !== h.id) };
+                                updateStoreInCloud(updatedStore);
+                                setStores(stores.map(s => s.id === activeStore.id ? updatedStore : s));
+                              }} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button>
+                            </div>
                           </div>
-                        )) : <div className="text-center p-4 border border-dashed border-gray-700 rounded text-gray-500 text-xs">Sem lançamentos.</div>}
+                        )) : <div className="text-center p-4 border border-dashed border-gray-700 rounded text-gray-500 text-xs">Nenhum histórico registrado.</div>}
                       </div>
                     </div>
                   </div>
@@ -575,25 +668,33 @@ export default function App() {
               )}
               {chartTab === 'notes' && (
                 <div className="flex flex-col h-72">
-                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 mb-4">
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 mb-4 custom-scrollbar">
                     {activeStore.notes && activeStore.notes.length > 0 ? activeStore.notes.map(note => (
                       <div key={note.id} className="bg-gray-900 p-3 rounded-lg border border-gray-700 relative group">
                         <div className="text-[10px] font-bold text-indigo-400 mb-1">{note.date}</div>
                         <p className="text-sm text-gray-300">{note.text}</p>
-                        <button onClick={() => setStores(stores.map(s => s.id === activeStore.id ? { ...s, notes: s.notes.filter(n => n.id !== note.id) } : s))} className="absolute top-2 right-2 p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
+                        <button onClick={() => {
+                          const newStore = { ...activeStore, notes: activeStore.notes.filter(n => n.id !== note.id) };
+                          updateStoreInCloud(newStore);
+                          setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
+                        }} className="absolute top-2 right-2 p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
                       </div>
-                    )) : <div className="h-full flex items-center justify-center text-gray-500 text-sm">Nenhuma anotação.</div>}
+                    )) : <div className="h-full flex items-center justify-center text-gray-500 text-sm border border-dashed border-gray-700 rounded-lg">Nenhuma anotação de diário.</div>}
                   </div>
                   <div className="flex gap-2">
                     <input type="text" value={newNoteText} onChange={e => setNewNoteText(e.target.value)} onKeyDown={e => {
                         if(e.key === 'Enter' && newNoteText.trim()) {
-                            setStores(stores.map(s => s.id === activeStore.id ? { ...s, notes: [...(s.notes || []), { id: Date.now(), date: new Date().toLocaleDateString('pt-BR'), text: newNoteText }] } : s));
+                            const newStore = { ...activeStore, notes: [...(activeStore.notes || []), { id: Date.now(), date: new Date().toLocaleDateString('pt-BR'), text: newNoteText }] };
+                            updateStoreInCloud(newStore);
+                            setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
                             setNewNoteText('');
                         }
-                    }} placeholder="Escreva algo..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none" />
+                    }} placeholder="Escreva algo..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
                     <button onClick={() => {
                         if(!newNoteText.trim()) return;
-                        setStores(stores.map(s => s.id === activeStore.id ? { ...s, notes: [...(s.notes || []), { id: Date.now(), date: new Date().toLocaleDateString('pt-BR'), text: newNoteText }] } : s));
+                        const newStore = { ...activeStore, notes: [...(activeStore.notes || []), { id: Date.now(), date: new Date().toLocaleDateString('pt-BR'), text: newNoteText }] };
+                        updateStoreInCloud(newStore);
+                        setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
                         setNewNoteText('');
                     }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg font-bold">Salvar</button>
                   </div>
