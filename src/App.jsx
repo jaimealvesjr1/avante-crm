@@ -333,7 +333,7 @@ export default function App() {
     let totalOrders = 0, totalUnits = 0, totalCurrentRevenue = 0;
     let totalAgencyRevenue = 0;       
     let totalAgencyRevenueActual = 0; 
-    let lastMonthAgencyRevenue = 0;   
+    let agencyTarget = 0; // <-- Inicia a meta da agência zerada
 
     const filteredRows = stores.filter(row => 
       !searchTerm || 
@@ -341,7 +341,7 @@ export default function App() {
       row.store.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-  const processedStores = filteredRows.map(store => {
+    const processedStores = filteredRows.map(store => {
       const growthRate = store.customGrowth !== undefined ? Number(store.customGrowth) : globalGrowth;
       const gmvTarget = (Number(store.gmvBase) || 0) * (1 + (growthRate / 100));
       const projectedGmv = currentDay > 0 ? ((Number(store.currentRevenue) || 0) / currentDay) * daysInMonth : 0;
@@ -364,7 +364,7 @@ export default function App() {
       };
     });
 
-  const groups = {};
+    const groups = {};
     processedStores.forEach(s => {
       if (!groups[s.client]) groups[s.client] = { client: s.client, stores: [], totalGmvBase: 0, totalGmvTarget: 0, totalCurrentRevenue: 0, totalProjectedGmv: 0, totalAds: 0, totalOrders: 0, totalUnits: 0 };
       groups[s.client].stores.push(s);
@@ -387,11 +387,12 @@ export default function App() {
 
       const isFixed = feeType === 'fixed' || fixedFee > 0;
       
-      const lastMonthEntry = sampleStore?.monthlyHistory?.slice(-1)[0];
-      const lastMonthGMV = lastMonthEntry ? lastMonthEntry.gmv : (g.totalGmvBase || 0);
-      const lastMonthAgency = isFixed ? Number(fixedFee) : lastMonthGMV * (Number(feePercent) / 100);
-      lastMonthAgencyRevenue += lastMonthAgency;
+      // NOVA REGRA DE META DA AGÊNCIA:
+      // Se for fixo, a meta do grupo é o Fixo. Se for Fee (%), a meta é o percentual em cima da META de Faturamento do Cliente.
+      const groupAgencyTarget = isFixed ? Number(fixedFee) : g.totalGmvTarget * (Number(feePercent) / 100);
+      agencyTarget += groupAgencyTarget;
 
+      // Receita Atual (O que já faturou de comissão hoje) e Projetada
       const actualAgency = isFixed ? Number(fixedFee) : g.totalCurrentRevenue * (Number(feePercent) / 100);
       const projectedAgency = isFixed ? Number(fixedFee) : g.totalProjectedGmv * (Number(feePercent) / 100);
       
@@ -414,8 +415,6 @@ export default function App() {
       }
       return b.totalCurrentRevenue - a.totalCurrentRevenue;
     });
-
-    const agencyTarget = lastMonthAgencyRevenue * (1 + (globalGrowth / 100));
 
     return { 
       groupedClients, totalTarget, totalProjected, totalCurrentRevenue, 

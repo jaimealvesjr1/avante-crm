@@ -147,7 +147,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
                 <p className="text-sm font-bold text-gray-300">{formatCurrency(dashboardData.totalAgencyRevenueActual)}</p>
               </div>
               <div>
-                <p className="text-[10px] text-gray-500 uppercase">Meta (Calc)</p>
+                <p className="text-[10px] text-gray-500 uppercase">Meta do Mês</p>
                 <p className="text-sm font-bold text-gray-300">{formatCurrency(dashboardData.agencyTarget)}</p>
               </div>
             </div>
