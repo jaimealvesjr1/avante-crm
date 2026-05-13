@@ -12,13 +12,18 @@ export default function OperationalTable({
 }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
+  const [respFilter, setRespFilter] = useState('all'); // NOVO: Filtro de Responsável
 
-  // Filtros combinados de Status e Tier
+  // Lista única de responsáveis das lojas
+  const uniqueResps = [...new Set(dashboardData.groupedClients.flatMap(g => g.stores.map(s => s.responsavel)))].filter(Boolean).sort();
+
+  // Filtros combinados
   const filteredGroups = dashboardData.groupedClients.map(group => {
     const matchingStores = group.stores.filter(s => {
       const matchStatus = statusFilter === 'all' || s.status === statusFilter;
       const matchTier = tierFilter === 'all' || s.tier === tierFilter;
-      return matchStatus && matchTier;
+      const matchResp = respFilter === 'all' || s.responsavel === respFilter;
+      return matchStatus && matchTier && matchResp;
     });
 
     if (matchingStores.length > 0) {
@@ -34,10 +39,9 @@ export default function OperationalTable({
       <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-md">
         <div className="flex flex-col lg:flex-row justify-between gap-6 items-center">
           
-          {/* Lado Esquerdo: Busca, Ordenação, Controles Globais e Botão Add Conta */}
+          {/* Lado Esquerdo: Busca, Ordenação, Controles Globais */}
           <div className="flex flex-1 gap-4 flex-wrap md:flex-nowrap w-full items-center">
             
-            {/* Busca */}
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-3 top-[11px] text-gray-500" size={18} />
               <input 
@@ -49,7 +53,6 @@ export default function OperationalTable({
               />
             </div>
             
-            {/* Ordenar */}
             <div className="flex flex-col min-w-[160px]">
               <select 
                 value={sortBy} 
@@ -62,7 +65,6 @@ export default function OperationalTable({
               </select>
             </div>
 
-            {/* Controles Globais de Projeção (Dia e Crescimento) */}
             <div className="flex items-center gap-3 bg-gray-900/80 p-1.5 rounded-lg border border-gray-700 h-10 px-3">
               <div className="flex items-center gap-2">
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Dia:</label>
@@ -86,7 +88,7 @@ export default function OperationalTable({
             </div>
           </div>
 
-          {/* Lado Direito: Filtros Rápidos (Status e Tier) */}
+          {/* Lado Direito: Filtros Rápidos */}
           <div className="flex flex-wrap items-center gap-3 bg-gray-900/50 p-1.5 rounded-lg border border-gray-700 shrink-0">
              <div className="flex gap-1 border-r border-gray-700 pr-3">
                 {['all', 'danger', 'warning', 'success'].map(f => (
@@ -95,21 +97,32 @@ export default function OperationalTable({
                   </button>
                 ))}
              </div>
-             <div className="flex gap-1 pl-1">
+             <div className="flex gap-1 border-r border-gray-700 pr-3 pl-1">
                 {['all', 'A', 'B', 'C'].map(t => (
                   <button key={t} onClick={() => setTierFilter(t)} className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all shadow-sm ${tierFilter === t ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
-                    {t === 'all' ? 'TODOS' : `TIER ${t}`}
+                    {t === 'all' ? 'TIERS' : `T ${t}`}
                   </button>
                 ))}
              </div>
+             
+             {/* NOVO: FILTRO DE RESPONSÁVEL */}
+             <div className="flex pl-1">
+                <select 
+                  value={respFilter} 
+                  onChange={e => setRespFilter(e.target.value)} 
+                  className="bg-gray-800 border border-gray-700 text-gray-300 rounded-md px-2 py-1.5 text-[11px] font-bold outline-none cursor-pointer"
+                >
+                  <option value="all">👤 TODOS RESP.</option>
+                  {uniqueResps.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+             </div>
           </div>
           
-            
-            {canEdit && (
-              <button onClick={addNewStore} className="h-10 bg-green-600 hover:bg-green-500 text-white px-4 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shadow-sm ml-auto">
-                <Plus size={18} /> Add Conta
-              </button>
-            )}          
+          {canEdit && (
+            <button onClick={addNewStore} className="h-10 bg-green-600 hover:bg-green-500 text-white px-4 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shadow-sm ml-auto">
+              <Plus size={18} /> Add Conta
+            </button>
+          )}          
         </div>
       </div>
 
@@ -118,7 +131,6 @@ export default function OperationalTable({
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[1200px]">
             <thead>
-              {/* DISTRIBUIÇÃO EM PORCENTAGEM (Soma: 100%) */}
               <tr className="bg-gray-900 text-gray-400 text-sm uppercase tracking-wider border-b border-gray-700">
                 <th className="py-5 px-4 font-semibold w-[22%]">Conta / Cliente</th>
                 <th className="py-5 px-4 font-semibold text-center w-[10%]">Lojas / Tier</th>
@@ -134,7 +146,6 @@ export default function OperationalTable({
                 const isExpanded = expandedClients.includes(group.client);
                 return (
                   <React.Fragment key={group.client}>
-                    {/* LINHA DO CLIENTE (PAI) */}
                     <tr className="bg-gray-800 hover:bg-gray-750 transition-colors cursor-pointer group" onClick={() => toggleClientExpansion(group.client)}>
                       <td className="py-5 px-4 border-l-4 border-blue-500">
                         <div className="flex items-center gap-4">
@@ -176,7 +187,6 @@ export default function OperationalTable({
                           </div>
                         </div>
                       </td>
-                      {/* WHITESPACE-NOWRAP APLICADO AQUI PARA "7 LOJAS" */}
                       <td className="py-5 px-4 text-center">
                         <span className="px-3 py-1.5 rounded text-sm font-bold bg-gray-900 text-gray-400 border border-gray-700 shadow-sm whitespace-nowrap">
                           {group.stores.length} Lojas
@@ -226,13 +236,22 @@ export default function OperationalTable({
                               {row.status === 'warning' && <Clock className="text-amber-500/70" size={16} />}
                               {row.status === 'danger' && <AlertTriangle className="text-red-500/70" size={16} />}
                             </div>
+                            
+                            {/* EDIÇÃO DE LOJA COM MARKETPLACE */}
                             {editingStoreId === row.id && canEdit ? (
                               <div className="flex flex-col gap-2 w-full bg-gray-950 p-2 rounded-lg border border-blue-900 shadow-xl z-10 relative">
                                 <input type="text" value={storeEditData.store} onChange={(e) => setStoreEditData({...storeEditData, store: e.target.value})} className="bg-gray-800 border border-gray-600 rounded p-1 text-white font-semibold outline-none text-sm w-full" placeholder="Nome Loja" autoFocus />
+                                <input type="text" value={storeEditData.marketplace || ''} onChange={(e) => setStoreEditData({...storeEditData, marketplace: e.target.value.toUpperCase()})} className="bg-gray-800 border border-gray-600 rounded p-1 text-indigo-300 font-semibold outline-none text-xs w-full" placeholder="Marketplace (Shopee, etc)" />
                               </div>
                             ) : (
                               <div className="flex flex-col w-full">
-                                <span className="font-semibold text-gray-300 text-sm">{row.store}</span>
+                                <span className="font-semibold text-gray-300 text-sm flex items-center gap-2">
+                                  {row.store}
+                                  {/* TAG DO MARKETPLACE */}
+                                  {row.marketplace && <span className="px-1.5 py-0.5 bg-indigo-900/40 text-indigo-300 border border-indigo-800/50 rounded text-[9px] uppercase tracking-wider">{row.marketplace}</span>}
+                                </span>
+                                {/* RESPONSÁVEL DA LOJA */}
+                                {row.responsavel && <span className="text-[10px] text-gray-500 mt-0.5">👤 {row.responsavel}</span>}
                               </div>
                             )}
                           </div>

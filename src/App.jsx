@@ -61,7 +61,6 @@ export default function App() {
   
   const [teamMembers, setTeamMembers] = useState([]);
 
-  // ESTADOS PARA MUDAR A SENHA
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [newOwnPassword, setNewOwnPassword] = useState('');
 
@@ -131,10 +130,23 @@ export default function App() {
     }
   };
 
-  const handleLogin = async (e) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); setAuthError(''); } catch (e) { setAuthError('E-mail ou senha incorretos.'); } };
-  const handleLogout = () => signOut(auth);
+  const handleLogin = async (e) => { 
+    e.preventDefault(); 
+    try { 
+      await signInWithEmailAndPassword(auth, email, password); 
+      setAuthError(''); 
+      toast.success('Login realizado com sucesso!');
+    } catch (e) { 
+      setAuthError('E-mail ou senha incorretos.'); 
+      toast.error('Erro ao fazer login.');
+    } 
+  };
+  
+  const handleLogout = () => {
+    signOut(auth);
+    toast.success('Você saiu do sistema.');
+  };
 
-  // FUNÇÃO DE MUDAR A PRÓPRIA SENHA DO USUÁRIO LOGADO
   const handleChangeOwnPassword = async (e) => {
     e.preventDefault();
     if(newOwnPassword.length < 6) return toast.error("A senha deve ter no mínimo 6 caracteres.");
@@ -144,7 +156,6 @@ export default function App() {
       setPasswordModalOpen(false);
       setNewOwnPassword('');
     } catch (error) {
-      // Se o usuário estiver logado há muitos dias, o Firebase exige que ele faça login novamente para mudar a senha
       if (error.code === 'auth/requires-recent-login') {
         toast.error("Sua sessão expirou. Por favor, saia do sistema (Logout), entre novamente e tente alterar a senha.");
       } else {
@@ -191,7 +202,6 @@ export default function App() {
     }
   };
 
-  // FUNÇÃO DE PROMOVER A GERENTE OU REBAIXAR
   const handleToggleRole = async (emailToUpdate, currentRole) => {
     if (!canEdit) return;
     const newRole = currentRole === 'Gerente' ? 'Operacional' : 'Gerente';
@@ -227,21 +237,30 @@ export default function App() {
   const addNewStore = () => {
     const name = prompt("Nome do Novo Cliente:");
     if (!name) return;
-    const newStore = { id: Date.now(), client: name.toUpperCase(), store: 'NOVA LOJA', gmvBase: 0, feeType: 'percent', feePercent: 1.5, fixedFee: 0, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], taskLogs: [], checklists: [], monthlyHistory: [] };
+    const storeName = prompt("Nome da Primeira Loja (opcional):") || "NOVA LOJA";
+    const marketplace = prompt("Qual o Marketplace? (Ex: Shopee, Mercado Livre)") || '';
+
+    const newStore = { id: Date.now(), client: name.toUpperCase(), store: storeName.toUpperCase(), marketplace: marketplace.toUpperCase(), gmvBase: 0, feeType: 'percent', feePercent: 1.5, fixedFee: 0, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], taskLogs: [], checklists: [], monthlyHistory: [] };
     updateStoreInCloud(newStore);
     setStores(prev => [newStore, ...prev]);
+    toast.success(`Cliente ${name.toUpperCase()} criado com sucesso!`);
   };
 
   const addNewStoreToClient = (clientName) => {
-    const existingStore = stores.find(s => s.client === clientName);
-    const feeType = existingStore ? existingStore.feeType : 'percent';
-    const feePercent = existingStore ? existingStore.feePercent : 1.5;
-    const fixedFee = existingStore ? existingStore.fixedFee : 0;
+    const storeName = prompt(`Qual o nome da nova loja para o cliente ${clientName}?`);
+    if (!storeName) return;
+    const marketplace = prompt(`Qual o Marketplace? (Ex: Shopee, Mercado Livre)`) || '';
 
-    const newStore = { id: Date.now(), client: clientName, store: 'NOVA LOJA', gmvBase: 0, feeType, feePercent, fixedFee, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], taskLogs: [], checklists: [], monthlyHistory: [] };
+    const existingStore = stores.find(s => s.client === clientName);
+    const feeType = existingStore?.feeType || 'percent';
+    const feePercent = existingStore?.feePercent || 1.5;
+    const fixedFee = existingStore?.fixedFee || 0;
+
+    const newStore = { id: Date.now(), client: clientName, store: storeName.toUpperCase(), marketplace: marketplace.toUpperCase(), gmvBase: 0, feeType, feePercent, fixedFee, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], taskLogs: [], checklists: [], monthlyHistory: [] };
     updateStoreInCloud(newStore);
     setStores(prev => [newStore, ...prev]);
     if(!expandedClients.includes(clientName)) toggleClientExpansion(clientName);
+    toast.success(`Loja ${storeName.toUpperCase()} adicionada com sucesso!`);
   };
 
   const handleSaveBatch = async (updatedStores, batchDay) => {
@@ -278,6 +297,7 @@ export default function App() {
         }
       }); 
       await batch.commit(); 
+      toast.success(`Cliente ${clientName} apagado com sucesso.`);
     } 
   };
 
@@ -313,6 +333,7 @@ export default function App() {
     const a = document.createElement('a');
     a.href = url; a.download = `avante_crm_backup_${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    toast.success('Backup exportado com sucesso!');
   };
 
   const importBackup = (e) => {
@@ -364,19 +385,29 @@ export default function App() {
       return s;
     });
     
-    await batch.commit().catch(e => console.error(e));
+    await batch.commit().catch(e => { console.error(e); toast.error('Erro ao atualizar cliente.'); });
     setStores(updatedStores);
     setEditingClient(null);
+    toast.success('Dados do cliente atualizados!');
   };
 
-  const startEditingStore = (store) => { setEditingStoreId(store.id); setStoreEditData({ store: store.store, gmvBase: store.gmvBase }); };
+  const startEditingStore = (store) => { setEditingStoreId(store.id); setStoreEditData({ store: store.store, marketplace: store.marketplace || '', gmvBase: store.gmvBase }); };
   const saveStoreEdit = (id) => {
     const target = stores.find(s => s.id === id);
-    if(target) updateStoreInCloud({...target, store: storeEditData.store.toUpperCase(), gmvBase: Number(storeEditData.gmvBase)});
+    if(target) {
+      updateStoreInCloud({...target, store: storeEditData.store.toUpperCase(), marketplace: (storeEditData.marketplace || '').toUpperCase(), gmvBase: Number(storeEditData.gmvBase)});
+      toast.success('Loja atualizada com sucesso!');
+    }
     setEditingStoreId(null);
   };
 
-  const deleteStore = async (id, storeName) => { if(window.confirm(`Apagar a loja ${storeName}?`)){ await deleteDoc(doc(db, "stores", id.toString())); setStores(stores.filter(s => s.id !== id)); } };
+  const deleteStore = async (id, storeName) => { 
+    if(window.confirm(`Apagar a loja ${storeName}?`)){ 
+      await deleteDoc(doc(db, "stores", id.toString())); 
+      setStores(stores.filter(s => s.id !== id)); 
+      toast.success(`Loja ${storeName} apagada!`);
+    } 
+  };
 
   const formatCurrency = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value || 0);
 
@@ -399,10 +430,10 @@ export default function App() {
   const openHistoryModal = (store) => { 
     setActiveStoreId(store.id); 
     setNewHistoryDay(currentDay); 
-    setNewHistoryRevenue(store.currentRevenue || ''); 
-    setNewHistoryAds(store.adsInvestment || '');
-    setNewHistoryOrders(store.orders || '');
-    setNewHistoryUnits(store.units || '');
+    setNewHistoryRevenue(''); // Agora o modal abre limpo para inserção diária
+    setNewHistoryAds('');
+    setNewHistoryOrders('');
+    setNewHistoryUnits('');
     setChartTab('pacing'); 
     setHistoryModalOpen(true); 
   };
@@ -565,7 +596,6 @@ export default function App() {
                 <p className="text-[10px] text-gray-400 mt-0.5">{userRole}</p>
               </div>
               
-              {/* NOVO: BOTÃO DE ALTERAR SENHA E SAIR */}
               <div className="flex items-center gap-1 ml-1">
                 <button onClick={() => setPasswordModalOpen(true)} className="p-1.5 text-gray-400 hover:text-indigo-400 transition-colors" title="Mudar Minha Senha">
                   <Key size={18} />
@@ -636,7 +666,6 @@ export default function App() {
         )}
       </div>
 
-      {/* NOVO: MODAL DE MUDAR SENHA */}
       {passwordModalOpen && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4">
           <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm shadow-2xl">
@@ -716,42 +745,59 @@ export default function App() {
                     </div>
                   </div>
                   
+                  {/* LANÇAMENTO DIRETO (DIÁRIO) */}
                   <div className="w-full md:w-72 flex flex-col gap-4">
                     <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
-                      <h4 className="text-sm font-semibold text-gray-300 mb-3">Lançamento Direto</h4>
+                      <h4 className="text-sm font-semibold text-gray-300 mb-3">Lançamento Direto (Valores do Dia)</h4>
                       <div className="grid grid-cols-2 gap-3 mb-4">
                         <div>
                           <label className="text-[10px] text-gray-500 mb-1 block uppercase font-bold">Dia do Mês</label>
                           <input type="number" value={newHistoryDay} onChange={e => setNewHistoryDay(e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm font-bold" />
                         </div>
                         <div>
-                          <label className="text-[10px] text-blue-400 mb-1 block uppercase font-bold">Faturamento (R$)</label>
+                          <label className="text-[10px] text-blue-400 mb-1 block uppercase font-bold">Fat. do Dia (R$)</label>
                           <input type="number" value={newHistoryRevenue} onChange={e => setNewHistoryRevenue(e.target.value)} className="w-full bg-blue-900/20 border border-blue-800 rounded p-1.5 text-blue-100 outline-none text-sm font-bold" />
                         </div>
                         <div>
-                          <label className="text-[10px] text-amber-400 mb-1 block uppercase font-bold">Invest. Ads (R$)</label>
+                          <label className="text-[10px] text-amber-400 mb-1 block uppercase font-bold">Ads do Dia (R$)</label>
                           <input type="number" value={newHistoryAds} onChange={e => setNewHistoryAds(e.target.value)} className="w-full bg-amber-900/20 border border-amber-800 rounded p-1.5 text-amber-100 outline-none text-sm font-bold" />
                         </div>
                         <div className="flex gap-2">
                           <div className="flex-1">
-                            <label className="text-[10px] text-green-400 mb-1 block uppercase font-bold">Ped.</label>
+                            <label className="text-[10px] text-green-400 mb-1 block uppercase font-bold">Ped. Dia</label>
                             <input type="number" value={newHistoryOrders} onChange={e => setNewHistoryOrders(e.target.value)} className="w-full bg-green-900/20 border border-green-800 rounded p-1.5 text-green-100 outline-none text-sm font-bold" />
                           </div>
                           <div className="flex-1">
-                            <label className="text-[10px] text-purple-400 mb-1 block uppercase font-bold">Unid.</label>
+                            <label className="text-[10px] text-purple-400 mb-1 block uppercase font-bold">Unid. Dia</label>
                             <input type="number" value={newHistoryUnits} onChange={e => setNewHistoryUnits(e.target.value)} className="w-full bg-purple-900/20 border border-purple-800 rounded p-1.5 text-purple-100 outline-none text-sm font-bold" />
                           </div>
                         </div>
                       </div>
                       <button onClick={() => {
                         const entryDay = Number(newHistoryDay);
+                        
+                        let prevRev = 0, prevAds = 0, prevOrd = 0, prevUni = 0;
+                        const pastEntries = [...(activeStore.history || [])].filter(h => h.day < entryDay).sort((a,b) => b.day - a.day);
+                        if(pastEntries.length > 0) {
+                            prevRev = pastEntries[0].revenue || 0;
+                            prevAds = pastEntries[0].ads || 0;
+                            prevOrd = pastEntries[0].orders || 0;
+                            prevUni = pastEntries[0].units || 0;
+                        }
+
+                        const cumRev = prevRev + Number(newHistoryRevenue);
+                        const cumAds = prevAds + Number(newHistoryAds);
+                        const cumOrd = prevOrd + Number(newHistoryOrders);
+                        const cumUni = prevUni + Number(newHistoryUnits);
+
                         const entry = {
                           id: Date.now() + Math.random(),
                           day: entryDay,
-                          revenue: Number(newHistoryRevenue),
-                          ads: Number(newHistoryAds),
-                          orders: Number(newHistoryOrders),
-                          units: Number(newHistoryUnits),
+                          dailyRevenue: Number(newHistoryRevenue),
+                          revenue: cumRev,
+                          ads: cumAds,
+                          orders: cumOrd,
+                          units: cumUni,
                           date: new Date().toLocaleDateString('pt-BR')
                         };
 
@@ -779,8 +825,13 @@ export default function App() {
 
                         updateStoreInCloud(finalStore);
                         setStores(stores.map(s => s.id === activeStore.id ? finalStore : s));
-                        toast.success(`Lançamento salvo com sucesso!`);
-                      }} className="bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm w-full flex items-center justify-center gap-2 font-bold transition-all shadow-md"><Save size={16}/> Salvar Registro</button>
+                        toast.success(`Lançamento diário salvo com sucesso!`);
+                        
+                        setNewHistoryRevenue('');
+                        setNewHistoryAds('');
+                        setNewHistoryOrders('');
+                        setNewHistoryUnits('');
+                      }} className="bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm w-full flex items-center justify-center gap-2 font-bold transition-all shadow-md"><Save size={16}/> Salvar Registro Diário</button>
                     </div>
 
                     <div className="flex-1 flex flex-col overflow-hidden">
@@ -791,8 +842,9 @@ export default function App() {
                             <div className="font-bold text-gray-200 text-xs">Dia {h.day}</div>
                             <div className="flex items-center gap-4">
                               <div className="text-right">
-                                <span className="font-bold text-blue-400 text-xs block">{formatCurrency(h.revenue)}</span>
-                                <span className="text-[9px] text-amber-400 block">Ads: {formatCurrency(h.ads || 0)}</span>
+                                <span className="font-bold text-blue-400 text-xs block">Acumulado: {formatCurrency(h.revenue)}</span>
+                                <span className="text-[9px] text-amber-400 block">Ads Acumulado: {formatCurrency(h.ads || 0)}</span>
+                                {h.dailyRevenue !== undefined && <span className="text-[9px] text-green-400 block mt-1">Fat. Dia: {formatCurrency(h.dailyRevenue)}</span>}
                               </div>
                               {canEdit && (
                                 <button onClick={() => {
@@ -800,6 +852,7 @@ export default function App() {
                                     const updatedStore = { ...activeStore, history: activeStore.history.filter(x => x.id !== h.id) };
                                     updateStoreInCloud(updatedStore);
                                     setStores(stores.map(s => s.id === activeStore.id ? updatedStore : s));
+                                    toast.success('Lançamento apagado!');
                                   }
                                 }} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button>
                               )}
@@ -843,6 +896,7 @@ export default function App() {
                                 const newStore = { ...activeStore, taskLogs: activeStore.taskLogs.filter(n => n.id !== log.id) };
                                 updateStoreInCloud(newStore);
                                 setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
+                                toast.success('Registro apagado!');
                               }
                             }} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity mr-2"><Trash2 size={12}/></button>
                           )}
@@ -861,6 +915,7 @@ export default function App() {
                             updateStoreInCloud(newStore);
                             setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
                             setNewNoteText('');
+                            toast.success('Registro adicionado ao histórico!');
                         }
                     }} placeholder="Descreva a ação realizada..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
                     <button onClick={() => {
@@ -871,6 +926,7 @@ export default function App() {
                         updateStoreInCloud(newStore);
                         setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
                         setNewNoteText('');
+                        toast.success('Registro adicionado ao histórico!');
                     }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg font-bold">Lançar</button>
                   </div>
                 </div>

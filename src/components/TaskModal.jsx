@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers }) {
   const [newLog, setNewLog] = useState('');
@@ -23,6 +24,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     const newResp = e.target.value;
     setStoreResp(newResp);
     saveChanges({ ...store, responsavel: newResp });
+    toast.success('Responsável atualizado com sucesso!');
   };
 
   const addLog = () => {
@@ -34,11 +36,13 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       dataUltimoAcesso: new Date().toISOString() 
     });
     setNewLog('');
+    toast.success('Ação registrada no histórico!');
   };
 
   const deleteLog = (logId) => {
     if(window.confirm("Apagar este registro do histórico?")) {
       saveChanges({ ...store, taskLogs: store.taskLogs.filter(l => l.id !== logId) });
+      toast.success('Registro apagado!');
     }
   };
 
@@ -48,6 +52,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     saveChanges({ ...store, checklists: [...(store.checklists || []), item] });
     setNewChecklist('');
     setNewChecklistResp('');
+    toast.success('Tarefa adicionada!');
   };
 
   const toggleChecklist = (id) => {
@@ -72,14 +77,18 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       taskLogs: updatedLogs,
       dataUltimoAcesso: new Date().toISOString()
     });
+    
+    toast.success(isCompleting ? '✅ Tarefa concluída!' : 'Tarefa reaberta!');
   };
 
   const deleteChecklist = (id) => {
     saveChanges({ ...store, checklists: store.checklists.filter(c => c.id !== id) });
+    toast.success('Tarefa removida!');
   };
 
   const saveNextDate = () => {
     saveChanges({ ...store, dataProximoAcesso: nextDate });
+    toast.success('Retorno agendado com sucesso!');
   };
 
   return (
