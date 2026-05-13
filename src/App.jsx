@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut } from 'lucide-react';
+import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut, Key } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
-import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, writeBatch } from "firebase/firestore";
 import { Toaster, toast } from 'react-hot-toast';
 
@@ -61,6 +61,10 @@ export default function App() {
   
   const [teamMembers, setTeamMembers] = useState([]);
 
+  // ESTADOS PARA MUDAR A SENHA
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [newOwnPassword, setNewOwnPassword] = useState('');
+
   const fileInputRef = useRef(null);
 
   const [user, setUser] = useState(null);
@@ -77,7 +81,6 @@ export default function App() {
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
             const data = docSnap.data();
-            // Atualiza para 'Operacional' caso o usuário fosse 'Visualizador' antigamente
             setUserRole(data.role === 'Visualizador' ? 'Operacional' : (data.role || 'Operacional'));
             setCurrentUserData(data); 
           }
@@ -131,6 +134,25 @@ export default function App() {
   const handleLogin = async (e) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); setAuthError(''); } catch (e) { setAuthError('E-mail ou senha incorretos.'); } };
   const handleLogout = () => signOut(auth);
 
+  // FUNÇÃO DE MUDAR A PRÓPRIA SENHA DO USUÁRIO LOGADO
+  const handleChangeOwnPassword = async (e) => {
+    e.preventDefault();
+    if(newOwnPassword.length < 6) return toast.error("A senha deve ter no mínimo 6 caracteres.");
+    try {
+      await updatePassword(auth.currentUser, newOwnPassword);
+      toast.success("Senha atualizada com sucesso!");
+      setPasswordModalOpen(false);
+      setNewOwnPassword('');
+    } catch (error) {
+      // Se o usuário estiver logado há muitos dias, o Firebase exige que ele faça login novamente para mudar a senha
+      if (error.code === 'auth/requires-recent-login') {
+        toast.error("Sua sessão expirou. Por favor, saia do sistema (Logout), entre novamente e tente alterar a senha.");
+      } else {
+        toast.error("Erro ao alterar a senha.");
+      }
+    }
+  };
+
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
@@ -166,6 +188,22 @@ export default function App() {
       toast.success('Nome atualizado com sucesso!');
     } catch (error) {
       toast.error('Erro ao atualizar usuário.');
+    }
+  };
+
+  // FUNÇÃO DE PROMOVER A GERENTE OU REBAIXAR
+  const handleToggleRole = async (emailToUpdate, currentRole) => {
+    if (!canEdit) return;
+    const newRole = currentRole === 'Gerente' ? 'Operacional' : 'Gerente';
+    if(window.confirm(`Deseja alterar o nível de acesso de ${emailToUpdate} para ${newRole.toUpperCase()}?`)) {
+      try {
+        await setDoc(doc(db, "equipe", emailToUpdate.toLowerCase()), {
+          role: newRole
+        }, { merge: true });
+        toast.success(`Acesso atualizado para ${newRole}!`);
+      } catch (error) {
+        toast.error('Erro ao atualizar nível de acesso.');
+      }
     }
   };
 
@@ -526,12 +564,16 @@ export default function App() {
                 </p>
                 <p className="text-[10px] text-gray-400 mt-0.5">{userRole}</p>
               </div>
-              <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold shadow-inner">
-                {(currentUserData?.nome?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase()}
+              
+              {/* NOVO: BOTÃO DE ALTERAR SENHA E SAIR */}
+              <div className="flex items-center gap-1 ml-1">
+                <button onClick={() => setPasswordModalOpen(true)} className="p-1.5 text-gray-400 hover:text-indigo-400 transition-colors" title="Mudar Minha Senha">
+                  <Key size={18} />
+                </button>
+                <button onClick={handleLogout} className="p-1.5 text-gray-400 hover:text-red-400 transition-colors" title="Sair do Sistema">
+                  <LogOut size={18} />
+                </button>
               </div>
-              <button onClick={handleLogout} className="p-1.5 text-gray-400 hover:text-red-400 transition-colors ml-1" title="Sair do Sistema">
-                <LogOut size={18} />
-              </button>
             </div>
           </div>
         </div>
@@ -546,6 +588,7 @@ export default function App() {
             newUserName={newUserName} setNewUserName={setNewUserName}
             teamMembers={teamMembers}
             handleUpdateUser={handleUpdateUser}
+            handleToggleRole={handleToggleRole}
           />
         )}
 
@@ -592,6 +635,33 @@ export default function App() {
           />
         )}
       </div>
+
+      {/* NOVO: MODAL DE MUDAR SENHA */}
+      {passwordModalOpen && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4">
+          <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+              <Key size={18} className="text-indigo-400" /> Mudar Minha Senha
+            </h3>
+            <p className="text-xs text-gray-400 mb-4">Insira uma nova senha para o seu acesso.</p>
+            <form onSubmit={handleChangeOwnPassword}>
+              <input 
+                type="password" 
+                value={newOwnPassword} 
+                onChange={e => setNewOwnPassword(e.target.value)} 
+                placeholder="Nova senha (mín. 6 caracteres)" 
+                required 
+                minLength="6"
+                className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2.5 text-white outline-none focus:border-indigo-500 mb-4 transition-colors" 
+              />
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setPasswordModalOpen(false)} className="text-gray-400 hover:text-white px-4 py-2 font-medium">Cancelar</button>
+                <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-bold shadow-md transition-colors">Salvar Senha</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {isBatchMode && (
         <BatchEntry stores={stores} currentDay={currentDay} onSaveBatch={handleSaveBatch} onClose={() => setIsBatchMode(false)} />

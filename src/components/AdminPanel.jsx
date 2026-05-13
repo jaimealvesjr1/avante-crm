@@ -7,7 +7,8 @@ export default function AdminPanel({
   newUserPassword, setNewUserPassword,
   newUserName, setNewUserName,
   teamMembers,
-  handleUpdateUser
+  handleUpdateUser,
+  handleToggleRole // <-- NOVA FUNÇÃO RECEBIDA AQUI
 }) {
   const [editingUser, setEditingUser] = useState(null);
   const [editName, setEditName] = useState('');
@@ -76,7 +77,6 @@ export default function AdminPanel({
             
             <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3 max-h-[300px]">
               {teamMembers?.map((member, idx) => {
-                // Se a pessoa foi salva antigamente como "Visualizador", nós mascaramos para "Operacional" no visual
                 const displayRole = member.role === 'Visualizador' ? 'Operacional' : (member.role || 'Operacional');
                 
                 return (
@@ -87,7 +87,6 @@ export default function AdminPanel({
                       </div>
                       <div>
                         
-                        {/* MODO DE EDIÇÃO DO NOME */}
                         {editingUser === member.email ? (
                           <div className="flex items-center gap-2 mb-0.5">
                             <input 
@@ -113,9 +112,16 @@ export default function AdminPanel({
                       </div>
                     </div>
                     <div className="text-right flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center w-full sm:w-auto">
-                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${displayRole === 'Gerente' ? 'bg-amber-900/30 text-amber-400 border border-amber-800/50' : 'bg-gray-700 text-gray-300 border border-gray-600'}`}>
+                      
+                      {/* NOVA TAG CLICÁVEL DE PROMOÇÃO */}
+                      <button 
+                        onClick={() => handleToggleRole(member.email, displayRole)}
+                        title="Clique para alternar o nível de acesso"
+                        className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider cursor-pointer hover:opacity-80 transition-opacity ${displayRole === 'Gerente' ? 'bg-amber-900/30 text-amber-400 border border-amber-800/50' : 'bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600'}`}
+                      >
                         {displayRole}
-                      </span>
+                      </button>
+
                       <span className="text-[10px] text-gray-500 flex items-center gap-1 mt-1">
                         <Clock size={10}/> {member.createdAt || 'Antigo'}
                       </span>
@@ -131,6 +137,7 @@ export default function AdminPanel({
             </div>
           </div>
         </div>
+
       </div>
     </div>
   );
