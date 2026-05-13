@@ -14,6 +14,7 @@ import OperationalTable from './components/OperationalTable';
 import BatchEntry from './components/BatchEntry';
 import TaskView from './components/TaskView';
 import TaskModal from './components/TaskModal';
+import CreateStoreModal from './components/CreateStoreModal';
 
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
@@ -29,6 +30,9 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('gmv');
   const [expandedClients, setExpandedClients] = useState([]);
+
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createModalClient, setCreateModalClient] = useState('');
   
   const [editingClient, setEditingClient] = useState(null);
   const [clientEditData, setClientEditData] = useState({ name: '', feeType: 'percent', feePercent: 3, fixedFee: 0 });
@@ -235,32 +239,51 @@ export default function App() {
   };
 
   const addNewStore = () => {
-    const name = prompt("Nome do Novo Cliente:");
-    if (!name) return;
-    const storeName = prompt("Nome da Primeira Loja (opcional):") || "NOVA LOJA";
-    const marketplace = prompt("Qual o Marketplace? (Ex: Shopee, Mercado Livre)") || '';
-
-    const newStore = { id: Date.now(), client: name.toUpperCase(), store: storeName.toUpperCase(), marketplace: marketplace.toUpperCase(), gmvBase: 0, feeType: 'percent', feePercent: 1.5, fixedFee: 0, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], taskLogs: [], checklists: [], monthlyHistory: [] };
-    updateStoreInCloud(newStore);
-    setStores(prev => [newStore, ...prev]);
-    toast.success(`Cliente ${name.toUpperCase()} criado com sucesso!`);
+    setCreateModalClient('');
+    setCreateModalOpen(true);
   };
 
   const addNewStoreToClient = (clientName) => {
-    const storeName = prompt(`Qual o nome da nova loja para o cliente ${clientName}?`);
-    if (!storeName) return;
-    const marketplace = prompt(`Qual o Marketplace? (Ex: Shopee, Mercado Livre)`) || '';
+    setCreateModalClient(clientName);
+    setCreateModalOpen(true);
+  };
 
-    const existingStore = stores.find(s => s.client === clientName);
+  const handleSaveNewStore = (data) => {
+    const { client, store, marketplace } = data;
+    
+    // Se estiver adicionando loja a cliente existente, herda as taxas. Se não, usa as padrões.
+    const existingStore = stores.find(s => s.client === client);
     const feeType = existingStore?.feeType || 'percent';
     const feePercent = existingStore?.feePercent || 1.5;
     const fixedFee = existingStore?.fixedFee || 0;
 
-    const newStore = { id: Date.now(), client: clientName, store: storeName.toUpperCase(), marketplace: marketplace.toUpperCase(), gmvBase: 0, feeType, feePercent, fixedFee, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], taskLogs: [], checklists: [], monthlyHistory: [] };
+    const newStore = { 
+      id: Date.now(), 
+      client: client, 
+      store: store, 
+      marketplace: marketplace, 
+      gmvBase: 0, 
+      feeType, 
+      feePercent, 
+      fixedFee, 
+      currentRevenue: 0, 
+      adsInvestment: 0, 
+      orders: 0, 
+      units: 0, 
+      history: [], 
+      taskLogs: [], 
+      checklists: [], 
+      monthlyHistory: [] 
+    };
+    
     updateStoreInCloud(newStore);
     setStores(prev => [newStore, ...prev]);
-    if(!expandedClients.includes(clientName)) toggleClientExpansion(clientName);
-    toast.success(`Loja ${storeName.toUpperCase()} adicionada com sucesso!`);
+    
+    if (existingStore && !expandedClients.includes(client)) {
+      toggleClientExpansion(client);
+    }
+    
+    toast.success(`Cadastro de ${store} realizado com sucesso!`);
   };
 
   const handleSaveBatch = async (updatedStores, batchDay) => {
@@ -662,6 +685,8 @@ export default function App() {
           <TaskView 
             stores={stores} 
             openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
+            currentUserData={currentUserData} 
+            user={user} 
           />
         )}
       </div>
@@ -935,6 +960,15 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ... Outros modais ... */}
+      <CreateStoreModal 
+        isOpen={createModalOpen} 
+        onClose={() => setCreateModalOpen(false)} 
+        onSave={handleSaveNewStore}
+        initialClient={createModalClient}
+        existingMkts={[...new Set(stores.map(s => s.marketplace))].filter(Boolean).sort()}
+      />
     </div>
   );
 }

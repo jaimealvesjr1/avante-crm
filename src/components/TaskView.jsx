@@ -1,16 +1,39 @@
 import React, { useMemo, useState } from 'react';
-import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Filter, User } from 'lucide-react';
+import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Filter, User, Bell } from 'lucide-react';
 
-export default function TaskView({ stores, openTaskModal }) {
-  // Estados dos Filtros
+export default function TaskView({ stores, openTaskModal, currentUserData, user }) {
   const [clientFilter, setClientFilter] = useState('');
   const [storeRespFilter, setStoreRespFilter] = useState('');
   const [taskRespFilter, setTaskRespFilter] = useState('');
+  const [mktFilter, setMktFilter] = useState('');
 
-  // Extrair listas únicas para preencher os selects (Dropdowns)
+  const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || '';
+
   const clients = [...new Set(stores.map(s => s.client))].filter(Boolean).sort();
   const storeResps = [...new Set(stores.map(s => s.responsavel))].filter(Boolean).sort();
   const taskResps = [...new Set(stores.flatMap(s => (s.checklists || []).map(c => c.responsavel)))].filter(Boolean).sort();
+  const mkts = [...new Set(stores.map(s => s.marketplace))].filter(Boolean).sort();
+
+  const myInbox = useMemo(() => {
+    if (!myName) return { myTasks: [], storeUpdates: [] };
+
+    // 1. Tarefas atribuídas a mim (que não estão concluídas)
+    const myTasks = stores.filter(s => 
+      s.checklists?.some(c => !c.feita && c.responsavel === myName)
+    );
+
+    // 2. Lojas onde EU sou o responsável, mas a última ação no histórico foi feita por OUTRA pessoa
+    const storeUpdates = stores.filter(s => {
+      if (s.responsavel !== myName) return false; // Só me importa se a loja for minha
+      if (!s.taskLogs || s.taskLogs.length === 0) return false;
+      
+      // Pega a última ação registrada
+      const lastLog = s.taskLogs[s.taskLogs.length - 1];
+      return lastLog.author !== myName; // Se o autor do último log não fui eu, é uma notificação!
+    });
+
+    return { myTasks, storeUpdates };
+  }, [stores, myName]);
 
   const groupedTasks = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -20,6 +43,7 @@ export default function TaskView({ stores, openTaskModal }) {
       // Aplicar Filtros
       if (clientFilter && store.client !== clientFilter) return;
       if (storeRespFilter && store.responsavel !== storeRespFilter) return;
+      if (mktFilter && store.marketplace !== mktFilter) return;
       if (taskRespFilter) {
         const hasAssignedTask = store.checklists?.some(c => c.responsavel === taskRespFilter);
         if (!hasAssignedTask) return;
@@ -45,19 +69,29 @@ export default function TaskView({ stores, openTaskModal }) {
     return groups;
   }, [stores, clientFilter, storeRespFilter, taskRespFilter]);
 
-  const TaskCard = ({ store }) => (
+  const TaskCard = ({ store, isHighlighted = false, highlightMsg = '' }) => (
     <div 
       onClick={() => openTaskModal(store)}
-      className="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-sm cursor-pointer hover:bg-gray-750 hover:border-blue-500/50 transition-all group"
+      className={`p-4 rounded-xl shadow-sm cursor-pointer transition-all group ${
+        isHighlighted 
+        ? 'bg-indigo-900/40 border-2 border-indigo-500 hover:bg-indigo-900/60' 
+        : 'bg-gray-800 border border-gray-700 hover:bg-gray-750 hover:border-blue-500/50'
+      }`}
     >
       <div className="flex justify-between items-start mb-1">
-        <h4 className="font-bold text-gray-200 text-sm">{store.client}</h4>
+        <h4 className={`font-bold text-sm ${isHighlighted ? 'text-indigo-100' : 'text-gray-200'}`}>{store.client}</h4>
         <MoreHorizontal size={16} className="text-gray-500 group-hover:text-blue-400" />
       </div>
       <p className="text-xs text-gray-400 mb-2">{store.store}</p>
       
-      {/* Exibe o responsável da loja, se houver */}
-      {store.responsavel && (
+      {isHighlighted && highlightMsg && (
+        <div className="bg-indigo-500/20 text-indigo-300 px-2 py-1.5 rounded-lg text-xs font-bold mb-2 flex items-center gap-1.5 border border-indigo-500/30">
+          <Bell size={12} className="animate-pulse" /> {highlightMsg}
+        </div>
+      )}
+
+      {/* Exibe o responsável da loja, se houver e se não for um destaque */}
+      {!isHighlighted && store.responsavel && (
         <div className="inline-flex items-center gap-1 bg-blue-900/30 text-blue-400 px-2 py-1 rounded text-[10px] font-bold mb-2">
           <User size={10} /> {store.responsavel}
         </div>
@@ -84,6 +118,43 @@ export default function TaskView({ stores, openTaskModal }) {
         </div>
       </div>
 
+      {/* NOVO: CAIXA DE ENTRADA (NOTIFICAÇÕES DO USUÁRIO LOGADO) */}
+      {(myInbox.myTasks.length > 0 || myInbox.storeUpdates.length > 0) && (
+        <div className="mb-8 bg-gray-900 border border-indigo-500/50 rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+          <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
+            <Bell className="text-indigo-400" /> Minhas Notificações
+          </h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {myInbox.myTasks.map(store => {
+               // Conta quantas tarefas foram delegadas para mim
+               const qtd = store.checklists?.filter(c => !c.feita && c.responsavel === myName).length;
+               return (
+                 <TaskCard 
+                   key={`task-${store.id}`} 
+                   store={store} 
+                   isHighlighted={true} 
+                   highlightMsg={`${qtd} tarefa(s) delegada(s) a você`} 
+                 />
+               );
+            })}
+
+            {myInbox.storeUpdates.map(store => {
+               const lastLog = store.taskLogs[store.taskLogs.length - 1];
+               return (
+                 <TaskCard 
+                   key={`update-${store.id}`} 
+                   store={store} 
+                   isHighlighted={true} 
+                   highlightMsg={`Atualizado por ${lastLog.author}`} 
+                 />
+               );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* BARRA DE FILTROS */}
       <div className="flex flex-wrap items-center gap-4 bg-gray-800 p-4 rounded-xl border border-gray-700 mb-6 shadow-sm">
         <div className="flex items-center gap-2 text-gray-400 mr-2">
@@ -105,6 +176,12 @@ export default function TaskView({ stores, openTaskModal }) {
           <select value={taskRespFilter} onChange={e => setTaskRespFilter(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-gray-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500">
             <option value="">📋 Qualquer Resp. (Tarefa)</option>
             {taskResps.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+        <div className="flex-1 min-w-[150px]">
+          <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-gray-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500">
+            <option value="">🛍️ Todos os Marketplaces</option>
+            {mkts.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
       </div>

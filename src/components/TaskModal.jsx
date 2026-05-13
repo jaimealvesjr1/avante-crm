@@ -140,7 +140,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 ))}
               </div>
               <div className="flex flex-col md:flex-row gap-2">
-                <input type="text" value={newChecklist} onChange={e => setNewChecklist(e.target.value)} onKeyDown={e => e.key === 'Enter' && addChecklist()} placeholder="O que fazer? Ex: Postar vídeo..." className="flex-[2] bg-gray-800 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
+                <input type="text" value={newChecklist} onChange={e => setNewChecklist(e.target.value)} onKeyDown={e => e.key === 'Enter' && addChecklist()} placeholder="O que fazer? Ex: Ajustar Preços..." className="flex-[2] bg-gray-800 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
                 <div className="flex gap-2">
                   <select value={newChecklistResp} onChange={e => setNewChecklistResp(e.target.value)} className="w-36 bg-gray-800 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer">
                     <option value="">Sem Resp.</option>

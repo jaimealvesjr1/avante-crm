@@ -12,10 +12,11 @@ export default function OperationalTable({
 }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
-  const [respFilter, setRespFilter] = useState('all'); // NOVO: Filtro de Responsável
+  const [respFilter, setRespFilter] = useState('all'); 
+  const [mktFilter, setMktFilter] = useState('all');
 
-  // Lista única de responsáveis das lojas
   const uniqueResps = [...new Set(dashboardData.groupedClients.flatMap(g => g.stores.map(s => s.responsavel)))].filter(Boolean).sort();
+  const uniqueMkts = [...new Set(dashboardData.groupedClients.flatMap(g => g.stores.map(s => s.marketplace)))].filter(Boolean).sort();
 
   // Filtros combinados
   const filteredGroups = dashboardData.groupedClients.map(group => {
@@ -23,7 +24,8 @@ export default function OperationalTable({
       const matchStatus = statusFilter === 'all' || s.status === statusFilter;
       const matchTier = tierFilter === 'all' || s.tier === tierFilter;
       const matchResp = respFilter === 'all' || s.responsavel === respFilter;
-      return matchStatus && matchTier && matchResp;
+      const matchMkt = mktFilter === 'all' || s.marketplace === mktFilter;
+      return matchStatus && matchTier && matchResp && matchMkt;
     });
 
     if (matchingStores.length > 0) {
@@ -37,12 +39,11 @@ export default function OperationalTable({
       
       {/* CABEÇALHO UNIFICADO E ORGANIZADO */}
       <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-md">
-        <div className="flex flex-col lg:flex-row justify-between gap-6 items-center">
+        <div className="flex flex-wrap items-center gap-4 justify-between">
           
           {/* Lado Esquerdo: Busca, Ordenação, Controles Globais */}
-          <div className="flex flex-1 gap-4 flex-wrap md:flex-nowrap w-full items-center">
-            
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <div className="flex flex-wrap items-center gap-4 flex-1 min-w-[300px]">
+            <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-[11px] text-gray-500" size={18} />
               <input 
                 type="text" 
@@ -52,74 +53,57 @@ export default function OperationalTable({
                 className="w-full bg-gray-900 border border-gray-700 text-white rounded-lg p-2 pl-10 outline-none focus:ring-2 focus:ring-blue-500 text-sm h-10" 
               />
             </div>
-            
-            <div className="flex flex-col min-w-[160px]">
-              <select 
-                value={sortBy} 
-                onChange={e => setSortBy(e.target.value)} 
-                className="h-10 bg-gray-900 border border-gray-700 text-white rounded-lg px-3 font-bold text-sm outline-none cursor-pointer"
-              >
-                <option value="gmv">Por Faturamento</option>
-                <option value="status">Por Status</option>
-                <option value="name">Por Nome</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-3 bg-gray-900/80 p-1.5 rounded-lg border border-gray-700 h-10 px-3">
-              <div className="flex items-center gap-2">
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Dia:</label>
-                <input 
-                  type="number" 
-                  value={currentDay} 
-                  onChange={(e) => updateGlobalSettings('day', e.target.value)} 
-                  className="w-12 bg-gray-800 border border-gray-600 text-white rounded p-1 text-center font-bold outline-none text-xs" 
-                />
-              </div>
-              <div className="w-px h-5 bg-gray-600"></div>
-              <div className="flex items-center gap-2">
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Cresc.:</label>
-                <input 
-                  type="number" 
-                  value={globalGrowth} 
-                  onChange={(e) => updateGlobalSettings('growth', e.target.value)} 
-                  className="w-14 bg-blue-900/40 border border-blue-600 text-blue-200 rounded p-1 text-center font-bold outline-none text-xs" 
-                />%
-              </div>
-            </div>
+      
+            <select 
+              value={sortBy} 
+              onChange={e => setSortBy(e.target.value)} 
+              className="h-10 bg-gray-900 border border-gray-700 text-white rounded-lg px-3 font-bold text-sm outline-none cursor-pointer"
+            >
+              <option value="gmv">Por Faturamento</option>
+              <option value="status">Por Status</option>
+              <option value="name">Por Nome</option>
+            </select>
           </div>
 
-          {/* Lado Direito: Filtros Rápidos */}
-          <div className="flex flex-wrap items-center gap-3 bg-gray-900/50 p-1.5 rounded-lg border border-gray-700 shrink-0">
-             <div className="flex gap-1 border-r border-gray-700 pr-3">
+          {/* Centro/Direita: Todos os Filtros Agrupados */}
+          <div className="flex flex-wrap items-center gap-3 bg-gray-900/50 p-1.5 rounded-lg border border-gray-700">
+            {/* Status e Tier */}
+            <div className="flex gap-1 border-r border-gray-700 pr-3">
                 {['all', 'danger', 'warning', 'success'].map(f => (
-                  <button key={f} onClick={() => setStatusFilter(f)} title={`Filtrar Status: ${f}`} className={`p-2 rounded-md transition-all ${statusFilter === f ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'}`}>
+                  <button key={f} onClick={() => setStatusFilter(f)} className={`p-2 rounded-md transition-all ${statusFilter === f ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-800'}`}>
                     {f === 'all' ? <Filter size={16}/> : f === 'danger' ? <AlertTriangle size={16}/> : f === 'warning' ? <Clock size={16}/> : <CheckCircle size={16}/>}
                   </button>
                 ))}
-             </div>
-             <div className="flex gap-1 border-r border-gray-700 pr-3 pl-1">
-                {['all', 'A', 'B', 'C'].map(t => (
-                  <button key={t} onClick={() => setTierFilter(t)} className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all shadow-sm ${tierFilter === t ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
-                    {t === 'all' ? 'TIERS' : `T ${t}`}
-                  </button>
-                ))}
-             </div>
-             
-             {/* NOVO: FILTRO DE RESPONSÁVEL */}
-             <div className="flex pl-1">
+            </div>
+
+            {/* NOVO: FILTRO DE MARKETPLACE */}
+            <div className="flex border-r border-gray-700 pr-3">
                 <select 
-                  value={respFilter} 
-                  onChange={e => setRespFilter(e.target.value)} 
+                  value={mktFilter} 
+                  onChange={e => setMktFilter(e.target.value)} 
                   className="bg-gray-800 border border-gray-700 text-gray-300 rounded-md px-2 py-1.5 text-[11px] font-bold outline-none cursor-pointer"
                 >
-                  <option value="all">👤 TODOS RESP.</option>
-                  {uniqueResps.map(r => <option key={r} value={r}>{r}</option>)}
+                  <option value="all">🛍️ MARKETPLACES</option>
+                  {uniqueMkts.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
-             </div>
+            </div>
+             
+            {/* NOVO: FILTRO DE RESPONSÁVEL */}
+            <div className="flex pl-1">
+              <select 
+                value={respFilter} 
+                onChange={e => setRespFilter(e.target.value)} 
+                className="bg-gray-800 border border-gray-700 text-gray-300 rounded-md px-2 py-1.5 text-[11px] font-bold outline-none cursor-pointer"
+              >
+                <option value="all">👤 TODOS RESP.</option>
+                {uniqueResps.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
           </div>
           
+          {/* Botão Add Conta - Agora isolado para não quebrar o layout */}
           {canEdit && (
-            <button onClick={addNewStore} className="h-10 bg-green-600 hover:bg-green-500 text-white px-4 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shadow-sm ml-auto">
+            <button onClick={addNewStore} className="h-10 bg-green-600 hover:bg-green-500 text-white px-4 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shadow-sm">
               <Plus size={18} /> Add Conta
             </button>
           )}          
