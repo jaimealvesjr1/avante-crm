@@ -29,6 +29,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('gmv');
   const [expandedClients, setExpandedClients] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
   
   const [editingClient, setEditingClient] = useState(null);
   const [clientEditData, setClientEditData] = useState({ name: '', feeType: 'percent', feePercent: 3, fixedFee: 0 });
@@ -83,18 +84,27 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
+    
+    // Puxa as lojas
     const unsubStores = onSnapshot(collection(db, "stores"), (snapshot) => {
       if (!snapshot.empty) setStores(snapshot.docs.map(doc => doc.data()).sort((a, b) => b.id - a.id));
       setIsDbLoading(false);
     });
 
+    // Puxa as configs globais
     const unsubSettings = onSnapshot(doc(db, "settings", "global"), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if(data.globalGrowth !== undefined) setGlobalGrowth(data.globalGrowth);
       }
     });
-    return () => { unsubStores(); unsubSettings(); };
+
+    // Puxa os usuários da Equipe
+    const unsubEquipe = onSnapshot(collection(db, "equipe"), (snapshot) => {
+      if (!snapshot.empty) setTeamMembers(snapshot.docs.map(doc => doc.data()));
+    });
+
+    return () => { unsubStores(); unsubSettings(); unsubEquipe(); };
   }, [user]);
 
   const updateStoreInCloud = (updatedStore) => {
@@ -543,6 +553,9 @@ export default function App() {
           updateStoreInCloud={updateStoreInCloud}
           stores={stores}
           setStores={setStores}
+          currentUser={user}
+          isManager={canEdit}
+          teamMembers={teamMembers}
         />
       )}
 
@@ -695,35 +708,50 @@ export default function App() {
               )}
               {chartTab === 'notes' && (
                 <div className="flex flex-col h-72">
-                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 mb-4 custom-scrollbar">
-                    {activeStore.notes && activeStore.notes.length > 0 ? activeStore.notes.map(note => (
-                      <div key={note.id} className="bg-gray-900 p-3 rounded-lg border border-gray-700 relative group">
-                        <div className="text-[10px] font-bold text-indigo-400 mb-1">{note.date}</div>
-                        <p className="text-sm text-gray-300">{note.text}</p>
-                        <button onClick={() => {
-                          const newStore = { ...activeStore, notes: activeStore.notes.filter(n => n.id !== note.id) };
-                          updateStoreInCloud(newStore);
-                          setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
-                        }} className="absolute top-2 right-2 p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 mb-4 custom-scrollbar border-l-2 border-gray-700 ml-2 pl-4 mt-2">
+                    {/* AGORA LÊ DO MESMO LUGAR QUE O WORKFLOW (taskLogs) */}
+                    {activeStore.taskLogs && activeStore.taskLogs.length > 0 ? activeStore.taskLogs.slice().reverse().map(log => (
+                      <div key={log.id} className="relative group/log">
+                        <div className="absolute -left-[21px] top-1.5 w-2 h-2 bg-blue-500 rounded-full"></div>
+                        <div className="flex justify-between items-center mb-0.5">
+                          <div className="text-[10px] text-blue-400 font-bold">
+                            {log.data} <span className="text-gray-500 font-normal ml-1">por {log.author}</span>
+                          </div>
+                          {canEdit && (
+                            <button onClick={() => {
+                              if(window.confirm("Apagar este registro?")) {
+                                const newStore = { ...activeStore, taskLogs: activeStore.taskLogs.filter(n => n.id !== log.id) };
+                                updateStoreInCloud(newStore);
+                                setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
+                              }
+                            }} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity mr-2"><Trash2 size={12}/></button>
+                          )}
+                        </div>
+                        <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 text-sm text-gray-300 shadow-sm">{log.texto}</div>
                       </div>
-                    )) : <div className="h-full flex items-center justify-center text-gray-500 text-sm border border-dashed border-gray-700 rounded-lg">Nenhuma anotação de diário.</div>}
+                    )) : <div className="h-full flex items-center justify-center text-gray-500 text-sm border border-dashed border-gray-700 rounded-lg">Nenhum histórico registrado.</div>}
                   </div>
+                  
                   <div className="flex gap-2">
                     <input type="text" value={newNoteText} onChange={e => setNewNoteText(e.target.value)} onKeyDown={e => {
                         if(e.key === 'Enter' && newNoteText.trim()) {
-                            const newStore = { ...activeStore, notes: [...(activeStore.notes || []), { id: Date.now(), date: new Date().toLocaleDateString('pt-BR'), text: newNoteText }] };
+                            const username = user?.email?.split('@')[0] || 'Usuário';
+                            const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: newNoteText, author: username };
+                            const newStore = { ...activeStore, taskLogs: [...(activeStore.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() };
                             updateStoreInCloud(newStore);
                             setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
                             setNewNoteText('');
                         }
-                    }} placeholder="Escreva algo..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
+                    }} placeholder="Descreva a ação realizada..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
                     <button onClick={() => {
                         if(!newNoteText.trim()) return;
-                        const newStore = { ...activeStore, notes: [...(activeStore.notes || []), { id: Date.now(), date: new Date().toLocaleDateString('pt-BR'), text: newNoteText }] };
+                        const username = user?.email?.split('@')[0] || 'Usuário';
+                        const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: newNoteText, author: username };
+                        const newStore = { ...activeStore, taskLogs: [...(activeStore.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() };
                         updateStoreInCloud(newStore);
                         setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
                         setNewNoteText('');
-                    }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg font-bold">Salvar</button>
+                    }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg font-bold">Lançar</button>
                   </div>
                 </div>
               )}
