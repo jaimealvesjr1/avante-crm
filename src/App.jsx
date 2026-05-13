@@ -12,6 +12,8 @@ import AuthScreen from './components/AuthScreen';
 import AdminPanel from './components/AdminPanel';
 import OperationalTable from './components/OperationalTable';
 import BatchEntry from './components/BatchEntry';
+import TaskView from './components/TaskView';
+import TaskModal from './components/TaskModal';
 
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
@@ -31,6 +33,9 @@ export default function App() {
   const [editingClient, setEditingClient] = useState(null);
   const [clientEditData, setClientEditData] = useState({ name: '', feeType: 'percent', feePercent: 3, fixedFee: 0 });
   
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [activeTaskStoreId, setActiveTaskStoreId] = useState(null);
+
   const [editingStoreId, setEditingStoreId] = useState(null);
   const [storeEditData, setStoreEditData] = useState({});
 
@@ -159,7 +164,12 @@ export default function App() {
     const feePercent = existingStore ? existingStore.feePercent : 1.5;
     const fixedFee = existingStore ? existingStore.fixedFee : 0;
 
-    const newStore = { id: Date.now(), client: clientName, store: 'NOVA LOJA', gmvBase: 0, feeType, feePercent, fixedFee, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], notes: [], monthlyHistory: [] };
+    const newStore = { id: Date.now(), client: clientName, store: 'NOVA LOJA', gmvBase: 0, feeType, feePercent, fixedFee, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], notes: [], monthlyHistory: [],
+      checklists: [], 
+      taskLogs: [], 
+      dataUltimoAcesso: new Date().toISOString(), 
+      dataProximoAcesso: ''
+     };
     updateStoreInCloud(newStore);
     setStores(prev => [newStore, ...prev]);
     if(!expandedClients.includes(clientName)) toggleClientExpansion(clientName);
@@ -464,6 +474,7 @@ export default function App() {
           <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 mx-auto md:mx-0">
             <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-md text-sm font-medium ${activeView === 'operacional' ? 'bg-blue-600 text-white shadow' : 'text-gray-400'}`}>Operacional</button>
             <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 ${activeView === 'dashboard' ? 'bg-purple-600 text-white shadow' : 'text-gray-400'}`}>Visão Executiva</button>
+            <button onClick={() => setActiveView('rotinas')} className={`px-4 py-1.5 rounded-md text-sm font-medium ${activeView === 'rotinas' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400'}`}>Workflow</button>
             {isAdmin && <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-md text-sm font-medium ${activeView === 'admin' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400'}`}>Equipe</button>}
           </div>
 
@@ -512,10 +523,27 @@ export default function App() {
             generateClientWhatsAppLink={generateClientWhatsAppLink}
           />
         )}
+
+        {activeView === 'rotinas' && (
+          <TaskView 
+            stores={stores} 
+            openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
+          />
+        )}
       </div>
 
       {isBatchMode && (
         <BatchEntry stores={stores} currentDay={currentDay} onSaveBatch={handleSaveBatch} onClose={() => setIsBatchMode(false)} />
+      )}
+
+      {taskModalOpen && (
+        <TaskModal 
+          store={stores.find(s => s.id === activeTaskStoreId)} 
+          onClose={() => setTaskModalOpen(false)} 
+          updateStoreInCloud={updateStoreInCloud}
+          stores={stores}
+          setStores={setStores}
+        />
       )}
 
       {/* MODAL DE HISTÓRICO RESTAURADO COM LANÇAMENTO INDIVIDUAL COMPLETO */}
