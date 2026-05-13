@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User } from 'lucide-react';
 
-export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUser, isManager, teamMembers }) {
+export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers }) {
   const [newLog, setNewLog] = useState('');
   const [newChecklist, setNewChecklist] = useState('');
   const [newChecklistResp, setNewChecklistResp] = useState('');
   const [nextDate, setNextDate] = useState(store.dataProximoAcesso || '');
   const [storeResp, setStoreResp] = useState(store.responsavel || '');
 
-  // Pega a parte antes do @ do email logado
-  const username = currentUser?.email?.split('@')[0] || 'Usuário';
-  // Lista de nomes da equipe para o Dropdown
-  const teamNames = teamMembers?.map(m => m.email.split('@')[0]) || [];
+  // Lê o Nome Completo. Se não existir, cai para o Nome. Se for conta muito antiga, cai para o e-mail.
+  const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
+  
+  // Lista de nomes bem formatados para o Dropdown
+  const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
 
   const saveChanges = (updatedStore) => {
     updateStoreInCloud(updatedStore);
@@ -21,7 +22,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const handleStoreRespChange = (e) => {
     const newResp = e.target.value;
     setStoreResp(newResp);
-    saveChanges({ ...store, responsavel: newResp }); // Salva instantaneamente ao trocar
+    saveChanges({ ...store, responsavel: newResp });
   };
 
   const addLog = () => {
@@ -95,13 +96,12 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               <p className="text-xs text-gray-400 mt-0.5">{store.store}</p>
             </div>
             
-            {/* NOVO: SELECT DE RESPONSÁVEL DA LOJA */}
             <div className="flex items-center gap-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700">
               <User size={14} className="text-blue-400" />
               <select 
                 value={storeResp} 
                 onChange={handleStoreRespChange}
-                className="bg-transparent text-sm text-gray-200 outline-none w-32 cursor-pointer font-semibold"
+                className="bg-transparent text-sm text-gray-200 outline-none w-36 cursor-pointer font-semibold"
               >
                 <option value="">Sem Resp.</option>
                 {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
@@ -121,7 +121,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                       <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-4 h-4 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" />
                       <span className={`text-sm ${item.feita ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{item.texto}</span>
                       {item.responsavel && (
-                        <span className="text-[10px] bg-indigo-900/40 text-indigo-300 px-2 py-0.5 rounded ml-2 border border-indigo-800/50">
+                        <span className="text-[10px] bg-indigo-900/40 text-indigo-300 px-2 py-0.5 rounded ml-2 border border-indigo-800/50 whitespace-nowrap">
                           Resp: {item.responsavel}
                         </span>
                       )}
@@ -130,16 +130,15 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   </div>
                 ))}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-col md:flex-row gap-2">
                 <input type="text" value={newChecklist} onChange={e => setNewChecklist(e.target.value)} onKeyDown={e => e.key === 'Enter' && addChecklist()} placeholder="O que fazer? Ex: Postar vídeo..." className="flex-[2] bg-gray-800 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
-                
-                {/* NOVO: SELECT DE RESPONSÁVEL DA TAREFA */}
-                <select value={newChecklistResp} onChange={e => setNewChecklistResp(e.target.value)} className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer">
-                  <option value="">Sem Resp.</option>
-                  {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
-                </select>
-
-                <button onClick={addChecklist} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 rounded-lg"><Plus size={18}/></button>
+                <div className="flex gap-2">
+                  <select value={newChecklistResp} onChange={e => setNewChecklistResp(e.target.value)} className="w-36 bg-gray-800 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer">
+                    <option value="">Sem Resp.</option>
+                    {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                  <button onClick={addChecklist} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg"><Plus size={18}/></button>
+                </div>
               </div>
             </div>
 
@@ -167,7 +166,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               </div>
               <div className="flex gap-2 mt-4">
                 <textarea value={newLog} onChange={e => setNewLog(e.target.value)} placeholder="Descreva o que você fez hoje nesta conta..." className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-blue-500 min-h-[60px] resize-none" />
-                <button onClick={addLog} className="bg-blue-600 hover:bg-blue-500 text-white px-3 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors"><Send size={16}/> <span className="text-[10px] font-bold">Lançar</span></button>
+                <button onClick={addLog} className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors"><Send size={16}/> <span className="text-[10px] font-bold">Lançar</span></button>
               </div>
             </div>
           </div>

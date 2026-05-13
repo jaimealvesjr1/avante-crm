@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2 } from 'lucide-react';
+import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "firebase/auth";
@@ -29,7 +29,6 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('gmv');
   const [expandedClients, setExpandedClients] = useState([]);
-  const [teamMembers, setTeamMembers] = useState([]);
   
   const [editingClient, setEditingClient] = useState(null);
   const [clientEditData, setClientEditData] = useState({ name: '', feeType: 'percent', feePercent: 3, fixedFee: 0 });
@@ -55,13 +54,18 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserName, setNewUserName] = useState('');
   
+  const [teamMembers, setTeamMembers] = useState([]);
+
   const fileInputRef = useRef(null);
 
   const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState('Visualizador');
+  const [userRole, setUserRole] = useState('Operacional');
+  const [currentUserData, setCurrentUserData] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
@@ -71,7 +75,12 @@ export default function App() {
         try {
           const docRef = doc(db, "equipe", currentUser.email.toLowerCase());
           const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) setUserRole(docSnap.data().role || 'Visualizador');
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            // Atualiza para 'Operacional' caso o usuário fosse 'Visualizador' antigamente
+            setUserRole(data.role === 'Visualizador' ? 'Operacional' : (data.role || 'Operacional'));
+            setCurrentUserData(data); 
+          }
         } catch (e) { console.error("Erro ao buscar cargo", e); }
       }
       setAuthLoading(false);
@@ -84,14 +93,11 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    
-    // Puxa as lojas
     const unsubStores = onSnapshot(collection(db, "stores"), (snapshot) => {
       if (!snapshot.empty) setStores(snapshot.docs.map(doc => doc.data()).sort((a, b) => b.id - a.id));
       setIsDbLoading(false);
     });
 
-    // Puxa as configs globais
     const unsubSettings = onSnapshot(doc(db, "settings", "global"), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -99,7 +105,6 @@ export default function App() {
       }
     });
 
-    // Puxa os usuários da Equipe
     const unsubEquipe = onSnapshot(collection(db, "equipe"), (snapshot) => {
       if (!snapshot.empty) setTeamMembers(snapshot.docs.map(doc => doc.data()));
     });
@@ -130,16 +135,37 @@ export default function App() {
     e.preventDefault();
     try {
       await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPassword);
+      
+      const nomeCompleto = newUserName.trim();
+      const primeiroNome = nomeCompleto.split(' ')[0];
+
       await setDoc(doc(db, "equipe", newUserEmail.toLowerCase()), {
         email: newUserEmail.toLowerCase(),
-        role: 'Visualizador',
+        nome: primeiroNome,
+        nomeCompleto: nomeCompleto,
+        role: 'Operacional',
         createdAt: new Date().toLocaleDateString('pt-BR')
       });
       await signOut(secondaryAuth); 
       toast.success('✅ Acesso criado com sucesso!');
       setNewUserEmail(''); setNewUserPassword('');
+      setNewUserName('');
     } catch (error) {
       toast.error('❌ Erro ao criar acesso. Verifique a senha ou se o e-mail já existe.');
+    }
+  };
+
+  const handleUpdateUser = async (emailToUpdate, newNameCompleto) => {
+    if (!canEdit) return;
+    try {
+      const primeiroNome = newNameCompleto.trim().split(' ')[0];
+      await setDoc(doc(db, "equipe", emailToUpdate.toLowerCase()), {
+        nome: primeiroNome,
+        nomeCompleto: newNameCompleto.trim()
+      }, { merge: true });
+      toast.success('Nome atualizado com sucesso!');
+    } catch (error) {
+      toast.error('Erro ao atualizar usuário.');
     }
   };
 
@@ -163,7 +189,7 @@ export default function App() {
   const addNewStore = () => {
     const name = prompt("Nome do Novo Cliente:");
     if (!name) return;
-    const newStore = { id: Date.now(), client: name.toUpperCase(), store: 'NOVA LOJA', gmvBase: 0, feeType: 'percent', feePercent: 1.5, fixedFee: 0, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], notes: [], monthlyHistory: [] };
+    const newStore = { id: Date.now(), client: name.toUpperCase(), store: 'NOVA LOJA', gmvBase: 0, feeType: 'percent', feePercent: 1.5, fixedFee: 0, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], taskLogs: [], checklists: [], monthlyHistory: [] };
     updateStoreInCloud(newStore);
     setStores(prev => [newStore, ...prev]);
   };
@@ -174,12 +200,7 @@ export default function App() {
     const feePercent = existingStore ? existingStore.feePercent : 1.5;
     const fixedFee = existingStore ? existingStore.fixedFee : 0;
 
-    const newStore = { id: Date.now(), client: clientName, store: 'NOVA LOJA', gmvBase: 0, feeType, feePercent, fixedFee, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], notes: [], monthlyHistory: [],
-      checklists: [], 
-      taskLogs: [], 
-      dataUltimoAcesso: new Date().toISOString(), 
-      dataProximoAcesso: ''
-     };
+    const newStore = { id: Date.now(), client: clientName, store: 'NOVA LOJA', gmvBase: 0, feeType, feePercent, fixedFee, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], taskLogs: [], checklists: [], monthlyHistory: [] };
     updateStoreInCloud(newStore);
     setStores(prev => [newStore, ...prev]);
     if(!expandedClients.includes(clientName)) toggleClientExpansion(clientName);
@@ -353,7 +374,7 @@ export default function App() {
     let totalOrders = 0, totalUnits = 0, totalCurrentRevenue = 0;
     let totalAgencyRevenue = 0;       
     let totalAgencyRevenueActual = 0; 
-    let agencyTarget = 0; // <-- Inicia a meta da agência zerada
+    let agencyTarget = 0; 
 
     const filteredRows = stores.filter(row => 
       !searchTerm || 
@@ -407,12 +428,9 @@ export default function App() {
 
       const isFixed = feeType === 'fixed' || fixedFee > 0;
       
-      // NOVA REGRA DE META DA AGÊNCIA:
-      // Se for fixo, a meta do grupo é o Fixo. Se for Fee (%), a meta é o percentual em cima da META de Faturamento do Cliente.
       const groupAgencyTarget = isFixed ? Number(fixedFee) : g.totalGmvTarget * (Number(feePercent) / 100);
       agencyTarget += groupAgencyTarget;
 
-      // Receita Atual (O que já faturou de comissão hoje) e Projetada
       const actualAgency = isFixed ? Number(fixedFee) : g.totalCurrentRevenue * (Number(feePercent) / 100);
       const projectedAgency = isFixed ? Number(fixedFee) : g.totalProjectedGmv * (Number(feePercent) / 100);
       
@@ -471,32 +489,65 @@ export default function App() {
       <Toaster position="top-right" />
       <div className="max-w-7xl mx-auto space-y-6">
         
-        <div className="flex flex-col md:flex-row justify-between items-center bg-gray-800 p-4 rounded-xl border border-gray-700 gap-4 shadow-md">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setIsBatchMode(true)} className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all">
+        <div className="flex flex-col xl:flex-row justify-between items-center bg-gray-800 p-4 rounded-xl border border-gray-700 gap-4 shadow-md">
+          <div className="flex items-center gap-4 w-full xl:w-auto overflow-x-auto pb-1 xl:pb-0">
+            <button onClick={() => setIsBatchMode(true)} className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all whitespace-nowrap">
               <Zap size={16} /> Lançamento em Lote
             </button>
-            <button onClick={closeMonth} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all">
-              <ArchiveRestore size={16} /> Fechar Mês
-            </button>
+            {canEdit && (
+              <button onClick={closeMonth} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all whitespace-nowrap">
+                <ArchiveRestore size={16} /> Fechar Mês
+              </button>
+            )}
           </div>
           
-          <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 mx-auto md:mx-0">
-            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-md text-sm font-medium ${activeView === 'operacional' ? 'bg-blue-600 text-white shadow' : 'text-gray-400'}`}>Operacional</button>
-            <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 ${activeView === 'dashboard' ? 'bg-purple-600 text-white shadow' : 'text-gray-400'}`}>Visão Executiva</button>
-            <button onClick={() => setActiveView('rotinas')} className={`px-4 py-1.5 rounded-md text-sm font-medium ${activeView === 'rotinas' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400'}`}>Workflow</button>
-            {isAdmin && <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-md text-sm font-medium ${activeView === 'admin' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400'}`}>Equipe</button>}
+          <div className="flex flex-wrap justify-center bg-gray-900 rounded-lg p-1 border border-gray-700 mx-auto max-w-full">
+            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap ${activeView === 'operacional' ? 'bg-blue-600 text-white shadow' : 'text-gray-400'}`}>Operacional</button>
+            <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'dashboard' ? 'bg-purple-600 text-white shadow' : 'text-gray-400'}`}>Visão Executiva</button>
+            <button onClick={() => setActiveView('rotinas')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'rotinas' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400'}`}>
+              <CalendarDays size={16} /> Workflow
+            </button>
+            {canEdit && <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap ${activeView === 'admin' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400'}`}>Equipe</button>}
           </div>
 
-          <div className="flex gap-3">
-            <button onClick={exportBackup} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-600"><Upload size={14} /> Exportar</button>
-            <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
-            <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium"><Download size={14} /> Importar Base</button>
+          <div className="flex items-center justify-between xl:justify-end gap-4 w-full xl:w-auto">
+            {canEdit && (
+              <div className="flex gap-2">
+                <button onClick={exportBackup} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-600 transition-colors"><Upload size={14} /> Exportar</button>
+                <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
+                <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><Download size={14} /> Importar</button>
+              </div>
+            )}
+            
+            <div className="flex items-center gap-3 pl-4 border-l border-gray-700">
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-bold text-white leading-none">
+                  {currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0]}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{userRole}</p>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold shadow-inner">
+                {(currentUserData?.nome?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase()}
+              </div>
+              <button onClick={handleLogout} className="p-1.5 text-gray-400 hover:text-red-400 transition-colors ml-1" title="Sair do Sistema">
+                <LogOut size={18} />
+              </button>
+            </div>
           </div>
         </div>
 
         {activeView === 'dashboard' && <ExecutiveDashboard dashboardData={dashboardData} formatCurrency={formatCurrency} pieData={pieData} roasData={roasData} COLORS={COLORS} />}
-        {activeView === 'admin' && isAdmin && <AdminPanel handleCreateUser={handleCreateUser} newUserEmail={newUserEmail} setNewUserEmail={setNewUserEmail} newUserPassword={newUserPassword} setNewUserPassword={setNewUserPassword} />}
+        
+        {activeView === 'admin' && canEdit && (
+          <AdminPanel 
+            handleCreateUser={handleCreateUser} 
+            newUserEmail={newUserEmail} setNewUserEmail={setNewUserEmail} 
+            newUserPassword={newUserPassword} setNewUserPassword={setNewUserPassword} 
+            newUserName={newUserName} setNewUserName={setNewUserName}
+            teamMembers={teamMembers}
+            handleUpdateUser={handleUpdateUser}
+          />
+        )}
 
         {activeView === 'operacional' && (
           <OperationalTable 
@@ -553,13 +604,12 @@ export default function App() {
           updateStoreInCloud={updateStoreInCloud}
           stores={stores}
           setStores={setStores}
-          currentUser={user}
+          currentUserData={currentUserData}
           isManager={canEdit}
           teamMembers={teamMembers}
         />
       )}
 
-      {/* MODAL DE HISTÓRICO RESTAURADO COM LANÇAMENTO INDIVIDUAL COMPLETO */}
       {historyModalOpen && activeStore && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 w-full max-w-4xl overflow-hidden flex flex-col">
@@ -570,7 +620,7 @@ export default function App() {
                   <button onClick={() => setChartTab('pacing')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${chartTab === 'pacing' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Pacing</button>
                   <button onClick={() => setChartTab('monthly')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${chartTab === 'monthly' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>Mensal</button>
                   <button onClick={() => setChartTab('notes')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors flex items-center gap-1 ${chartTab === 'notes' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'}`}>
-                    Diário {activeStore.notes?.length > 0 && `(${activeStore.notes.length})`}
+                    Histórico {activeStore.taskLogs?.length > 0 && `(${activeStore.taskLogs.length})`}
                   </button>
                 </div>
               </div>
@@ -579,7 +629,6 @@ export default function App() {
             <div className="p-5">
               {chartTab === 'pacing' && (
                 <div className="flex flex-col md:flex-row gap-5">
-                  {/* GRAFICO DE PACING */}
                   <div className="flex-1 flex flex-col">
                     <h4 className="text-sm font-semibold text-gray-300 mb-3 flex justify-between"><span>Curva de Velocidade</span></h4>
                     <div className="h-64 w-full bg-gray-900 rounded-lg p-3 border border-gray-700">
@@ -597,7 +646,6 @@ export default function App() {
                     </div>
                   </div>
                   
-                  {/* LANÇAMENTO INDIVIDUAL (NOVO PONTO) */}
                   <div className="w-full md:w-72 flex flex-col gap-4">
                     <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
                       <h4 className="text-sm font-semibold text-gray-300 mb-3">Lançamento Direto</h4>
@@ -641,7 +689,7 @@ export default function App() {
                         const existingIndex = updatedHistory.findIndex(h => h.day === entryDay);
                         
                         if(existingIndex >= 0) {
-                          entry.id = updatedHistory[existingIndex].id; // Mantem o ID se for edição
+                          entry.id = updatedHistory[existingIndex].id; 
                           updatedHistory[existingIndex] = entry;
                         } else {
                           updatedHistory.push(entry);
@@ -652,7 +700,6 @@ export default function App() {
                           history: updatedHistory.sort((a,b) => a.day - b.day)
                         };
 
-                        // Se você salvar o dia que o CRM está operando agora, atualiza os campos vivos da tabela
                         if(entryDay === currentDay) {
                           finalStore.currentRevenue = entry.revenue;
                           finalStore.adsInvestment = entry.ads;
@@ -666,7 +713,6 @@ export default function App() {
                       }} className="bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm w-full flex items-center justify-center gap-2 font-bold transition-all shadow-md"><Save size={16}/> Salvar Registro</button>
                     </div>
 
-                    {/* HISTÓRICO DE LANÇAMENTOS */}
                     <div className="flex-1 flex flex-col overflow-hidden">
                       <h4 className="text-sm font-semibold text-gray-300 mb-2">Arquivo</h4>
                       <div className="flex-1 overflow-y-auto pr-1 space-y-2 max-h-40 custom-scrollbar">
@@ -678,11 +724,15 @@ export default function App() {
                                 <span className="font-bold text-blue-400 text-xs block">{formatCurrency(h.revenue)}</span>
                                 <span className="text-[9px] text-amber-400 block">Ads: {formatCurrency(h.ads || 0)}</span>
                               </div>
-                              <button onClick={() => {
-                                const updatedStore = { ...activeStore, history: activeStore.history.filter(x => x.id !== h.id) };
-                                updateStoreInCloud(updatedStore);
-                                setStores(stores.map(s => s.id === activeStore.id ? updatedStore : s));
-                              }} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button>
+                              {canEdit && (
+                                <button onClick={() => {
+                                  if(window.confirm("Apagar este registro?")) {
+                                    const updatedStore = { ...activeStore, history: activeStore.history.filter(x => x.id !== h.id) };
+                                    updateStoreInCloud(updatedStore);
+                                    setStores(stores.map(s => s.id === activeStore.id ? updatedStore : s));
+                                  }
+                                }} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button>
+                              )}
                             </div>
                           </div>
                         )) : <div className="text-center p-4 border border-dashed border-gray-700 rounded text-gray-500 text-xs">Nenhum histórico registrado.</div>}
@@ -706,10 +756,10 @@ export default function App() {
                   ) : <div className="text-gray-500 text-center"><ArchiveRestore size={32} className="opacity-50 mx-auto" /><p>Nenhum histórico.</p></div>}
                 </div>
               )}
+              
               {chartTab === 'notes' && (
                 <div className="flex flex-col h-72">
                   <div className="flex-1 overflow-y-auto pr-2 space-y-3 mb-4 custom-scrollbar border-l-2 border-gray-700 ml-2 pl-4 mt-2">
-                    {/* AGORA LÊ DO MESMO LUGAR QUE O WORKFLOW (taskLogs) */}
                     {activeStore.taskLogs && activeStore.taskLogs.length > 0 ? activeStore.taskLogs.slice().reverse().map(log => (
                       <div key={log.id} className="relative group/log">
                         <div className="absolute -left-[21px] top-1.5 w-2 h-2 bg-blue-500 rounded-full"></div>
@@ -735,7 +785,7 @@ export default function App() {
                   <div className="flex gap-2">
                     <input type="text" value={newNoteText} onChange={e => setNewNoteText(e.target.value)} onKeyDown={e => {
                         if(e.key === 'Enter' && newNoteText.trim()) {
-                            const username = user?.email?.split('@')[0] || 'Usuário';
+                            const username = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
                             const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: newNoteText, author: username };
                             const newStore = { ...activeStore, taskLogs: [...(activeStore.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() };
                             updateStoreInCloud(newStore);
@@ -745,7 +795,7 @@ export default function App() {
                     }} placeholder="Descreva a ação realizada..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
                     <button onClick={() => {
                         if(!newNoteText.trim()) return;
-                        const username = user?.email?.split('@')[0] || 'Usuário';
+                        const username = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
                         const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: newNoteText, author: username };
                         const newStore = { ...activeStore, taskLogs: [...(activeStore.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() };
                         updateStoreInCloud(newStore);
