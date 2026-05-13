@@ -115,8 +115,8 @@ export default function App() {
   }, [user]);
 
   const updateStoreInCloud = (updatedStore) => {
-    if (!canEdit) return;
-    setDoc(doc(db, "stores", updatedStore.id.toString()), updatedStore).catch(e => console.error("Erro ao salvar:", e));
+    setDoc(doc(db, "stores", updatedStore.id.toString()), updatedStore)
+      .catch(e => console.error("Erro ao salvar:", e));
   };
 
   const updateGlobalSettings = async (field, value) => {
