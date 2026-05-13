@@ -1,13 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Store, ShoppingCart, UserPlus } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function CreateStoreModal({ isOpen, onClose, onSave, existingMkts, initialClient = '' }) {
   const [clientName, setClientName] = useState(initialClient);
   const [storeName, setStoreName] = useState('');
-  const [mktMode, setMktMode] = useState('select'); // 'select' ou 'new'
+  const [mktMode, setMktMode] = useState('select'); 
   const [selectedMkt, setSelectedMkt] = useState(existingMkts[0] || '');
   const [newMkt, setNewMkt] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setClientName(initialClient);
+      setStoreName('');
+      setNewMkt('');
+      setMktMode('select');
+    }
+  }, [isOpen, initialClient]);
 
   if (!isOpen) return null;
 
