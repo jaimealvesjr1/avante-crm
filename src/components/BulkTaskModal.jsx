@@ -7,7 +7,8 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
   const [taskResp, setTaskResp] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [clientFilter, setClientFilter] = useState('');
-  const [mktFilter, setMktFilter] = useState(''); // Novo estado
+  const [mktFilter, setMktFilter] = useState(''); 
+  const [selectedStores, setSelectedStores] = useState([]);
 
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
   const clients = [...new Set(stores.map(s => s.client))].filter(Boolean).sort();

@@ -40,10 +40,17 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     const groups = { atrasadas: [], hoje: [], semData: [], futuro: [] };
 
     stores.forEach(store => {
-      // Aplicar Filtros
+      // Aplicar Filtros (agora com segurança para maiúsculas e minúsculas)
       if (clientFilter && store.client !== clientFilter) return;
       if (storeRespFilter && store.responsavel !== storeRespFilter) return;
-      if (mktFilter && store.marketplace !== mktFilter) return;
+      
+      // Filtro de Marketplace Corrigido
+      if (mktFilter) {
+        if (!store.marketplace || store.marketplace.toUpperCase() !== mktFilter.toUpperCase()) {
+          return;
+        }
+      }
+
       if (taskRespFilter) {
         const hasAssignedTask = store.checklists?.some(c => c.responsavel === taskRespFilter);
         if (!hasAssignedTask) return;
@@ -67,7 +74,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     groups.futuro.sort((a, b) => new Date(a.dataProximoAcesso) - new Date(b.dataProximoAcesso));
 
     return groups;
-  }, [stores, clientFilter, storeRespFilter, taskRespFilter]);
+  }, [stores, clientFilter, storeRespFilter, taskRespFilter, mktFilter]);
 
   const TaskCard = ({ store, isHighlighted = false, highlightMsg = '' }) => (
     <div 

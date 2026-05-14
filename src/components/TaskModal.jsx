@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers }) {
@@ -8,6 +8,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [newChecklistResp, setNewChecklistResp] = useState('');
   const [nextDate, setNextDate] = useState(store.dataProximoAcesso || '');
   const [storeResp, setStoreResp] = useState(store.responsavel || '');
+  const [fixedNotes, setFixedNotes] = useState(store.notasFixas || '');
 
   // Lê o Nome Completo. Se não existir, cai para o Nome. Se for conta muito antiga, cai para o e-mail.
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
@@ -95,6 +96,11 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const saveNextDate = () => {
     saveChanges({ ...store, dataProximoAcesso: nextDate });
     toast.success('Retorno agendado com sucesso!');
+  };
+
+  const saveFixedNotes = () => {
+    saveChanges({ ...store, notasFixas: fixedNotes });
+    toast.success('Lembretes fixos salvos!');
   };
 
   return (
@@ -193,14 +199,16 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
           </div>
         </div>
 
-        {/* LADO DIREITO: AGENDAMENTO */}
+        {/* LADO DIREITO: AGENDAMENTO E NOTAS */}
         <div className="w-full md:w-72 bg-gray-800 flex flex-col">
           <div className="hidden md:flex justify-end p-4">
             <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded-lg transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button>
           </div>
           
-          <div className="p-6 pt-0 flex-1">
-            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700">
+          <div className="p-6 pt-0 flex-1 flex flex-col h-full">
+            
+            {/* BLOCO 1: AGENDAMENTO */}
+            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 mb-4 shrink-0">
               <h4 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
                 <CalendarDays size={16} className="text-amber-400" /> Próximo Acesso
               </h4>
@@ -211,16 +219,35 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   type="date" 
                   value={nextDate} 
                   onChange={(e) => setNextDate(e.target.value)} 
-                  className="w-full bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-white outline-none font-bold"
+                  className="w-full bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-white outline-none font-bold text-sm"
                 />
-                <button onClick={saveNextDate} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-lg shadow-lg transition-colors mt-2">
+                <button onClick={saveNextDate} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-lg shadow-lg transition-colors mt-2 text-sm">
                   Agendar Retorno
+                </button>
+              </div>
+            </div>
+
+            {/* BLOCO 2: NOTAS FIXAS (LEMBRETES) */}
+            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 flex-1 flex flex-col min-h-[250px]">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2 mb-2">
+                <StickyNote size={16} className="text-emerald-400" /> Notas Importantes
+              </h4>
+              <p className="text-[10px] text-gray-400 mb-3 leading-tight">Logins, regras, links de drive, kits e informações estáticas da loja.</p>
+              
+              <div className="flex flex-col gap-3 flex-1">
+                <textarea 
+                  value={fixedNotes} 
+                  onChange={(e) => setFixedNotes(e.target.value)} 
+                  placeholder="Escreva aqui os dados importantes da operação..."
+                  className="w-full flex-1 bg-gray-800 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 outline-none resize-none custom-scrollbar focus:border-emerald-500 transition-colors"
+                />
+                <button onClick={saveFixedNotes} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg shadow-lg transition-colors text-sm flex justify-center items-center gap-2">
+                  <Save size={16} /> Salvar Notas
                 </button>
               </div>
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );
