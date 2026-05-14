@@ -33,7 +33,7 @@ export default function CreateStoreModal({ isOpen, onClose, onSave, existingMkts
       client: clientName.toUpperCase(),
       store: storeName.toUpperCase(),
       marketplace: finalMkt.toUpperCase()
-    });
+    }); 
 
     // Resetar estados
     setClientName('');

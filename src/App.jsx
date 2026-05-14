@@ -15,6 +15,7 @@ import BatchEntry from './components/BatchEntry';
 import TaskView from './components/TaskView';
 import TaskModal from './components/TaskModal';
 import CreateStoreModal from './components/CreateStoreModal';
+import BulkTaskModal from './components/BulkTaskModal';
 
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
@@ -30,6 +31,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('gmv');
   const [expandedClients, setExpandedClients] = useState([]);
+  const [bulkTaskModalOpen, setBulkTaskModalOpen] = useState(false);
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createModalClient, setCreateModalClient] = useState('');
@@ -284,6 +286,29 @@ export default function App() {
     }
     
     toast.success(`Cadastro de ${store} realizado com sucesso!`);
+  };
+
+  const handleSaveBulkTasks = (storeIds, text, resp) => {
+    const batchStores = stores.map(store => {
+      if (storeIds.includes(store.id)) {
+        const newTask = {
+          id: Date.now() + Math.random(), // Evitar IDs duplicados no milissegundo
+          texto: text,
+          feita: false,
+          responsavel: resp.trim()
+        };
+        const updatedStore = {
+          ...store,
+          checklists: [...(store.checklists || []), newTask],
+          dataUltimoAcesso: new Date().toISOString()
+        };
+        updateStoreInCloud(updatedStore);
+        return updatedStore;
+      }
+      return store;
+    });
+    setStores(batchStores);
+    toast.success(`Tarefa replicada em ${storeIds.length} loja(s)!`);
   };
 
   const handleSaveBatch = async (updatedStores, batchDay) => {
@@ -685,8 +710,9 @@ export default function App() {
           <TaskView 
             stores={stores} 
             openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
-            currentUserData={currentUserData} 
-            user={user} 
+            openBulkTaskModal={() => setBulkTaskModalOpen(true)}
+            currentUserData={currentUserData}
+            user={user}
           />
         )}
       </div>
@@ -961,13 +987,20 @@ export default function App() {
         </div>
       )}
 
-      {/* ... Outros modais ... */}
       <CreateStoreModal 
         isOpen={createModalOpen} 
         onClose={() => setCreateModalOpen(false)} 
         onSave={handleSaveNewStore}
         initialClient={createModalClient}
         existingMkts={[...new Set(stores.map(s => s.marketplace))].filter(Boolean).sort()}
+      />
+
+      <BulkTaskModal 
+        isOpen={bulkTaskModalOpen}
+        onClose={() => setBulkTaskModalOpen(false)}
+        stores={stores}
+        onSave={handleSaveBulkTasks}
+        teamMembers={teamMembers}
       />
     </div>
   );

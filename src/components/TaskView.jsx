@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Filter, User, Bell } from 'lucide-react';
+import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Filter, User, Bell, CopyPlus } from 'lucide-react'; // <-- Adicione CopyPlus
 
-export default function TaskView({ stores, openTaskModal, currentUserData, user }) {
+export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user }) {
   const [clientFilter, setClientFilter] = useState('');
   const [storeRespFilter, setStoreRespFilter] = useState('');
   const [taskRespFilter, setTaskRespFilter] = useState('');
@@ -116,6 +116,13 @@ export default function TaskView({ stores, openTaskModal, currentUserData, user 
           </h2>
           <p className="text-gray-400 text-sm mt-1">Gerencie checklists, responsáveis e agendamentos das contas.</p>
         </div>
+        
+        <button 
+          onClick={openBulkTaskModal} 
+          className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all"
+        >
+          <CopyPlus size={18} /> Tarefa em Massa
+        </button>
       </div>
 
       {/* NOVO: CAIXA DE ENTRADA (NOTIFICAÇÕES DO USUÁRIO LOGADO) */}
