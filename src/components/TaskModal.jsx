@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers }) {
@@ -9,6 +9,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [nextDate, setNextDate] = useState(store.dataProximoAcesso || '');
   const [storeResp, setStoreResp] = useState(store.responsavel || '');
   const [fixedNotes, setFixedNotes] = useState(store.notasFixas || '');
+  const [isDuplicating, setIsDuplicating] = useState(false);
+  const [duplicateTargetId, setDuplicateTargetId] = useState('');
 
   // Lê o Nome Completo. Se não existir, cai para o Nome. Se for conta muito antiga, cai para o e-mail.
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
@@ -99,8 +101,77 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   };
 
   const saveFixedNotes = () => {
-    saveChanges({ ...store, notasFixas: fixedNotes });
-    toast.success('Lembretes fixos salvos!');
+    const log = { 
+      id: Date.now(), 
+      data: new Date().toLocaleString('pt-BR'), 
+      texto: `📝 Nota fixa editada: "${fixedNotes.substring(0, 30)}${fixedNotes.length > 30 ? '...' : ''}"`, 
+      author: username 
+    };
+    
+    saveChanges({ 
+      ...store, 
+      notasFixas: fixedNotes,
+      taskLogs: [...(store.taskLogs || []), log]
+    });
+    toast.success('Lembretes fixos atualizados e registados!');
+  };
+
+  const deleteFixedNotes = () => {
+    if (window.confirm("Tem certeza que deseja apagar permanentemente todas as notas fixas desta loja?")) {
+      const log = { 
+        id: Date.now(), 
+        data: new Date().toLocaleString('pt-BR'), 
+        texto: `🗑️ Nota fixa apagada integralmente`, 
+        author: username 
+      };
+      
+      setFixedNotes('');
+      saveChanges({ 
+        ...store, 
+        notasFixas: '',
+        taskLogs: [...(store.taskLogs || []), log]
+      });
+      toast.success('Notas apagadas e registadas!');
+    }
+  };
+
+  const confirmDuplication = () => {
+    if (!duplicateTargetId) return toast.error("Selecione uma loja de destino.");
+    
+    // Procura a loja na lista baseando-se no ID selecionado
+    const destinationStore = stores.find(s => s.id === Number(duplicateTargetId));
+    if (!destinationStore) return;
+
+    const logOrigem = { 
+      id: Date.now(), 
+      data: new Date().toLocaleString('pt-BR'), 
+      texto: `📤 Nota fixa duplicada para a loja: ${destinationStore.store}`, 
+      author: username 
+    };
+
+    const logDestino = { 
+      id: Date.now() + 1, 
+      data: new Date().toLocaleString('pt-BR'), 
+      texto: `📥 Nota fixa recebida via duplicação da loja: ${store.store}`, 
+      author: username 
+    };
+
+    // Atualiza a loja atual (origem)
+    saveChanges({ ...store, taskLogs: [...(store.taskLogs || []), logOrigem] });
+
+    // Atualiza a loja de destino
+    const updatedDestStore = {
+      ...destinationStore,
+      notasFixas: fixedNotes,
+      taskLogs: [...(destinationStore.taskLogs || []), logDestino]
+    };
+    
+    updateStoreInCloud(updatedDestStore);
+    setStores(stores.map(s => s.id === updatedDestStore.id ? updatedDestStore : s));
+    
+    toast.success(`Nota duplicada com sucesso para ${destinationStore.store}!`);
+    setIsDuplicating(false);
+    setDuplicateTargetId('');
   };
 
   return (
@@ -228,23 +299,60 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
             </div>
 
             {/* BLOCO 2: NOTAS FIXAS (LEMBRETES) */}
-            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 flex-1 flex flex-col min-h-[250px]">
-              <h4 className="text-sm font-bold text-white flex items-center gap-2 mb-2">
-                <StickyNote size={16} className="text-emerald-400" /> Notas Importantes
-              </h4>
-              <p className="text-[10px] text-gray-400 mb-3 leading-tight">Logins, regras, links de drive, kits e informações estáticas da loja.</p>
-              
-              <div className="flex flex-col gap-3 flex-1">
-                <textarea 
-                  value={fixedNotes} 
-                  onChange={(e) => setFixedNotes(e.target.value)} 
-                  placeholder="Escreva aqui os dados importantes da operação..."
-                  className="w-full flex-1 bg-gray-800 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 outline-none resize-none custom-scrollbar focus:border-emerald-500 transition-colors"
-                />
-                <button onClick={saveFixedNotes} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg shadow-lg transition-colors text-sm flex justify-center items-center gap-2">
-                  <Save size={16} /> Salvar Notas
-                </button>
+            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 flex-1 flex flex-col min-h-[300px]">
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <StickyNote size={16} className="text-emerald-400" /> Notas Fixas
+                </h4>
+                {/* Esconde os botões se estivermos no ecrã de duplicação */}
+                {!isDuplicating && (
+                  <div className="flex gap-1">
+                    <button onClick={() => setIsDuplicating(true)} title="Duplicar para outra loja" className="p-1.5 text-gray-400 hover:text-blue-400 transition-colors"><Copy size={14}/></button>
+                    <button onClick={deleteFixedNotes} title="Apagar tudo" className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"><Eraser size={14}/></button>
+                  </div>
+                )}
               </div>
+
+              {/* MODO DE DUPLICAÇÃO (Dropdown) */}
+              {isDuplicating ? (
+                <div className="flex flex-col gap-3 flex-1 bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+                  <label className="text-xs font-bold text-blue-400">Selecione a loja destino:</label>
+                  <select 
+                    value={duplicateTargetId} 
+                    onChange={e => setDuplicateTargetId(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-600 rounded p-2.5 text-xs text-white outline-none cursor-pointer font-medium"
+                  >
+                    <option value="">-- Escolha uma loja --</option>
+                    {stores
+                      .filter(s => s.id !== store.id) // Remove a loja atual da lista
+                      .sort((a,b) => a.client.localeCompare(b.client)) // Organiza por ordem alfabética do Cliente
+                      .map(s => (
+                        <option key={s.id} value={s.id}>{s.client} - {s.store} {s.marketplace ? `(${s.marketplace})` : ''}</option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2 mt-auto">
+                    <button onClick={() => { setIsDuplicating(false); setDuplicateTargetId(''); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold py-2 rounded-lg transition-colors">Cancelar</button>
+                    <button onClick={confirmDuplication} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 rounded-lg transition-colors">Confirmar</button>
+                  </div>
+                </div>
+              ) : (
+                /* MODO NORMAL (Edição de Texto) */
+                <>
+                  <p className="text-[10px] text-gray-400 mb-3 leading-tight">Informações estratégicas e acessos.</p>
+                  
+                  <div className="flex flex-col gap-3 flex-1">
+                    <textarea 
+                      value={fixedNotes} 
+                      onChange={(e) => setFixedNotes(e.target.value)} 
+                      placeholder="Logins, preços, kits..."
+                      className="w-full flex-1 bg-gray-800 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 outline-none resize-none focus:border-emerald-500 custom-scrollbar"
+                    />
+                    <button onClick={saveFixedNotes} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg shadow-lg flex justify-center items-center gap-2 text-sm transition-colors">
+                      <Save size={16} /> Salvar e Registar
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
