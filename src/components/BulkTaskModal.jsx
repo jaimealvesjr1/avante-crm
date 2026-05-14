@@ -7,19 +7,27 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
   const [taskResp, setTaskResp] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [clientFilter, setClientFilter] = useState('');
-  const [selectedStores, setSelectedStores] = useState([]);
+  const [mktFilter, setMktFilter] = useState(''); // Novo estado
 
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
   const clients = [...new Set(stores.map(s => s.client))].filter(Boolean).sort();
+  const mkts = [...new Set(stores.map(s => s.marketplace))].filter(Boolean).sort();
 
-  // Filtra a lista de lojas para facilitar a seleção
   const filteredStores = useMemo(() => {
     return stores.filter(s => {
       if (clientFilter && s.client !== clientFilter) return false;
-      if (searchTerm && !s.store.toLowerCase().includes(searchTerm.toLowerCase()) && !s.client.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (mktFilter && s.marketplace !== mktFilter) return false; // Filtro por Marketplace
+      
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        const matchStore = s.store.toLowerCase().includes(search);
+        const matchClient = s.client.toLowerCase().includes(search);
+        const matchMkt = s.marketplace?.toLowerCase().includes(search);
+        if (!matchStore && !matchClient && !matchMkt) return false;
+      }
       return true;
     });
-  }, [stores, clientFilter, searchTerm]);
+  }, [stores, clientFilter, mktFilter, searchTerm]);
 
   const toggleStore = (id) => {
     setSelectedStores(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -118,7 +126,16 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               >
                 <option value="">Todos Clientes</option>
                 {clients.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+                </select>
+
+                <select 
+                    value={mktFilter} 
+                    onChange={e => setMktFilter(e.target.value)} 
+                    className="bg-gray-900 border border-gray-700 text-white rounded-lg p-2 outline-none text-xs w-32 cursor-pointer"
+                >
+                    <option value="">Marketplaces</option>
+                    {mkts.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
             </div>
 
             {/* Lista Scrollável */}

@@ -48,7 +48,13 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
   const addChecklist = () => {
     if (!newChecklist.trim()) return;
-    const item = { id: Date.now(), texto: newChecklist, feita: false, responsavel: newChecklistResp.trim() };
+    const item = { 
+      id: Date.now(), 
+      texto: newChecklist, 
+      feita: false, 
+      responsavel: newChecklistResp.trim(),
+      criadoPor: username // Usa a variável 'username' já definida no componente
+    };
     saveChanges({ ...store, checklists: [...(store.checklists || []), item] });
     setNewChecklist('');
     setNewChecklistResp('');
@@ -132,6 +138,12 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                       {item.responsavel && (
                         <span className="text-[10px] bg-indigo-900/40 text-indigo-300 px-2 py-0.5 rounded ml-2 border border-indigo-800/50 whitespace-nowrap">
                           Resp: {item.responsavel}
+                        </span>
+                      )}
+
+                      {item.criadoPor && (
+                        <span className="text-[10px] bg-gray-700 text-gray-400 px-2 py-0.5 rounded ml-1 border border-gray-600 whitespace-nowrap">
+                          Por: {item.criadoPor}
                         </span>
                       )}
                     </div>

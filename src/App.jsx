@@ -289,13 +289,17 @@ export default function App() {
   };
 
   const handleSaveBulkTasks = (storeIds, text, resp) => {
+    const creatorName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
+
     const batchStores = stores.map(store => {
       if (storeIds.includes(store.id)) {
         const newTask = {
-          id: Date.now() + Math.random(), // Evitar IDs duplicados no milissegundo
+          id: Date.now() + Math.random(),
           texto: text,
           feita: false,
-          responsavel: resp.trim()
+          responsavel: resp.trim(),
+          criadoPor: creatorName, // Novo campo de log
+          dataCriacao: new Date().toLocaleDateString('pt-BR')
         };
         const updatedStore = {
           ...store,
