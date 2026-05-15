@@ -24,15 +24,19 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
 
     // 2. Lojas onde EU sou o responsável, mas a última ação no histórico foi feita por OUTRA pessoa
     const storeUpdates = stores.filter(s => {
-      if (s.responsavel !== myName) return false; // Só me importa se a loja for minha
+      if (s.responsavel !== myName) return false;
       if (!s.taskLogs || s.taskLogs.length === 0) return false;
       
-      // Pega a última ação registrada
       const lastLog = s.taskLogs[s.taskLogs.length - 1];
-      return lastLog.author !== myName; // Se o autor do último log não fui eu, é uma notificação!
+      return lastLog.author !== myName; 
     });
 
-    return { myTasks, storeUpdates };
+    const sortByOldestAccess = (a, b) => new Date(a.dataUltimoAcesso || 0) - new Date(b.dataUltimoAcesso || 0);
+
+    return { 
+      myTasks: myTasks.sort(sortByOldestAccess), 
+      storeUpdates: storeUpdates.sort(sortByOldestAccess) 
+    };
   }, [stores, myName]);
 
   const groupedTasks = useMemo(() => {

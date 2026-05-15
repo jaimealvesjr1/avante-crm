@@ -97,7 +97,7 @@ export default function App() {
   }, []);
 
   const isAdmin = user?.email === 'jaimejunior.ide@gmail.com';
-  const canEdit = userRole === 'Gerente' || isAdmin;
+  const canEdit = userRole === 'Admin' || isAdmin;
 
   useEffect(() => {
     if (!user) return;
@@ -210,7 +210,7 @@ export default function App() {
 
   const handleToggleRole = async (emailToUpdate, currentRole) => {
     if (!canEdit) return;
-    const newRole = currentRole === 'Gerente' ? 'Operacional' : 'Gerente';
+    const newRole = currentRole === 'Admin' ? 'Operacional' : 'Admin';
     if(window.confirm(`Deseja alterar o nível de acesso de ${emailToUpdate} para ${newRole.toUpperCase()}?`)) {
       try {
         await setDoc(doc(db, "equipe", emailToUpdate.toLowerCase()), {

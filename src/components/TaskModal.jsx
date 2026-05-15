@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers }) {
@@ -11,6 +11,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [fixedNotes, setFixedNotes] = useState(store.notasFixas || '');
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [duplicateTargetId, setDuplicateTargetId] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
 
   // Lê o Nome Completo. Se não existir, cai para o Nome. Se for conta muito antiga, cai para o e-mail.
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
@@ -101,6 +102,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   };
 
   const saveFixedNotes = () => {
+    setIsSavingNotes(true);
+    
     const log = { 
       id: Date.now(), 
       data: new Date().toLocaleString('pt-BR'), 
@@ -113,7 +116,11 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       notasFixas: fixedNotes,
       taskLogs: [...(store.taskLogs || []), log]
     });
-    toast.success('Lembretes fixos atualizados e registados!');
+
+    setTimeout(() => {
+      setIsSavingNotes(false);
+      toast.success('Lembretes fixos atualizados e registados!');
+    }, 500);
   };
 
   const deleteFixedNotes = () => {
@@ -296,6 +303,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   Agendar Retorno
                 </button>
               </div>
+
             </div>
 
             {/* BLOCO 2: NOTAS FIXAS (LEMBRETES) */}
@@ -347,9 +355,21 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                       placeholder="Logins, preços, kits..."
                       className="w-full flex-1 bg-gray-800 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 outline-none resize-none focus:border-emerald-500 custom-scrollbar"
                     />
-                    <button onClick={saveFixedNotes} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg shadow-lg flex justify-center items-center gap-2 text-sm transition-colors">
-                      <Save size={16} /> Salvar e Registar
-                    </button>
+                    <button
+                    onClick={saveFixedNotes} 
+                    disabled={isSavingNotes}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-bold py-2.5 rounded-lg shadow-lg flex justify-center items-center gap-2 text-sm transition-colors"
+                      >
+                      {isSavingNotes ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" /> Salvando...
+                        </>
+                      ) : (
+                        <>
+                          <Save size={16} /> Salvar e Registar
+                        </>
+                      )}
+                      </button>
                   </div>
                 </>
               )}
