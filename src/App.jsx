@@ -724,6 +724,8 @@ export default function App() {
             openBulkTaskModal={() => setBulkTaskModalOpen(true)}
             currentUserData={currentUserData}
             user={user}
+            updateStoreInCloud={updateStoreInCloud}
+            setStores={setStores}
           />
         )}
       </div>

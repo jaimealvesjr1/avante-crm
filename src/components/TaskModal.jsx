@@ -15,7 +15,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [isScheduling, setIsScheduling] = useState(false);
   const [isAddingTask, setIsAddingTask] = useState(false);
 
-  // Estados para Lançamento Diário
   const [dailyGMV, setDailyGMV] = useState('');
   const [dailyAds, setDailyAds] = useState('');
   const [dailyOrders, setDailyOrders] = useState('');
@@ -23,10 +22,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [entryDay, setEntryDay] = useState(new Date().getDate());
   const [isSavingDaily, setIsSavingDaily] = useState(false);
 
-  // Lê o Nome Completo. Se não existir, cai para o Nome. Se for conta muito antiga, cai para o e-mail.
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
   
-  // Lista de nomes bem formatados para o Dropdown
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
 
   const saveChanges = (updatedStore) => {
@@ -67,41 +64,69 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
     setIsSavingDaily(true);
 
-    // Monta a data baseada no dia escolhido (Mês e Ano atuais)
-    const now = new Date();
-    const dateString = `${String(entryDay).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-
     const gmvVal = Number(dailyGMV) || 0;
     const adsVal = Number(dailyAds) || 0;
     const ordersVal = Number(dailyOrders) || 0;
     const unitsVal = Number(dailyUnits) || 0;
+    const dayVal = Number(entryDay);
 
-    const historyEntry = {
-      date: dateString,
-      gmv: gmvVal,
-      ads: adsVal,
-      orders: ordersVal,
-      units: unitsVal
+    let prevRev = 0, prevAds = 0, prevOrd = 0, prevUni = 0;
+    const pastEntries = [...(store.history || [])].filter(h => h.day < dayVal).sort((a,b) => b.day - a.day);
+    if(pastEntries.length > 0) {
+        prevRev = pastEntries[0].revenue || 0;
+        prevAds = pastEntries[0].ads || 0;
+        prevOrd = pastEntries[0].orders || 0;
+        prevUni = pastEntries[0].units || 0;
+    }
+
+    const cumRev = prevRev + gmvVal;
+    const cumAds = prevAds + adsVal;
+    const cumOrd = prevOrd + ordersVal;
+    const cumUni = prevUni + unitsVal;
+
+    const entry = {
+      id: Date.now(),
+      day: dayVal,
+      dailyRevenue: gmvVal,
+      revenue: cumRev,
+      ads: cumAds,
+      orders: cumOrd,
+      units: cumUni,
+      date: new Date().toLocaleDateString('pt-BR')
     };
 
+    // 4. Inserir ou atualizar no histórico
+    let updatedHistory = [...(store.history || [])];
+    const existingIndex = updatedHistory.findIndex(h => h.day === dayVal);
+    
+    if(existingIndex >= 0) {
+      entry.id = updatedHistory[existingIndex].id;
+      updatedHistory[existingIndex] = entry;
+    } else {
+      updatedHistory.push(entry);
+    }
+
     const log = {
-      id: Date.now(),
+      id: Date.now() + 1,
       data: new Date().toLocaleString('pt-BR'),
-      texto: `📊 Lançamento [Dia ${entryDay}]: R$${gmvVal} | Ads R$${adsVal} | ${ordersVal} Ped`,
-      author: username
+      texto: `📊 Lançamento [Dia ${dayVal}]: R$${gmvVal} | Ads R$${adsVal} | ${ordersVal} Ped`,
+      author: username // Certifique-se de que a variável username existe no componente
     };
 
     const updatedStore = {
       ...store,
-      gmvBase: (store.gmvBase || 0) + gmvVal,
-      currentRevenue: (store.currentRevenue || 0) + gmvVal,
-      adsInvestment: (store.adsInvestment || 0) + adsVal,
-      orders: (store.orders || 0) + ordersVal,
-      units: (store.units || 0) + unitsVal,
-      history: [...(store.history || []), historyEntry],
+      history: updatedHistory.sort((a,b) => a.day - b.day),
       taskLogs: [...(store.taskLogs || []), log],
       dataUltimoAcesso: new Date().toISOString()
     };
+
+    const maxDay = Math.max(...updatedStore.history.map(h => h.day));
+    if (dayVal === maxDay) {
+      updatedStore.currentRevenue = cumRev;
+      updatedStore.adsInvestment = cumAds;
+      updatedStore.orders = cumOrd;
+      updatedStore.units = cumUni;
+    }
 
     saveChanges(updatedStore);
 
@@ -111,7 +136,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       setDailyAds('');
       setDailyOrders('');
       setDailyUnits('');
-      toast.success(`Dados do dia ${entryDay} lançados!`);
+      toast.success(`Dados do dia ${dayVal} lançados com sucesso!`);
     }, 600);
   };
 

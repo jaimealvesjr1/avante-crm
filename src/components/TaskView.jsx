@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Filter, User, Bell, CopyPlus } from 'lucide-react'; // <-- Adicione CopyPlus
+import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Filter, User, Bell, CopyPlus, Check, CalendarClock, Copy } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
-export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user }) {
+export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores }) {
   const [clientFilter, setClientFilter] = useState('');
   const [storeRespFilter, setStoreRespFilter] = useState('');
   const [taskRespFilter, setTaskRespFilter] = useState('');
@@ -13,11 +14,13 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
   const storeResps = [...new Set(stores.map(s => s.responsavel))].filter(Boolean).sort();
   const taskResps = [...new Set(stores.flatMap(s => (s.checklists || []).map(c => c.responsavel)))].filter(Boolean).sort();
   const mkts = [...new Set(stores.map(s => s.marketplace))].filter(Boolean).sort();
+  const [menuOpenId, setMenuOpenId] = useState(null);
 
-  const myInbox = useMemo(() => {
+  // --- PAINEL DE NOTIFICAÇÕES (CAIXA DE ENTRADA AGRUPADA POR CLIENTE) ---
+  const groupedInbox = useMemo(() => {
     if (!myName) return [];
 
-    const inboxStores = [];
+    const groups = {};
 
     stores.forEach(store => {
       const notificationReasons = [];
@@ -36,19 +39,32 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         }
       }
 
-      // Se a loja tiver pelo menos um motivo para notificar, adicionamos à lista
+      // Se a loja tiver pelo menos um motivo, agrupamos dentro do Cliente dela
       if (notificationReasons.length > 0) {
-        inboxStores.push({
+        if (!groups[store.client]) {
+          groups[store.client] = {
+            clientName: store.client,
+            stores: [],
+            lastAccess: store.dataUltimoAcesso || 0 // Usado para ordenar
+          };
+        }
+        
+        groups[store.client].stores.push({
           ...store,
-          highlightMessages: notificationReasons // Guardamos os motivos num array (lista)
+          highlightMessages: notificationReasons
         });
+
+        // Atualiza a data do grupo para empurrar os clientes recentemente mexidos para o final
+        const currentStoreAccess = new Date(store.dataUltimoAcesso || 0);
+        const groupOldestAccess = new Date(groups[store.client].lastAccess);
+        if (currentStoreAccess < groupOldestAccess) {
+            groups[store.client].lastAccess = store.dataUltimoAcesso;
+        }
       }
     });
 
-    // Função de ordenação: Lojas mexidas recentemente vão para o fim
-    const sortByOldestAccess = (a, b) => new Date(a.dataUltimoAcesso || 0) - new Date(b.dataUltimoAcesso || 0);
-
-    return inboxStores.sort(sortByOldestAccess);
+    // Converte o objeto em lista e ordena (Clientes com pendências antigas vêm primeiro)
+    return Object.values(groups).sort((a, b) => new Date(a.lastAccess || 0) - new Date(b.lastAccess || 0));
   }, [stores, myName]);
 
   const groupedTasks = useMemo(() => {
@@ -95,15 +111,48 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
   const TaskCard = ({ store, isHighlighted = false, highlightMessages = [] }) => (
     <div 
       onClick={() => openTaskModal(store)}
-      className={`p-4 rounded-xl shadow-sm cursor-pointer transition-all group ${
+      className={`p-4 rounded-xl shadow-sm cursor-pointer transition-all group relative ${
         isHighlighted 
         ? 'bg-indigo-900/40 border-2 border-indigo-500 hover:bg-indigo-900/60' 
         : 'bg-gray-800 border border-gray-700 hover:bg-gray-750 hover:border-blue-500/50'
       }`}
     >
+      {/* CABEÇALHO DO CARD */}
       <div className="flex justify-between items-start mb-1">
-        <h4 className={`font-bold text-sm ${isHighlighted ? 'text-indigo-100' : 'text-gray-200'}`}>{store.client}</h4>
-        <MoreHorizontal size={16} className="text-gray-500 group-hover:text-blue-400" />
+        <h4 className={`font-bold text-sm ${isHighlighted ? 'text-indigo-100' : 'text-gray-200'} flex items-center gap-1`}>
+          {store.client}
+          {/* 1. EXIBIÇÃO DO MARKETPLACE NO TÍTULO */}
+          {store.marketplace && (
+            <span className="text-[10px] text-gray-500 font-normal">({store.marketplace})</span>
+          )}
+        </h4>
+
+        {/* 2. MENU DE 3 PONTOS COM AÇÕES RÁPIDAS */}
+        <div className="relative">
+          <button 
+            onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === store.id ? null : store.id); }}
+            className="p-1 hover:bg-gray-700 rounded text-gray-500 hover:text-blue-400 transition-colors"
+          >
+            <MoreHorizontal size={16} />
+          </button>
+
+          {menuOpenId === store.id && (
+            <div className="absolute right-0 mt-1 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden animate-in zoom-in-95 duration-100">
+              <button 
+                onClick={(e) => handleQuickAction(e, store, 'accessed')}
+                className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-800 flex items-center gap-2"
+              >
+                <Check size={14} className="text-green-500" /> Marcar Acesso Hoje
+              </button>
+              <button 
+                onClick={(e) => handleQuickAction(e, store, 'delay')}
+                className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-800 flex items-center gap-2"
+              >
+                <CalendarClock size={14} className="text-amber-500" /> Adiar para Amanhã
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <p className="text-xs text-gray-400 mb-2">{store.store}</p>
       
@@ -138,8 +187,40 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     </div>
   );
 
+  const handleQuickAction = (e, store, action) => {
+    e.stopPropagation();
+    setMenuOpenId(null);
+
+    let updatedStore = { ...store };
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    if (action === 'accessed') {
+      // 1. Registra que você acessou agora
+      updatedStore.dataUltimoAcesso = now.toISOString();
+      
+      // 2. Se a loja estava atrasada ou agendada para hoje, 
+      // limpamos o agendamento para ela ir para "Sem Data" (concluída)
+      // ou você pode mudar para updatedStore.dataProximoAcesso = todayStr se quiser que ela fique na coluna "Hoje"
+      updatedStore.dataProximoAcesso = todayStr; 
+      
+      toast.success("Acesso registrado e pendência limpa!");
+    } else if (action === 'delay') {
+      // Adia o agendamento para amanhã
+      const tomorrow = new Date();
+      tomorrow.setDate(now.getDate() + 1);
+      updatedStore.dataProximoAcesso = tomorrow.toISOString().split('T')[0];
+      
+      toast.success("Adiado para amanhã!");
+    }
+
+    // Salva no Firebase e atualiza a tela
+    updateStoreInCloud(updatedStore);
+    setStores(prev => prev.map(s => s.id === store.id ? updatedStore : s));
+  };
+
   return (
-    <div className="animate-in fade-in duration-300">
+    <div className="animate-in fade-in duration-300" onClick={() => setMenuOpenId(null)}>
       <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -156,21 +237,40 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         </button>
       </div>
 
-      {myInbox.length > 0 && (
+      {/* CAIXA DE ENTRADA AGRUPADA (FICHA DO CLIENTE) */}
+      {groupedInbox.length > 0 && (
         <div className="mb-8 bg-gray-900 border border-indigo-500/50 rounded-xl p-5 shadow-lg relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
           <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-            <Bell className="text-indigo-400" /> Minhas Notificações
+            <Bell className="text-indigo-400" /> Minhas Notificações ({groupedInbox.length} Clientes)
           </h3>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {myInbox.map(store => (
-               <TaskCard 
-                 key={`inbox-${store.id}`} 
-                 store={store} 
-                 isHighlighted={true} 
-                 highlightMessages={store.highlightMessages} 
-               />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            {groupedInbox.map(group => (
+              <div key={group.clientName} className="bg-gray-800 border border-indigo-500/30 rounded-xl p-4 flex flex-col shadow-sm relative overflow-hidden">
+                {/* Linha de destaque superior no card do cliente */}
+                <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500/30"></div>
+                
+                {/* Cabeçalho do Cliente (A mini "Ficha") */}
+                <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
+                  <h4 className="font-bold text-indigo-100 text-base">{group.clientName}</h4>
+                  <span className="bg-indigo-900/50 text-indigo-300 text-[10px] px-2 py-1 rounded font-bold uppercase border border-indigo-500/30">
+                    {group.stores.length} Loja(s) com alerta
+                  </span>
+                </div>
+                
+                {/* Lojas com Notificações */}
+                <div className="flex flex-col gap-3">
+                  {group.stores.map(store => (
+                    <TaskCard 
+                      key={`inbox-${store.id}`} 
+                      store={store} 
+                      isHighlighted={true} 
+                      highlightMessages={store.highlightMessages} 
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>
