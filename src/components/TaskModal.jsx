@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2 } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers }) {
@@ -12,6 +12,16 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [duplicateTargetId, setDuplicateTargetId] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [isAddingTask, setIsAddingTask] = useState(false);
+
+  // Estados para Lançamento Diário
+  const [dailyGMV, setDailyGMV] = useState('');
+  const [dailyAds, setDailyAds] = useState('');
+  const [dailyOrders, setDailyOrders] = useState('');
+  const [dailyUnits, setDailyUnits] = useState('');
+  const [entryDay, setEntryDay] = useState(new Date().getDate());
+  const [isSavingDaily, setIsSavingDaily] = useState(false);
 
   // Lê o Nome Completo. Se não existir, cai para o Nome. Se for conta muito antiga, cai para o e-mail.
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
@@ -50,19 +60,80 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     }
   };
 
+  const saveDailyEntry = () => {
+    if (!dailyGMV && !dailyAds && !dailyOrders && !dailyUnits) {
+      return toast.error("Preencha os dados para lançar.");
+    }
+
+    setIsSavingDaily(true);
+
+    // Monta a data baseada no dia escolhido (Mês e Ano atuais)
+    const now = new Date();
+    const dateString = `${String(entryDay).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+
+    const gmvVal = Number(dailyGMV) || 0;
+    const adsVal = Number(dailyAds) || 0;
+    const ordersVal = Number(dailyOrders) || 0;
+    const unitsVal = Number(dailyUnits) || 0;
+
+    const historyEntry = {
+      date: dateString,
+      gmv: gmvVal,
+      ads: adsVal,
+      orders: ordersVal,
+      units: unitsVal
+    };
+
+    const log = {
+      id: Date.now(),
+      data: new Date().toLocaleString('pt-BR'),
+      texto: `📊 Lançamento [Dia ${entryDay}]: R$${gmvVal} | Ads R$${adsVal} | ${ordersVal} Ped`,
+      author: username
+    };
+
+    const updatedStore = {
+      ...store,
+      gmvBase: (store.gmvBase || 0) + gmvVal,
+      currentRevenue: (store.currentRevenue || 0) + gmvVal,
+      adsInvestment: (store.adsInvestment || 0) + adsVal,
+      orders: (store.orders || 0) + ordersVal,
+      units: (store.units || 0) + unitsVal,
+      history: [...(store.history || []), historyEntry],
+      taskLogs: [...(store.taskLogs || []), log],
+      dataUltimoAcesso: new Date().toISOString()
+    };
+
+    saveChanges(updatedStore);
+
+    setTimeout(() => {
+      setIsSavingDaily(false);
+      setDailyGMV('');
+      setDailyAds('');
+      setDailyOrders('');
+      setDailyUnits('');
+      toast.success(`Dados do dia ${entryDay} lançados!`);
+    }, 600);
+  };
+
   const addChecklist = () => {
     if (!newChecklist.trim()) return;
+    setIsAddingTask(true);
+
     const item = { 
       id: Date.now(), 
       texto: newChecklist, 
       feita: false, 
       responsavel: newChecklistResp.trim(),
-      criadoPor: username // Usa a variável 'username' já definida no componente
+      criadoPor: username
     };
     saveChanges({ ...store, checklists: [...(store.checklists || []), item] });
-    setNewChecklist('');
-    setNewChecklistResp('');
-    toast.success('Tarefa adicionada!');
+    
+    setTimeout(() => {
+      setNewChecklist('');
+      setNewChecklistResp('');
+      setIsAddingTask(false);
+      toast.success('Tarefa adicionada!');
+    }, 500);
   };
 
   const toggleChecklist = (id) => {
@@ -97,8 +168,13 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   };
 
   const saveNextDate = () => {
+    setIsScheduling(true); // Liga o spinner
     saveChanges({ ...store, dataProximoAcesso: nextDate });
-    toast.success('Retorno agendado com sucesso!');
+    
+    setTimeout(() => {
+      setIsScheduling(false); // Desliga o spinner
+      toast.success('Retorno agendado com sucesso!');
+    }, 500);
   };
 
   const saveFixedNotes = () => {
@@ -242,12 +318,17 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     <option value="">Sem Resp.</option>
                     {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
-                  <button onClick={addChecklist} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg"><Plus size={18}/></button>
+                  <button 
+                    onClick={addChecklist} 
+                    disabled={isAddingTask}
+                    className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors shrink-0 min-w-[120px]"
+                  >
+                    {isAddingTask ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : <><Plus size={16}/> Add Tarefa</>}
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* SESSÃO DE LOGS */}
             <div>
               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 mt-6">Histórico de Ações</h4>
               <div className="space-y-3 mb-3 border-l-2 border-gray-700 ml-2 pl-4">
@@ -278,101 +359,155 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
         </div>
 
         {/* LADO DIREITO: AGENDAMENTO E NOTAS */}
-        <div className="w-full md:w-72 bg-gray-800 flex flex-col">
+        <div className="w-full md:w-80 bg-gray-800 flex flex-col border-l border-gray-700">
           <div className="hidden md:flex justify-end p-4">
-            <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded-lg transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button>
+            <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded-lg transition-colors">
+              <X size={20} className="text-gray-400 hover:text-white" />
+            </button>
           </div>
           
-          <div className="p-6 pt-0 flex-1 flex flex-col h-full">
+          <div className="p-5 pt-0 flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
             
-            {/* BLOCO 1: AGENDAMENTO */}
-            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 mb-4 shrink-0">
-              <h4 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
-                <CalendarDays size={16} className="text-amber-400" /> Próximo Acesso
+            {/* 1. DESEMPENHO DIÁRIO */}
+            <div className="bg-gray-900 p-4 rounded-xl border border-blue-500/30 shrink-0">
+              <h4 className="text-xs font-bold text-blue-400 uppercase flex items-center gap-2 mb-3">
+                <TrendingUp size={14} /> Lançamento de Desempenho
               </h4>
-              <p className="text-xs text-gray-400 mb-4">Agende o dia exato para voltar a trabalhar nesta conta.</p>
               
-              <div className="flex flex-col gap-2">
-                <input 
-                  type="date" 
-                  value={nextDate} 
-                  onChange={(e) => setNextDate(e.target.value)} 
-                  className="w-full bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-white outline-none font-bold text-sm"
-                />
-                <button onClick={saveNextDate} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-lg shadow-lg transition-colors mt-2 text-sm">
-                  Agendar Retorno
-                </button>
+              <div className="grid grid-cols-4 gap-2 mb-3">
+                {/* Campo de Dia */}
+                <div className="col-span-1">
+                  <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">Dia</label>
+                  <input 
+                    type="number" 
+                    value={entryDay}
+                    onChange={e => setEntryDay(e.target.value)}
+                    className="w-full bg-blue-900/20 border border-blue-500/30 rounded-lg p-2 text-xs text-white outline-none text-center font-bold"
+                  />
+                </div>
+                {/* GMV */}
+                <div className="col-span-3">
+                  <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">GMV (R$)</label>
+                  <input 
+                    type="number" 
+                    value={dailyGMV}
+                    onChange={e => setDailyGMV(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+                {/* ADS */}
+                <div className="col-span-2">
+                  <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">Ads (R$)</label>
+                  <input 
+                    type="number" 
+                    value={dailyAds}
+                    onChange={e => setDailyAds(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+                {/* Pedidos */}
+                <div className="col-span-1">
+                  <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">Pedidos</label>
+                  <input 
+                    type="number" 
+                    value={dailyOrders}
+                    onChange={e => setDailyOrders(e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+                {/* Unidades */}
+                <div className="col-span-1">
+                  <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">Unidades</label>
+                  <input 
+                    type="number" 
+                    value={dailyUnits}
+                    onChange={e => setDailyUnits(e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
 
+              <button 
+                onClick={saveDailyEntry}
+                disabled={isSavingDaily}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 text-white font-bold py-2 rounded-lg text-xs transition-all flex items-center justify-center gap-2"
+              >
+                {isSavingDaily ? <Loader2 size={14} className="animate-spin" /> : `Lançar Dados para o dia ${entryDay}`}
+              </button>
             </div>
 
-            {/* BLOCO 2: NOTAS FIXAS (LEMBRETES) */}
-            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 flex-1 flex flex-col min-h-[300px]">
+            {/* 2. NOTAS FIXAS */}
+            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 flex-1 flex flex-col min-h-[200px]">
               <div className="flex justify-between items-center mb-2">
-                <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <StickyNote size={16} className="text-emerald-400" /> Notas Fixas
+                <h4 className="text-xs font-bold text-emerald-400 uppercase flex items-center gap-2">
+                  <StickyNote size={14} /> Bloco de Notas
                 </h4>
-                {/* Esconde os botões se estivermos no ecrã de duplicação */}
                 {!isDuplicating && (
                   <div className="flex gap-1">
-                    <button onClick={() => setIsDuplicating(true)} title="Duplicar para outra loja" className="p-1.5 text-gray-400 hover:text-blue-400 transition-colors"><Copy size={14}/></button>
-                    <button onClick={deleteFixedNotes} title="Apagar tudo" className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"><Eraser size={14}/></button>
+                    <button onClick={() => setIsDuplicating(true)} className="p-1 text-gray-500 hover:text-blue-400 transition-colors"><Copy size={12}/></button>
+                    <button onClick={deleteFixedNotes} className="p-1 text-gray-500 hover:text-red-400 transition-colors"><Eraser size={12}/></button>
                   </div>
                 )}
               </div>
 
-              {/* MODO DE DUPLICAÇÃO (Dropdown) */}
               {isDuplicating ? (
-                <div className="flex flex-col gap-3 flex-1 bg-gray-800/50 p-3 rounded-lg border border-gray-700">
-                  <label className="text-xs font-bold text-blue-400">Selecione a loja destino:</label>
+                <div className="flex flex-col gap-2 flex-1">
                   <select 
                     value={duplicateTargetId} 
                     onChange={e => setDuplicateTargetId(e.target.value)}
-                    className="w-full bg-gray-900 border border-gray-600 rounded p-2.5 text-xs text-white outline-none cursor-pointer font-medium"
+                    className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-[10px] text-white outline-none"
                   >
-                    <option value="">-- Escolha uma loja --</option>
-                    {stores
-                      .filter(s => s.id !== store.id) // Remove a loja atual da lista
-                      .sort((a,b) => a.client.localeCompare(b.client)) // Organiza por ordem alfabética do Cliente
-                      .map(s => (
-                        <option key={s.id} value={s.id}>{s.client} - {s.store} {s.marketplace ? `(${s.marketplace})` : ''}</option>
+                    <option value="">Selecionar destino...</option>
+                    {stores.filter(s => s.id !== store.id).map(s => (
+                      <option key={s.id} value={s.id}>{s.client} - {s.store}</option>
                     ))}
                   </select>
-                  <div className="flex gap-2 mt-auto">
-                    <button onClick={() => { setIsDuplicating(false); setDuplicateTargetId(''); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold py-2 rounded-lg transition-colors">Cancelar</button>
-                    <button onClick={confirmDuplication} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 rounded-lg transition-colors">Confirmar</button>
+                  <div className="flex gap-1">
+                    <button onClick={() => setIsDuplicating(false)} className="flex-1 bg-gray-700 text-[10px] py-1.5 rounded">Sair</button>
+                    <button onClick={confirmDuplication} className="flex-1 bg-blue-600 text-[10px] py-1.5 rounded">OK</button>
                   </div>
                 </div>
               ) : (
-                /* MODO NORMAL (Edição de Texto) */
-                <>
-                  <p className="text-[10px] text-gray-400 mb-3 leading-tight">Informações estratégicas e acessos.</p>
-                  
-                  <div className="flex flex-col gap-3 flex-1">
-                    <textarea 
-                      value={fixedNotes} 
-                      onChange={(e) => setFixedNotes(e.target.value)} 
-                      placeholder="Logins, preços, kits..."
-                      className="w-full flex-1 bg-gray-800 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 outline-none resize-none focus:border-emerald-500 custom-scrollbar"
-                    />
-                    <button
+                <div className="flex flex-col gap-2 flex-1">
+                  <textarea 
+                    value={fixedNotes} 
+                    onChange={(e) => setFixedNotes(e.target.value)} 
+                    placeholder="Acessos, regras, preços..."
+                    className="w-full flex-1 bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-[11px] text-gray-300 outline-none resize-none focus:border-emerald-500"
+                  />
+                  <button 
                     onClick={saveFixedNotes} 
                     disabled={isSavingNotes}
-                      className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-bold py-2.5 rounded-lg shadow-lg flex justify-center items-center gap-2 text-sm transition-colors"
-                      >
-                      {isSavingNotes ? (
-                        <>
-                          <Loader2 size={16} className="animate-spin" /> Salvando...
-                        </>
-                      ) : (
-                        <>
-                          <Save size={16} /> Salvar e Registar
-                        </>
-                      )}
-                      </button>
-                  </div>
-                </>
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-900 text-white font-bold py-2 rounded-lg text-xs flex justify-center items-center gap-2"
+                  >
+                    {isSavingNotes ? <Loader2 size={14} className="animate-spin" /> : <><Save size={14} /> Salvar</>}
+                  </button>
+                </div>
               )}
+            </div>
+
+            {/* 3. PRÓXIMO ACESSO */}
+            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 shrink-0 mb-2">
+              <h4 className="text-xs font-bold text-amber-400 uppercase flex items-center gap-2 mb-3">
+                <CalendarDays size={14} /> Próximo Acesso
+              </h4>
+              <input 
+                type="date" 
+                value={nextDate} 
+                onChange={(e) => setNextDate(e.target.value)} 
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-amber-500 font-bold"
+              />
+              <button 
+                onClick={saveNextDate} 
+                disabled={isScheduling}
+                className="w-full bg-amber-600 hover:bg-amber-500 disabled:bg-amber-900 text-white font-bold py-2 rounded-lg text-xs mt-2 transition-all flex items-center justify-center gap-2"
+              >
+                {isScheduling ? <Loader2 size={14} className="animate-spin" /> : 'Agendar Retorno'}
+              </button>
             </div>
           </div>
         </div>

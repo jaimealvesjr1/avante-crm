@@ -24,7 +24,14 @@ export default function App() {
   const [stores, setStores] = useState(initialStores);
   const [isDbLoading, setIsDbLoading] = useState(true);
 
-  const [activeView, setActiveView] = useState('operacional'); 
+  const [activeView, setActiveView] = useState(() => {
+    return localStorage.getItem('avante_tela_atual') || 'operacional';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('avante_tela_atual', activeView);
+  }, [activeView]);
+
   const [globalGrowth, setGlobalGrowth] = useState(10);
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [currentDay, setCurrentDay] = useState(new Date().getDate());

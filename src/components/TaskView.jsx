@@ -15,28 +15,40 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
   const mkts = [...new Set(stores.map(s => s.marketplace))].filter(Boolean).sort();
 
   const myInbox = useMemo(() => {
-    if (!myName) return { myTasks: [], storeUpdates: [] };
+    if (!myName) return [];
 
-    // 1. Tarefas atribuídas a mim (que não estão concluídas)
-    const myTasks = stores.filter(s => 
-      s.checklists?.some(c => !c.feita && c.responsavel === myName)
-    );
+    const inboxStores = [];
 
-    // 2. Lojas onde EU sou o responsável, mas a última ação no histórico foi feita por OUTRA pessoa
-    const storeUpdates = stores.filter(s => {
-      if (s.responsavel !== myName) return false;
-      if (!s.taskLogs || s.taskLogs.length === 0) return false;
-      
-      const lastLog = s.taskLogs[s.taskLogs.length - 1];
-      return lastLog.author !== myName; 
+    stores.forEach(store => {
+      const notificationReasons = [];
+
+      // Regra 1: Tarefas delegadas
+      const delegatedTasksCount = store.checklists?.filter(c => !c.feita && c.responsavel === myName).length || 0;
+      if (delegatedTasksCount > 0) {
+        notificationReasons.push(`${delegatedTasksCount} tarefa(s) delegada(s) a você`);
+      }
+
+      // Regra 2: Atualizado por outra pessoa
+      if (store.responsavel === myName && store.taskLogs && store.taskLogs.length > 0) {
+        const lastLog = store.taskLogs[store.taskLogs.length - 1];
+        if (lastLog.author !== myName) {
+          notificationReasons.push(`Atualizado por ${lastLog.author}`);
+        }
+      }
+
+      // Se a loja tiver pelo menos um motivo para notificar, adicionamos à lista
+      if (notificationReasons.length > 0) {
+        inboxStores.push({
+          ...store,
+          highlightMessages: notificationReasons // Guardamos os motivos num array (lista)
+        });
+      }
     });
 
+    // Função de ordenação: Lojas mexidas recentemente vão para o fim
     const sortByOldestAccess = (a, b) => new Date(a.dataUltimoAcesso || 0) - new Date(b.dataUltimoAcesso || 0);
 
-    return { 
-      myTasks: myTasks.sort(sortByOldestAccess), 
-      storeUpdates: storeUpdates.sort(sortByOldestAccess) 
-    };
+    return inboxStores.sort(sortByOldestAccess);
   }, [stores, myName]);
 
   const groupedTasks = useMemo(() => {
@@ -80,7 +92,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     return groups;
   }, [stores, clientFilter, storeRespFilter, taskRespFilter, mktFilter]);
 
-  const TaskCard = ({ store, isHighlighted = false, highlightMsg = '' }) => (
+  const TaskCard = ({ store, isHighlighted = false, highlightMessages = [] }) => (
     <div 
       onClick={() => openTaskModal(store)}
       className={`p-4 rounded-xl shadow-sm cursor-pointer transition-all group ${
@@ -95,13 +107,21 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
       </div>
       <p className="text-xs text-gray-400 mb-2">{store.store}</p>
       
-      {isHighlighted && highlightMsg && (
-        <div className="bg-indigo-500/20 text-indigo-300 px-2 py-1.5 rounded-lg text-xs font-bold mb-2 flex items-center gap-1.5 border border-indigo-500/30">
-          <Bell size={12} className="animate-pulse" /> {highlightMsg}
+      {/* CADA NOTIFICAÇÃO EM SUA PRÓPRIA DIV */}
+      {isHighlighted && highlightMessages.length > 0 && (
+        <div className="flex flex-col gap-1.5 mb-2">
+          {highlightMessages.map((msg, index) => (
+            <div 
+              key={index} 
+              className="bg-indigo-500/30 text-indigo-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-2 border border-indigo-500/40 shadow-sm"
+            >
+              <Bell size={12} className={index === 0 ? "animate-pulse text-indigo-300" : "text-indigo-400"} />
+              {msg}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Exibe o responsável da loja, se houver e se não for um destaque */}
       {!isHighlighted && store.responsavel && (
         <div className="inline-flex items-center gap-1 bg-blue-900/30 text-blue-400 px-2 py-1 rounded text-[10px] font-bold mb-2">
           <User size={10} /> {store.responsavel}
@@ -136,8 +156,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         </button>
       </div>
 
-      {/* NOVO: CAIXA DE ENTRADA (NOTIFICAÇÕES DO USUÁRIO LOGADO) */}
-      {(myInbox.myTasks.length > 0 || myInbox.storeUpdates.length > 0) && (
+      {myInbox.length > 0 && (
         <div className="mb-8 bg-gray-900 border border-indigo-500/50 rounded-xl p-5 shadow-lg relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
           <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
@@ -145,30 +164,14 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
           </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {myInbox.myTasks.map(store => {
-               // Conta quantas tarefas foram delegadas para mim
-               const qtd = store.checklists?.filter(c => !c.feita && c.responsavel === myName).length;
-               return (
-                 <TaskCard 
-                   key={`task-${store.id}`} 
-                   store={store} 
-                   isHighlighted={true} 
-                   highlightMsg={`${qtd} tarefa(s) delegada(s) a você`} 
-                 />
-               );
-            })}
-
-            {myInbox.storeUpdates.map(store => {
-               const lastLog = store.taskLogs[store.taskLogs.length - 1];
-               return (
-                 <TaskCard 
-                   key={`update-${store.id}`} 
-                   store={store} 
-                   isHighlighted={true} 
-                   highlightMsg={`Atualizado por ${lastLog.author}`} 
-                 />
-               );
-            })}
+            {myInbox.map(store => (
+               <TaskCard 
+                 key={`inbox-${store.id}`} 
+                 store={store} 
+                 isHighlighted={true} 
+                 highlightMessages={store.highlightMessages} 
+               />
+            ))}
           </div>
         </div>
       )}
