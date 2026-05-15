@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Filter, User, Bell, CopyPlus, Check, CalendarClock, Copy } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores }) {
+export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores, openClientFile }) {
   const [clientFilter, setClientFilter] = useState('');
   const [storeRespFilter, setStoreRespFilter] = useState('');
   const [taskRespFilter, setTaskRespFilter] = useState('');
@@ -253,7 +253,13 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
                 
                 {/* Cabeçalho do Cliente (A mini "Ficha") */}
                 <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
-                  <h4 className="font-bold text-indigo-100 text-base">{group.clientName}</h4>
+                  <h4 
+                    onClick={() => openClientFile(group.clientName)}
+                    className="font-bold text-indigo-100 text-base cursor-pointer hover:text-white hover:underline decoration-indigo-400 underline-offset-4 transition-all"
+                    title="Ver Ficha Completa"
+                  >
+                    {group.clientName}
+                  </h4>
                   <span className="bg-indigo-900/50 text-indigo-300 text-[10px] px-2 py-1 rounded font-bold uppercase border border-indigo-500/30">
                     {group.stores.length} Loja(s) com alerta
                   </span>

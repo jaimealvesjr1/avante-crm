@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut, Key } from 'lucide-react';
+import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut, Key, Briefcase } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, writeBatch } from "firebase/firestore";
 import { Toaster, toast } from 'react-hot-toast';
+import ClientFileModal from './components/ClientFileModal';
 
 import ActionModal from './components/ActionModal';
 import ExecutiveDashboard from './components/ExecutiveDashboard';
@@ -25,7 +26,7 @@ export default function App() {
   const [isDbLoading, setIsDbLoading] = useState(true);
 
   const [activeView, setActiveView] = useState(() => {
-    return localStorage.getItem('avante_tela_atual') || 'operacional';
+    return localStorage.getItem('avante_tela_atual') || 'dashboard';
   });
 
   useEffect(() => {
@@ -39,6 +40,9 @@ export default function App() {
   const [sortBy, setSortBy] = useState('gmv');
   const [expandedClients, setExpandedClients] = useState([]);
   const [bulkTaskModalOpen, setBulkTaskModalOpen] = useState(false);
+
+  const [clientFileOpen, setClientFileOpen] = useState(false);
+  const [activeClientGroup, setActiveClientGroup] = useState(null);
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createModalClient, setCreateModalClient] = useState('');
@@ -140,6 +144,14 @@ export default function App() {
     } else {
       setGlobalGrowth(newVal);
       await setDoc(doc(db, "settings", "global"), { globalGrowth: newVal }, { merge: true });
+    }
+  };
+
+  const openClientFile = (clientName) => {
+    const group = dashboardData.groupedClients.find(g => g.client === clientName);
+    if (group) {
+      setActiveClientGroup(group);
+      setClientFileOpen(true);
     }
   };
 
@@ -620,30 +632,34 @@ export default function App() {
         <div className="flex flex-col xl:flex-row justify-between items-center bg-gray-800 p-4 rounded-xl border border-gray-700 gap-4 shadow-md">
           <div className="flex items-center gap-4 w-full xl:w-auto overflow-x-auto pb-1 xl:pb-0">
             <button onClick={() => setIsBatchMode(true)} className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all whitespace-nowrap">
-              <Zap size={16} /> Lançamento em Lote
+              <Zap size={16} />
             </button>
             {canEdit && (
               <button onClick={closeMonth} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all whitespace-nowrap">
-                <ArchiveRestore size={16} /> Fechar Mês
+                <ArchiveRestore size={16} />
               </button>
             )}
           </div>
           
           <div className="flex flex-wrap justify-center bg-gray-900 rounded-lg p-1 border border-gray-700 mx-auto max-w-full">
-            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap ${activeView === 'operacional' ? 'bg-blue-600 text-white shadow' : 'text-gray-400'}`}>Operacional</button>
-            <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'dashboard' ? 'bg-purple-600 text-white shadow' : 'text-gray-400'}`}>Visão Executiva</button>
-            <button onClick={() => setActiveView('rotinas')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'rotinas' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400'}`}>
+            <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'dashboard' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+              <PieChartIcon size={16} /> Dashboard
+            </button>
+            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'operacional' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+              <Briefcase size={16} /> Portfólio
+            </button>
+            <button onClick={() => setActiveView('rotinas')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'rotinas' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
               <CalendarDays size={16} /> Workflow
             </button>
-            {canEdit && <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap ${activeView === 'admin' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400'}`}>Equipe</button>}
+            {canEdit && <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap ${activeView === 'admin' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}>Equipe</button>}
           </div>
 
           <div className="flex items-center justify-between xl:justify-end gap-4 w-full xl:w-auto">
             {canEdit && (
               <div className="flex gap-2">
-                <button onClick={exportBackup} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-600 transition-colors"><Upload size={14} /> Exportar</button>
+                <button onClick={exportBackup} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-600 transition-colors"><Upload size={14} /></button>
                 <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
-                <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><Download size={14} /> Importar</button>
+                <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><Download size={14} /></button>
               </div>
             )}
             
@@ -714,6 +730,7 @@ export default function App() {
             openHistoryModal={openHistoryModal}
             generateStoreWhatsAppLink={generateStoreWhatsAppLink}
             generateClientWhatsAppLink={generateClientWhatsAppLink}
+            openClientFile={openClientFile}
           />
         )}
 
@@ -726,6 +743,7 @@ export default function App() {
             user={user}
             updateStoreInCloud={updateStoreInCloud}
             setStores={setStores}
+            openClientFile={openClientFile}
           />
         )}
       </div>
@@ -1015,6 +1033,15 @@ export default function App() {
         onSave={handleSaveBulkTasks}
         teamMembers={teamMembers}
       />
+
+      {clientFileOpen && (
+        <ClientFileModal 
+          clientGroup={activeClientGroup} 
+          onClose={() => setClientFileOpen(false)}
+          openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
+          formatCurrency={formatCurrency}
+        />
+      )}
     </div>
   );
 }

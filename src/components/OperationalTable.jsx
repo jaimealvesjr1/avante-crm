@@ -8,7 +8,7 @@ export default function OperationalTable({
   saveClientEdit, startEditingClient, addNewStoreToClient, deleteClient,
   editingStoreId, storeEditData, setStoreEditData,
   openHistoryModal,
-  formatCurrency, generateStoreWhatsAppLink, startEditingStore, saveStoreEdit, deleteStore, setEditingStoreId, generateClientWhatsAppLink, handleStoreChange
+  formatCurrency, generateStoreWhatsAppLink, startEditingStore, saveStoreEdit, deleteStore, setEditingStoreId, generateClientWhatsAppLink, handleStoreChange, openClientFile
 }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
@@ -160,7 +160,11 @@ export default function OperationalTable({
                                 </div>
                               </div>
                             ) : (
-                              <div className="font-bold text-gray-100 text-lg flex items-center gap-3 group-hover:text-blue-100">
+                              <div 
+                                onClick={() => openClientFile(group.client)}
+                                className="font-bold text-gray-100 text-lg flex items-center gap-3 group-hover:text-blue-300 cursor-pointer transition-colors"
+                                title="Abrir Ficha do Cliente"
+                              >
                                 {group.client}
                                 <span className="px-2 py-0.5 bg-gray-900 border border-gray-700 rounded text-xs text-gray-400 font-medium whitespace-nowrap shadow-sm">
                                   {group.feeType === 'fixed' || group.fixedFee > 0 ? `Fixo: R$ ${group.fixedFee}` : `Fee: ${group.feePercent || 0}%`}
