@@ -1094,6 +1094,14 @@ export default function App() {
           onClose={() => setClientFileOpen(false)}
           openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
           formatCurrency={formatCurrency}
+          stores={stores}
+          setStores={setStores}
+          updateStoreInCloud={updateStoreInCloud}
+          currentDay={currentDay}
+          currentUserData={currentUserData}
+          user={user}
+          canUseBatchEntry={canUseBatchEntry}
+          canEdit={canEdit}
         />
       )}
     </div>
