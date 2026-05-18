@@ -126,8 +126,17 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     const existingIndex = updatedHistory.findIndex(h => h.day === dayVal);
     
     if(existingIndex >= 0) {
-      entry.id = updatedHistory[existingIndex].id;
-      updatedHistory[existingIndex] = entry;
+      // Já existe um lançamento para este dia! Vamos SOMAR em vez de apagar.
+      const existingEntry = updatedHistory[existingIndex];
+      
+      entry.id = existingEntry.id; // Mantém o ID original
+      entry.dailyRevenue = (existingEntry.dailyRevenue || 0) + gmvVal;
+      entry.revenue = (existingEntry.revenue || 0) + gmvVal;
+      entry.ads = (existingEntry.ads || 0) + cumAds; // Mantém o acumulado anterior + o novo
+      entry.orders = (existingEntry.orders || 0) + ordersVal;
+      entry.units = (existingEntry.units || 0) + unitsVal;
+      
+      updatedHistory[existingIndex] = entry; // Substitui pela versão somada
     } else {
       updatedHistory.push(entry);
     }
@@ -244,18 +253,35 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     }
 
     const newNextAccess = autoScheduleStore(updatedChecklists);
+    let finalNextAccess = newNextAccess;
+    if (!newNextAccess && isCompleting && task.data) {
+      finalNextAccess = '';
+    } else if (!newNextAccess) {
+      finalNextAccess = store.dataProximoAcesso;
+    }
 
     saveChanges({ 
       ...store, 
       checklists: updatedChecklists, 
       taskLogs: updatedLogs,
       dataUltimoAcesso: new Date().toISOString(),
-      dataProximoAcesso: newNextAccess || store.dataProximoAcesso
+      dataProximoAcesso: finalNextAccess
     });
   };
 
   const deleteChecklist = (id) => {
-    saveChanges({ ...store, checklists: store.checklists.filter(c => c.id !== id) });
+    const task = store.checklists.find(c => c.id === id);
+    const updatedChecklists = store.checklists.filter(c => c.id !== id);
+    const newNextAccess = autoScheduleStore(updatedChecklists);
+
+    let finalNextAccess = newNextAccess;
+    if (!newNextAccess && task?.data) {
+      finalNextAccess = '';
+    } else if (!newNextAccess) {
+      finalNextAccess = store.dataProximoAcesso;
+    }
+
+    saveChanges({ ...store, checklists: updatedChecklists, dataProximoAcesso: finalNextAccess });
     toast.success('Tarefa removida!');
   };
 
@@ -286,12 +312,19 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
     // A edição da data pode mudar a ordem da loja no Workflow
     const newNextAccess = autoScheduleStore(updatedChecklists);
+    // BUG FIX: Se na edição removeu a data e não há outras pendências com prazo
+    let finalNextAccess = newNextAccess;
+    if (!newNextAccess && (oldTask?.data || editTaskData.data)) {
+      finalNextAccess = '';
+    } else if (!newNextAccess) {
+      finalNextAccess = store.dataProximoAcesso;
+    }
 
     saveChanges({
       ...store,
       checklists: updatedChecklists,
       taskLogs: [...(store.taskLogs || []), log],
-      dataProximoAcesso: newNextAccess || store.dataProximoAcesso,
+      dataProximoAcesso: finalNextAccess,
       dataUltimoAcesso: new Date().toISOString()
     });
 

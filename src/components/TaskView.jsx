@@ -32,21 +32,23 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
 
       // Regra 1: Tarefas delegadas (AGORA COM INTELIGÊNCIA DE TEMPO)
       const delegatedTasksCount = store.checklists?.filter(c => {
-        if (c.feita || c.responsavel !== myName) return false;
+        if (c.feita) return false;
         
-        // Se não tem data, alerta sempre
+        // Condição A: A tarefa está nominalmente atribuída a mim
+        const isAssignedToMe = c.responsavel === myName;
+        
+        // Condição B: A tarefa está sem dono, mas EU sou o gerente oficial desta conta
+        const isOrphanAndIAmManager = (!c.responsavel || c.responsavel.trim() === '') && store.responsavel === myName;
+
+        if (!isAssignedToMe && !isOrphanAndIAmManager) return false;
+        
+        // Daqui para baixo continua a mesma validação inteligente de tempo que já fizemos
         if (!c.data) return true;
-
-        // Se a data é no passado, alerta sempre (atrasada)
         if (c.data < todayStr) return true;
-
-        // Se a data é hoje, checa a hora
         if (c.data === todayStr) {
-          if (!c.hora) return true; // Se não tem hora marcada, avisa o dia todo
-          return c.hora <= currentTimeStr; // Só avisa se a hora já chegou ou passou
+          if (!c.hora) return true;
+          return c.hora <= currentTimeStr;
         }
-
-        // Se é no futuro (amanhã em diante), NÃO alerta na caixa de entrada
         return false;
       }).length || 0;
 

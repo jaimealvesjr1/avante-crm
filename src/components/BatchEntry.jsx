@@ -40,19 +40,69 @@ export default function BatchEntry({ stores, onClose, onSaveBatch, currentDay })
       return;
     }
 
+    const dayVal = Number(batchDay);
+
     const updates = stores.map(s => {
       const data = formData[s.id];
+      const cumRev = parseShopeeNumber(data.currentRevenue);
+      const cumAds = parseShopeeNumber(data.adsInvestment);
+      const cumOrd = parseInt(data.orders, 10) || 0;
+      const cumUni = parseInt(data.units, 10) || 0;
+
+      // 1. Encontra o dia anterior mais próximo para descobrir o ganho real deste dia específico
+      let prevRev = 0, prevAds = 0, prevOrd = 0, prevUni = 0;
+      const pastEntries = [...(s.history || [])].filter(h => h.day < dayVal).sort((a, b) => b.day - a.day);
+      if (pastEntries.length > 0) {
+        prevRev = pastEntries[0].revenue || 0;
+        prevAds = pastEntries[0].ads || 0;
+        prevOrd = pastEntries[0].orders || 0;
+        prevUni = pastEntries[0].units || 0;
+      }
+
+      const dailyRev = cumRev - prevRev;
+
+      // 2. Monta a estrutura exata do gráfico analítico
+      const entry = {
+        id: Date.now() + s.id,
+        day: dayVal,
+        dailyRevenue: dailyRev > 0 ? dailyRev : 0,
+        revenue: cumRev,
+        ads: cumAds,
+        orders: cumOrd,
+        units: cumUni,
+        date: new Date().toLocaleDateString('pt-BR')
+      };
+
+      // 3. Atualiza ou insere o ponto no histórico da loja
+      let updatedHistory = [...(s.history || [])];
+      const existingIndex = updatedHistory.findIndex(h => h.day === dayVal);
+      if (existingIndex >= 0) {
+        entry.id = updatedHistory[existingIndex].id;
+        updatedHistory[existingIndex] = entry;
+      } else {
+        updatedHistory.push(entry);
+      }
+
+      // 4. Registra no Histórico de Ações interno para auditoria
+      const log = {
+        id: Date.now() + s.id + 1,
+        data: new Date().toLocaleString('pt-BR'),
+        texto: `📊 Lançamento em Massa [Dia ${dayVal}]: Totais atualizados para Faturamento R$${cumRev} | Ads R$${cumAds}`,
+        author: 'Sistema (Massa)'
+      };
+
       return {
         ...s,
-        currentRevenue: parseShopeeNumber(data.currentRevenue),
-        adsInvestment: parseShopeeNumber(data.adsInvestment),
-        orders: parseInt(data.orders, 10) || 0,
-        units: parseInt(data.units, 10) || 0
+        currentRevenue: cumRev,
+        adsInvestment: cumAds,
+        orders: cumOrd,
+        units: cumUni,
+        history: updatedHistory.sort((a, b) => a.day - b.day),
+        taskLogs: [...(s.taskLogs || []), log]
       };
     });
     
-    // Passamos o array de lojas e o DIA EXATO que o usuário escolheu
-    onSaveBatch(updates, Number(batchDay));
+    onSaveBatch(updates, dayVal);
     onClose();
   };
 
