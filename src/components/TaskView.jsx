@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Filter, User, Bell, CopyPlus, Check, CalendarClock, Copy } from 'lucide-react';
+import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Filter, Bell, CopyPlus, Check, CalendarClock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores, openClientFile }) {
@@ -16,13 +16,44 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
   const mkts = [...new Set(stores.map(s => s.marketplace))].filter(Boolean).sort();
   const [menuOpenId, setMenuOpenId] = useState(null);
 
-  // --- PAINEL DE NOTIFICAÇÕES (CAIXA DE ENTRADA AGRUPADA POR CLIENTE) ---
+  // --- FUNÇÕES DE AVATAR ---
+  const getInitials = (name) => {
+    if (!name) return '?';
+    const parts = name.trim().split(' ');
+    if (parts.length > 1) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return name.substring(0, 2).toUpperCase();
+  };
+
+  const getAvatarColor = (name) => {
+    if (!name) return 'from-gray-600 to-gray-700';
+    const colors = [
+      'from-blue-500 to-cyan-600',
+      'from-emerald-500 to-teal-600',
+      'from-rose-500 to-orange-600',
+      'from-pink-500 to-rose-600',
+      'from-amber-500 to-orange-500'
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return colors[Math.abs(hash) % colors.length];
+  };
+
+  const Avatar = ({ name, size = 'md' }) => {
+    const sizeClasses = size === 'sm' ? 'w-5 h-5 text-[9px]' : size === 'lg' ? 'w-8 h-8 text-xs' : 'w-6 h-6 text-[10px]';
+    return (
+      <div 
+        className={`${sizeClasses} rounded-full bg-gradient-to-br ${getAvatarColor(name)} flex items-center justify-center font-bold text-white shadow-sm border border-white/20 shrink-0 cursor-default`}
+        title={name || 'Sem Responsável'}
+      >
+        {getInitials(name)}
+      </div>
+    );
+  };
+
+  // --- CAIXA DE ENTRADA (NOTIFICAÇÕES) ---
   const groupedInbox = useMemo(() => {
     if (!myName) return [];
-
     const groups = {};
-    
-    // Pegar a data e hora exatas de agora no fuso correto
     const now = new Date();
     const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     const currentTimeStr = now.toTimeString().substring(0, 5);
@@ -30,19 +61,12 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     stores.forEach(store => {
       const notificationReasons = [];
 
-      // Regra 1: Tarefas delegadas (AGORA COM INTELIGÊNCIA DE TEMPO)
       const delegatedTasksCount = store.checklists?.filter(c => {
         if (c.feita) return false;
-        
-        // Condição A: A tarefa está nominalmente atribuída a mim
         const isAssignedToMe = c.responsavel === myName;
-        
-        // Condição B: A tarefa está sem dono, mas EU sou o gerente oficial desta conta
         const isOrphanAndIAmManager = (!c.responsavel || c.responsavel.trim() === '') && store.responsavel === myName;
 
         if (!isAssignedToMe && !isOrphanAndIAmManager) return false;
-        
-        // Daqui para baixo continua a mesma validação inteligente de tempo que já fizemos
         if (!c.data) return true;
         if (c.data < todayStr) return true;
         if (c.data === todayStr) {
@@ -52,82 +76,46 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         return false;
       }).length || 0;
 
-      if (delegatedTasksCount > 0) {
-        notificationReasons.push(`${delegatedTasksCount} tarefa(s) no prazo ou atrasada(s)`);
-      }
+      if (delegatedTasksCount > 0) notificationReasons.push(`${delegatedTasksCount} tarefa(s) pendente(s)`);
 
-      // Regra 2: Atualizado por outra pessoa
       if (store.responsavel === myName && store.taskLogs && store.taskLogs.length > 0) {
         const lastLog = store.taskLogs[store.taskLogs.length - 1];
-        if (lastLog.author !== myName) {
-          notificationReasons.push(`Atualizado por ${lastLog.author}`);
-        }
+        if (lastLog.author !== myName) notificationReasons.push(`Ação de ${lastLog.author}`);
       }
 
-      // Se a loja tiver pelo menos um motivo, agrupamos dentro do Cliente dela
       if (notificationReasons.length > 0) {
-        if (!groups[store.client]) {
-          groups[store.client] = {
-            clientName: store.client,
-            stores: [],
-            lastAccess: store.dataUltimoAcesso || 0
-          };
-        }
-        
-        groups[store.client].stores.push({
-          ...store,
-          highlightMessages: notificationReasons
-        });
-
+        if (!groups[store.client]) groups[store.client] = { clientName: store.client, stores: [], lastAccess: store.dataUltimoAcesso || 0 };
+        groups[store.client].stores.push({ ...store, highlightMessages: notificationReasons });
         const currentStoreAccess = new Date(store.dataUltimoAcesso || 0);
         const groupOldestAccess = new Date(groups[store.client].lastAccess);
-        if (currentStoreAccess < groupOldestAccess) {
-            groups[store.client].lastAccess = store.dataUltimoAcesso;
-        }
+        if (currentStoreAccess < groupOldestAccess) groups[store.client].lastAccess = store.dataUltimoAcesso;
       }
     });
 
     return Object.values(groups).sort((a, b) => new Date(a.lastAccess || 0) - new Date(b.lastAccess || 0));
   }, [stores, myName]);
 
+  // --- AGRUPAMENTO DAS TAREFAS (COLUNAS) ---
   const groupedTasks = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
     const groups = { atrasadas: [], hoje: [], semData: [], futuro: [] };
 
     stores.forEach(store => {
-      // Aplicar Filtros (agora com segurança para maiúsculas e minúsculas)
       if (clientFilter && store.client !== clientFilter) return;
       if (storeRespFilter && store.responsavel !== storeRespFilter) return;
-      
-      // Filtro de Marketplace Corrigido
-      if (mktFilter) {
-        if (!store.marketplace || store.marketplace.toUpperCase() !== mktFilter.toUpperCase()) {
-          return;
-        }
-      }
+      if (mktFilter && (!store.marketplace || store.marketplace.toUpperCase() !== mktFilter.toUpperCase())) return;
+      if (taskRespFilter && !store.checklists?.some(c => c.responsavel === taskRespFilter)) return;
 
-      if (taskRespFilter) {
-        const hasAssignedTask = store.checklists?.some(c => c.responsavel === taskRespFilter);
-        if (!hasAssignedTask) return;
-      }
-
-      // Agrupamento por Data
       if (!store.dataProximoAcesso) {
         groups.semData.push(store);
       } else {
         const storeDateOnly = store.dataProximoAcesso.split('T')[0];
-        
-        if (storeDateOnly < today) {
-          groups.atrasadas.push(store);
-        } else if (storeDateOnly === today) {
-          groups.hoje.push(store);
-        } else {
-          groups.futuro.push(store);
-        }
+        if (storeDateOnly < today) groups.atrasadas.push(store);
+        else if (storeDateOnly === today) groups.hoje.push(store);
+        else groups.futuro.push(store);
       }
     });
 
-    // Ordenação
     groups.semData.sort((a, b) => new Date(a.dataUltimoAcesso || 0) - new Date(b.dataUltimoAcesso || 0));
     groups.atrasadas.sort((a, b) => new Date(a.dataProximoAcesso) - new Date(b.dataProximoAcesso));
     groups.futuro.sort((a, b) => new Date(a.dataProximoAcesso) - new Date(b.dataProximoAcesso));
@@ -135,171 +123,157 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     return groups;
   }, [stores, clientFilter, storeRespFilter, taskRespFilter, mktFilter]);
 
-  const TaskCard = ({ store, isHighlighted = false, highlightMessages = [] }) => (
-    <div 
-      onClick={() => openTaskModal(store)}
-      className={`p-4 rounded-xl shadow-sm cursor-pointer transition-all group relative ${
-        isHighlighted 
-        ? 'bg-indigo-900/40 border-2 border-indigo-500 hover:bg-indigo-900/60' 
-        : 'bg-gray-800 border border-gray-700 hover:bg-gray-750 hover:border-blue-500/50'
-      }`}
-    >
-      {/* CABEÇALHO DO CARD */}
-      <div className="flex justify-between items-start mb-1">
-        <h4 className={`font-bold text-sm ${isHighlighted ? 'text-indigo-100' : 'text-gray-200'} flex items-center gap-1`}>
-          {store.store}
-          {store.marketplace && (
-            <span className="text-[10px] text-gray-500 font-normal">({store.marketplace})</span>
-          )}
-        </h4>
-
-        {/* 2. MENU DE 3 PONTOS COM AÇÕES RÁPIDAS */}
-        <div className="relative">
-          <button 
-            onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === store.id ? null : store.id); }}
-            className="p-1 hover:bg-gray-700 rounded text-gray-500 hover:text-blue-400 transition-colors"
-          >
-            <MoreHorizontal size={16} />
-          </button>
-
-          {menuOpenId === store.id && (
-            <div className="absolute right-0 mt-1 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden animate-in zoom-in-95 duration-100">
-              <button 
-                onClick={(e) => handleQuickAction(e, store, 'accessed')}
-                className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-800 flex items-center gap-2"
-              >
-                <Check size={14} className="text-green-500" /> Marcar Acesso Hoje
-              </button>
-              <button 
-                onClick={(e) => handleQuickAction(e, store, 'delay')}
-                className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-800 flex items-center gap-2"
-              >
-                <CalendarClock size={14} className="text-amber-500" /> Adiar para Amanhã
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      {/* CADA NOTIFICAÇÃO EM SUA PRÓPRIA DIV */}
-      {isHighlighted && highlightMessages.length > 0 && (
-        <div className="flex flex-col gap-1.5 mb-2">
-          {highlightMessages.map((msg, index) => (
-            <div 
-              key={index} 
-              className="bg-indigo-500/30 text-indigo-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-2 border border-indigo-500/40 shadow-sm"
-            >
-              <Bell size={12} className={index === 0 ? "animate-pulse text-indigo-300" : "text-indigo-400"} />
-              {msg}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {!isHighlighted && store.responsavel && (
-        <div className="inline-flex items-center gap-1 bg-blue-900/30 text-blue-400 px-2 py-1 rounded text-[10px] font-bold mb-2">
-          <User size={10} /> {store.responsavel}
-        </div>
-      )}
-      
-      <div className="flex items-center justify-between text-[10px] text-gray-500 border-t border-gray-700/50 pt-2 mt-2">
-        <span className="flex items-center gap-1">
-          <CheckCircle2 size={12} className="text-green-500/70" /> 
-          {store.checklists?.filter(c => c.feita).length || 0}/{store.checklists?.length || 0} Tarefas
-        </span>
-        <span>Últ. Acesso: {store.dataUltimoAcesso ? new Date(store.dataUltimoAcesso).toLocaleDateString('pt-BR') : 'Nunca'}</span>
-      </div>
-    </div>
-  );
-
   const handleQuickAction = (e, store, action) => {
     e.stopPropagation();
     setMenuOpenId(null);
-
     let updatedStore = { ...store };
     const now = new Date();
     const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
 
     if (action === 'accessed') {
-      // 1. Registra que você acessou agora
       updatedStore.dataUltimoAcesso = now.toISOString();
-      
-      // 2. Se a loja estava atrasada ou agendada para hoje, 
-      // limpamos o agendamento para ela ir para "Sem Data" (concluída)
-      // ou você pode mudar para updatedStore.dataProximoAcesso = todayStr se quiser que ela fique na coluna "Hoje"
       updatedStore.dataProximoAcesso = todayStr; 
-      
       toast.success("Acesso registrado e pendência limpa!");
     } else if (action === 'delay') {
-      // Adia o agendamento para amanhã
       const tomorrow = new Date();
       tomorrow.setDate(now.getDate() + 1);
       updatedStore.dataProximoAcesso = tomorrow.toISOString().split('T')[0];
-      
       toast.success("Adiado para amanhã!");
     }
-
-    // Salva no Firebase e atualiza a tela
     updateStoreInCloud(updatedStore);
     setStores(prev => prev.map(s => s.id === store.id ? updatedStore : s));
   };
 
-  return (
-    <div className="animate-in fade-in duration-300" onClick={() => setMenuOpenId(null)}>
-      <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <CalendarDays className="text-indigo-500" /> Gestão de Contas
-          </h2>
-          <p className="text-gray-400 text-sm mt-1">Gerencie checklists, responsáveis e agendamentos das contas.</p>
+  // --- COMPONENTE DO CARTÃO (GLASSMORPHISM) ---
+  const TaskCard = ({ store, isHighlighted = false, highlightMessages = [] }) => {
+    const tasksDone = store.checklists?.filter(c => c.feita).length || 0;
+    const tasksTotal = store.checklists?.length || 0;
+    const progress = tasksTotal === 0 ? 0 : (tasksDone / tasksTotal) * 100;
+
+    return (
+      <div 
+        onClick={() => openTaskModal(store)}
+        className={`p-4 rounded-2xl shadow-sm cursor-pointer transition-all duration-300 group relative backdrop-blur-md ${
+          isHighlighted 
+          ? 'bg-indigo-500/10 border border-indigo-500/30 hover:bg-indigo-500/20 hover:border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.1)]' 
+          : 'bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-white/10'
+        }`}
+      >
+        <div className="flex justify-between items-start mb-2">
+          <div className="flex-1">
+            <h4 className={`font-bold text-sm ${isHighlighted ? 'text-indigo-100' : 'text-gray-200'} flex items-center gap-2 truncate`}>
+              {store.store}
+            </h4>
+            <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mt-0.5 truncate">
+              {store.client} {store.marketplace && `• ${store.marketplace}`}
+            </p>
+          </div>
+
+          <div className="relative ml-2 shrink-0 flex items-center gap-2">
+            {store.responsavel && <Avatar name={store.responsavel} size="sm" />}
+            
+            <button 
+              onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === store.id ? null : store.id); }}
+              className="p-1 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+
+            {menuOpenId === store.id && (
+              <div className="absolute right-0 top-6 mt-1 w-44 bg-gray-900 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in zoom-in-95 duration-100">
+                <button onClick={(e) => handleQuickAction(e, store, 'accessed')} className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 flex items-center gap-2 transition-colors">
+                  <Check size={14} className="text-emerald-500" /> Marcar Acesso
+                </button>
+                <button onClick={(e) => handleQuickAction(e, store, 'delay')} className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 flex items-center gap-2 transition-colors border-t border-white/5">
+                  <CalendarClock size={14} className="text-amber-500" /> Adiar P/ Amanhã
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         
-        <button 
-          onClick={openBulkTaskModal} 
-          className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all"
-        >
-          <CopyPlus size={18} /> Criar Tarefa em Massa
-        </button>
+        {isHighlighted && highlightMessages.length > 0 && (
+          <div className="flex flex-col gap-1.5 mb-3">
+            {highlightMessages.map((msg, index) => (
+              <div key={index} className="bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded-md text-[10px] font-bold flex items-center gap-1.5 border border-indigo-500/30">
+                <Bell size={10} className={index === 0 ? "animate-pulse" : ""} /> {msg}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-gray-500">
+          <div className="flex items-center gap-1.5 group/progress relative">
+            <CheckCircle2 size={12} className={progress === 100 ? "text-emerald-500" : "text-gray-500"} /> 
+            <span>{tasksDone}/{tasksTotal} Tarefas</span>
+          </div>
+          <span>Últ. Acesso: {store.dataUltimoAcesso ? new Date(store.dataUltimoAcesso).toLocaleDateString('pt-BR') : 'Nunca'}</span>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="animate-in fade-in duration-300" onClick={() => setMenuOpenId(null)}>
+      
+      {/* 🌟 CABEÇALHO (GLASS) */}
+      <div className="bg-white/[0.02] backdrop-blur-xl p-4 md:p-5 rounded-2xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center border border-indigo-500/30">
+            <CalendarDays className="text-indigo-400" size={20} />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white tracking-wide">Gestão de Workflow</h2>
+            <p className="text-gray-400 text-xs mt-0.5">Organize seu dia, checklists e retornos agendados.</p>
+          </div>
+        </div>
+        
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Menu de Filtros Condensado */}
+          <div className="flex items-center bg-black/20 rounded-xl border border-white/10 p-1">
+            <div className="px-3 border-r border-white/10 text-gray-500"><Filter size={14}/></div>
+            <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="bg-transparent text-gray-300 text-xs px-2 py-1.5 outline-none cursor-pointer border-r border-white/10 hover:bg-white/5">
+              <option value="">🏢 Clientes</option>
+              {clients.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="bg-transparent text-gray-300 text-xs px-2 py-1.5 outline-none cursor-pointer border-r border-white/10 hover:bg-white/5">
+              <option value="">🛍️ Canais</option>
+              {mkts.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <select value={storeRespFilter} onChange={e => setStoreRespFilter(e.target.value)} className="bg-transparent text-gray-300 text-xs px-2 py-1.5 outline-none cursor-pointer hover:bg-white/5">
+              <option value="">👤 Equipe</option>
+              {storeResps.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+
+          <button onClick={openBulkTaskModal} className="bg-white/10 hover:bg-white/20 text-white border border-white/10 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm">
+            <CopyPlus size={16} /> Massa
+          </button>
+        </div>
       </div>
 
-      {/* CAIXA DE ENTRADA AGRUPADA (FICHA DO CLIENTE) */}
+      {/* 🌟 CAIXA DE ENTRADA (NOTIFICAÇÕES GLASS) */}
       {groupedInbox.length > 0 && (
-        <div className="mb-8 bg-gray-900 border border-indigo-500/50 rounded-xl p-5 shadow-lg relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-          <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-            <Bell className="text-indigo-400" /> Minhas Notificações ({groupedInbox.length} Clientes)
-          </h3>
+        <div className="mb-6 bg-indigo-500/5 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
+          <div className="flex items-center gap-2 mb-4">
+            <Bell className="text-indigo-400 animate-pulse" size={18} />
+            <h3 className="text-base font-bold text-white tracking-wide">Radar de Atenção ({groupedInbox.length} Clientes)</h3>
+          </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {groupedInbox.map(group => (
-              <div key={group.clientName} className="bg-gray-800 border border-indigo-500/30 rounded-xl p-4 flex flex-col shadow-sm relative overflow-hidden">
-                {/* Linha de destaque superior no card do cliente */}
-                <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500/30"></div>
-                
-                {/* Cabeçalho do Cliente (A mini "Ficha") */}
-                <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
-                  <h4 
-                    onClick={() => openClientFile(group.clientName)}
-                    className="font-bold text-indigo-100 text-base cursor-pointer hover:text-white hover:underline decoration-indigo-400 underline-offset-4 transition-all"
-                    title="Ver Ficha Completa"
-                  >
+              <div key={group.clientName} className="bg-white/[0.02] border border-white/5 hover:border-indigo-500/30 rounded-2xl p-4 flex flex-col shadow-sm transition-all">
+                <div className="flex justify-between items-center mb-3">
+                  <h4 onClick={() => openClientFile(group.clientName)} className="font-bold text-white text-sm cursor-pointer hover:text-indigo-300 transition-colors truncate">
                     {group.clientName}
                   </h4>
-                  <span className="bg-indigo-900/50 text-indigo-300 text-[10px] px-2 py-1 rounded font-bold uppercase border border-indigo-500/30">
-                    {group.stores.length} Loja(s) com alerta
+                  <span className="bg-indigo-500/20 text-indigo-300 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase border border-indigo-500/30">
+                    {group.stores.length} Lojas
                   </span>
                 </div>
-                
-                {/* Lojas com Notificações */}
-                <div className="flex flex-col gap-3">
-                  {group.stores.map(store => (
-                    <TaskCard 
-                      key={`inbox-${store.id}`} 
-                      store={store} 
-                      isHighlighted={true} 
-                      highlightMessages={store.highlightMessages} 
-                    />
-                  ))}
+                <div className="flex flex-col gap-2">
+                  {group.stores.map(store => <TaskCard key={`inbox-${store.id}`} store={store} isHighlighted={true} highlightMessages={store.highlightMessages} />)}
                 </div>
               </div>
             ))}
@@ -307,54 +281,45 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         </div>
       )}
 
-      {/* BARRA DE FILTROS */}
-      <div className="flex flex-wrap items-center gap-4 bg-gray-800 p-4 rounded-xl border border-gray-700 mb-6 shadow-sm">
-        <div className="flex items-center gap-2 text-gray-400 mr-2">
-          <Filter size={18} /> <span className="text-sm font-bold uppercase">Filtros:</span>
-        </div>
-        <div className="flex-1 min-w-[150px]">
-          <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-gray-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500">
-            <option value="">🏢 Todos os Clientes</option>
-            {clients.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        <div className="flex-1 min-w-[150px]">
-          <select value={storeRespFilter} onChange={e => setStoreRespFilter(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-gray-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500">
-            <option value="">👤 Qualquer Resp. (Loja)</option>
-            {storeResps.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-        <div className="flex-1 min-w-[150px]">
-          <select value={taskRespFilter} onChange={e => setTaskRespFilter(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-gray-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500">
-            <option value="">📋 Qualquer Resp. (Tarefa)</option>
-            {taskResps.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-        <div className="flex-1 min-w-[150px]">
-          <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-gray-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500">
-            <option value="">🛍️ Todos os Marketplaces</option>
-            {mkts.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
-        <div className="bg-red-900/10 p-3 rounded-xl border border-red-900/30 flex flex-col gap-3 min-h-[500px]">
-          <h3 className="text-xs font-bold text-red-400 uppercase flex items-center gap-1 mb-2"><AlertCircle size={14} /> Atrasadas ({groupedTasks.atrasadas.length})</h3>
+      {/* 🌟 COLUNAS KANBAN (GLASS) */}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
+        
+        {/* ATRASADAS */}
+        <div className="bg-red-500/5 backdrop-blur-sm p-4 rounded-2xl border border-red-500/10 flex flex-col gap-3 min-h-[400px]">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5"><AlertCircle size={14} /> Atrasadas</h3>
+            <span className="bg-red-500/20 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full">{groupedTasks.atrasadas.length}</span>
+          </div>
           {groupedTasks.atrasadas.map(s => <TaskCard key={s.id} store={s} />)}
         </div>
-        <div className="bg-blue-900/10 p-3 rounded-xl border border-blue-900/30 flex flex-col gap-3 min-h-[500px]">
-          <h3 className="text-xs font-bold text-blue-400 uppercase flex items-center gap-1 mb-2"><Clock size={14} /> Para Hoje ({groupedTasks.hoje.length})</h3>
+
+        {/* HOJE */}
+        <div className="bg-blue-500/5 backdrop-blur-sm p-4 rounded-2xl border border-blue-500/10 flex flex-col gap-3 min-h-[400px]">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5"><Clock size={14} /> Para Hoje</h3>
+            <span className="bg-blue-500/20 text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded-full">{groupedTasks.hoje.length}</span>
+          </div>
           {groupedTasks.hoje.map(s => <TaskCard key={s.id} store={s} />)}
         </div>
-        <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-700 flex flex-col gap-3 min-h-[500px]">
-          <h3 className="text-xs font-bold text-gray-400 uppercase flex items-center gap-1 mb-2" title="Ordenadas da mais esquecida para a mais recente"><CalendarDays size={14} /> Sem Data / Ociosas ({groupedTasks.semData.length})</h3>
-          {groupedTasks.semData.map(s => <TaskCard key={s.id} store={s} />)}
-        </div>
-        <div className="bg-gray-800/30 p-3 rounded-xl border border-gray-700/50 flex flex-col gap-3 min-h-[500px]">
-          <h3 className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-2"><CalendarDays size={14} /> Agendadas ({groupedTasks.futuro.length})</h3>
+
+        {/* AGENDADAS */}
+        <div className="bg-white/[0.02] backdrop-blur-sm p-4 rounded-2xl border border-white/5 flex flex-col gap-3 min-h-[400px]">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5"><CalendarDays size={14} /> Agendadas</h3>
+            <span className="bg-white/10 text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded-full">{groupedTasks.futuro.length}</span>
+          </div>
           {groupedTasks.futuro.map(s => <TaskCard key={s.id} store={s} />)}
         </div>
+
+        {/* SEM DATA */}
+        <div className="bg-white/[0.01] backdrop-blur-sm p-4 rounded-2xl border border-white/[0.03] flex flex-col gap-3 min-h-[400px]">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5" title="Sem agendamento futuro"><CalendarClock size={14} /> Ociosas</h3>
+            <span className="bg-white/5 text-gray-500 text-[10px] font-bold px-2 py-0.5 rounded-full">{groupedTasks.semData.length}</span>
+          </div>
+          {groupedTasks.semData.map(s => <TaskCard key={s.id} store={s} />)}
+        </div>
+
       </div>
     </div>
   );

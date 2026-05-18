@@ -238,17 +238,33 @@ export default function App() {
     }
   };
 
-  const handleUpdateUser = async (emailToUpdate, newNameCompleto) => {
-    if (!canEdit) return;
+  const handleUpdateUser = async (email, newName, newColor) => {
     try {
-      const primeiroNome = newNameCompleto.trim().split(' ')[0];
-      await setDoc(doc(db, "equipe", emailToUpdate.toLowerCase()), {
-        nome: primeiroNome,
-        nomeCompleto: newNameCompleto.trim()
-      }, { merge: true });
-      toast.success('Nome atualizado com sucesso!');
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("email", "==", email));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const userDoc = querySnapshot.docs[0];
+        
+        // Criamos o objeto de atualização
+        const updateData = { nomeCompleto: newName.trim() };
+        
+        // Se a cor foi enviada, adicionamos ao objeto
+        if (newColor) {
+          updateData.avatarColor = newColor;
+        }
+
+        await updateDoc(doc(db, "users", userDoc.id), updateData);
+        
+        toast.success("Usuário atualizado com sucesso!");
+        fetchTeamMembers(); // Recarrega a lista para mostrar a nova cor
+      } else {
+        toast.error("Usuário não encontrado no banco de dados.");
+      }
     } catch (error) {
-      toast.error('Erro ao atualizar usuário.');
+      console.error("Erro ao atualizar usuário:", error);
+      toast.error("Erro ao atualizar dados.");
     }
   };
 
@@ -687,70 +703,94 @@ export default function App() {
   if (authLoading || !user) return <AuthScreen email={email} setEmail={setEmail} password={password} setPassword={setPassword} handleLogin={handleLogin} authError={authError} authLoading={authLoading} />;
 
   return (
-    <div className="min-h-screen bg-gray-900 p-4 md:p-8 font-sans text-gray-200 pb-24">
+    <div className="min-h-screen bg-[#0B0F19] font-sans text-gray-200 flex flex-col">
       <Toaster position="top-right" />
-      <div className="max-w-7xl mx-auto space-y-6">
-        
-        <div className="flex flex-col xl:flex-row justify-between items-center bg-gray-800 p-4 rounded-xl border border-gray-700 gap-4 shadow-md">
-          <div className="flex items-center gap-4 w-full xl:w-auto overflow-x-auto pb-1 xl:pb-0">
-            <button onClick={() => setIsBatchMode(true)} className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all whitespace-nowrap">
-              <Zap size={16} />
-            </button>
-            {canEdit && (
-              <button onClick={closeMonth} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all whitespace-nowrap">
-                <ArchiveRestore size={16} />
-              </button>
-            )}
-          </div>
+      
+      <header className="sticky top-0 z-40 bg-[#0B0F19]/50 backdrop-blur-xl border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.3)]">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
           
-          <div className="flex flex-wrap justify-center bg-gray-900 rounded-lg p-1 border border-gray-700 mx-auto max-w-full">
-            <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'dashboard' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
-              <PieChartIcon size={16} /> Dashboard
+          {/* Lado Esquerdo: Logo e Ações Rápidas */}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-lg border border-white/20">
+                <TrendingUp size={18} className="text-white" />
+              </div>
+              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-blue-700">CRM</span></span>
+            </div>
+            
+            <div className="hidden md:flex items-center gap-2 border-l border-white/10 pl-6">
+              <button onClick={() => setIsBatchMode(true)} className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-inner" title="Apuração Rápida em Massa">
+                <Zap size={14} /> Apuração
+              </button>
+              {canEdit && (
+                <button onClick={closeMonth} className="bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-inner" title="Fechar o Mês Atual">
+                  <ArchiveRestore size={14} /> Fechar Mês
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Centro: Menu de Navegação (Pill Glass) */}
+          <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
+            <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'dashboard' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+              <PieChartIcon size={16} /> <span className="hidden md:inline">Dashboard</span>
             </button>
-            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'operacional' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
-              <Briefcase size={16} /> Portfólio
+            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'operacional' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+              <Briefcase size={16} /> <span className="hidden md:inline">Portfólio</span>
             </button>
-            <button onClick={() => setActiveView('rotinas')} className={`relative px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'rotinas' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
-              <CalendarDays size={16} /> Workflow
+            <button onClick={() => setActiveView('rotinas')} className={`relative px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'rotinas' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+              <CalendarDays size={16} /> <span className="hidden md:inline">Workflow</span>
               {globalPendingTasks > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-500 border border-gray-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-lg animate-pulse">
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-lg border border-red-400/50">
                   {globalPendingTasks}
                 </span>
               )}
             </button>
-            {canEdit && <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap ${activeView === 'admin' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}>Equipe</button>}
-          </div>
-
-          <div className="flex items-center justify-between xl:justify-end gap-4 w-full xl:w-auto">
             {canEdit && (
-              <div className="flex gap-2">
-                <button onClick={exportBackup} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-600 transition-colors"><Upload size={14} /></button>
+              <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                Equipe
+              </button>
+            )}
+          </nav>
+
+          {/* Lado Direito: Perfil e Opções */}
+          <div className="flex items-center gap-4">
+            {canEdit && (
+              <div className="hidden lg:flex gap-1">
+                <button onClick={exportBackup} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/5 transition-all" title="Exportar Backup"><Upload size={16} /></button>
                 <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
-                <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><Download size={14} /></button>
+                <button onClick={() => fileInputRef.current.click()} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/5 transition-all" title="Importar Backup"><Download size={16} /></button>
               </div>
             )}
             
-            <div className="flex items-center gap-3 pl-4 border-l border-gray-700">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-white leading-none">
-                  {currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0]}
-                </p>
-                <p className="text-[10px] text-gray-400 mt-0.5">{userRole}</p>
+            <div className="flex items-center gap-3 pl-4 border-l border-white/10">
+              {/* Avatar Glass */}
+              <div className="hidden sm:flex items-center gap-2 bg-white/5 py-1 pl-1 pr-4 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/20">
+                  {(currentUserData?.nomeCompleto || currentUserData?.nome || user?.email || 'U').charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-white leading-tight">
+                    {currentUserData?.nomeCompleto?.split(' ')[0] || currentUserData?.nome || user?.email?.split('@')[0]}
+                  </p>
+                  <p className="text-[9px] text-indigo-300 uppercase tracking-widest leading-tight">
+                    {canEdit ? 'Admin' : 'Estrategista'}
+                  </p>
+                </div>
               </div>
               
-              <div className="flex items-center gap-1 ml-1">
-                <button onClick={() => setPasswordModalOpen(true)} className="p-1.5 text-gray-400 hover:text-indigo-400 transition-colors" title="Mudar Minha Senha">
-                  <Key size={18} />
-                </button>
-                <button onClick={handleLogout} className="p-1.5 text-gray-400 hover:text-red-400 transition-colors" title="Sair do Sistema">
-                  <LogOut size={18} />
-                </button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPasswordModalOpen(true)} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-full text-gray-400 hover:text-white transition-all shadow-sm" title="Mudar Senha"><Key size={16} /></button>
+                <button onClick={handleLogout} className="p-2 bg-white/5 hover:bg-red-500/20 border border-transparent hover:border-red-500/30 rounded-full text-gray-400 hover:text-red-400 transition-all shadow-sm" title="Sair"><LogOut size={16} /></button>
               </div>
             </div>
           </div>
         </div>
+      </header>
 
-        {activeView === 'dashboard' && <ExecutiveDashboard dashboardData={dashboardData} formatCurrency={formatCurrency} pieData={pieData} roasData={roasData} COLORS={COLORS} />}
+      {/* ÁREA DE CONTEÚDO PRINCIPAL (Com mais respiro) */}
+      <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 pt-6">
+        {activeView === 'dashboard' && <ExecutiveDashboard dashboardData={dashboardData} formatCurrency={formatCurrency} pieData={pieData} roasData={roasData} COLORS={COLORS} currentDay={currentDay} daysInMonth={daysInMonth} />}
         
         {activeView === 'admin' && canEdit && (
           <AdminPanel 
@@ -782,6 +822,7 @@ export default function App() {
             deleteClient={deleteClient}
             startEditingClient={startEditingClient} 
             editingClient={editingClient} 
+            setEditingClient={setEditingClient}
             clientEditData={clientEditData} 
             setClientEditData={setClientEditData} 
             saveClientEdit={saveClientEdit}
@@ -798,7 +839,6 @@ export default function App() {
             generateStoreWhatsAppLink={generateStoreWhatsAppLink}
             generateClientWhatsAppLink={generateClientWhatsAppLink}
             openClientFile={openClientFile}
-            canUseBatchEntry={canUseBatchEntry}
           />
         )}
 
@@ -814,7 +854,7 @@ export default function App() {
             openClientFile={openClientFile}
           />
         )}
-      </div>
+      </main>
 
       {passwordModalOpen && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4">
