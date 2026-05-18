@@ -902,7 +902,15 @@ export default function App() {
                       <button onClick={() => {
                         const entryDay = Number(newHistoryDay);
                         
-                        const parseSafeNumber = (val) => Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
+                        const parseSafeNumber = (val) => {
+                          if (typeof val === 'number') return val;
+                          if (!val) return 0;
+                          let str = String(val).trim();
+                          if (str.includes(',')) {
+                            str = str.replace(/\./g, '').replace(',', '.');
+                          }
+                          return Number(str) || 0;
+                        };
 
                         let prevRev = 0, prevAds = 0, prevOrd = 0, prevUni = 0;
                         const pastEntries = [...(activeStore.history || [])].filter(h => h.day < entryDay).sort((a,b) => b.day - a.day);

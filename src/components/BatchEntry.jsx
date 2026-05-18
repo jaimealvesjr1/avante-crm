@@ -43,10 +43,18 @@ export default function BatchEntry({ stores, onClose, onSaveBatch, currentDay })
     const dayVal = Number(batchDay);
     const updates = []; // Agora é um array vazio que só vai receber as lojas editadas!
 
-    // Função faxineira: converte "1.500,50" ou "1500.50" num número perfeito para o banco
     const parseSafeNumber = (val) => {
+      if (typeof val === 'number') return val;
       if (!val) return 0;
-      return Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
+      let str = String(val).trim();
+      
+      // Se o usuário digitou com vírgula (ex: 1.500,50 ou 1500,50)
+      if (str.includes(',')) {
+        str = str.replace(/\./g, '').replace(',', '.');
+      }
+      // Se não tem vírgula (ex: 645.02 vindo do banco), ele apenas converte direto
+      
+      return Number(str) || 0;
     };
 
     stores.forEach(s => {

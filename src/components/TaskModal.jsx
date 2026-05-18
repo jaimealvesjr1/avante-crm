@@ -458,77 +458,94 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
             <div>
               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">To-Do List</h4>
               
-              {/* Lista de Tarefas */}
+              {/* Lista de Tarefas (Pendentes + Últimas 5 Concluídas) */}
               <div className="space-y-2 mb-4">
-                {store.checklists?.map(item => {
-                  const isEditing = editingTaskId === item.id;
-                  const canEditTask = isManager || item.criadoPor === username; // Apenas criador ou gestor edita
+                {(() => {
+                  // 1. Separa as tarefas em dois grupos
+                  const pendingTasks = store.checklists?.filter(t => !t.feita) || [];
+                  const completedTasks = store.checklists?.filter(t => t.feita) || [];
+                  
+                  // 2. Pega apenas as últimas 5 concluídas (as mais recentes)
+                  const recentCompleted = completedTasks.slice(-5);
+                  
+                  // 3. Junta as duas listas para renderizar (pendentes primeiro)
+                  const tasksToRender = [...pendingTasks, ...recentCompleted];
 
-                  return (
-                    <div key={item.id} className="flex flex-col bg-gray-800 p-2.5 rounded-lg border border-gray-700 group shadow-sm transition-all">
-                      {isEditing ? (
-                        /* MODO DE EDIÇÃO */
-                        <div className="flex flex-col gap-2 w-full animate-in fade-in duration-200">
-                          <div className="flex gap-2">
-                            <input type="text" value={editTaskData.texto} onChange={e => setEditTaskData({...editTaskData, texto: e.target.value})} className="flex-1 bg-gray-900 border border-gray-600 rounded p-1.5 text-sm text-white outline-none focus:border-indigo-500" />
-                            <select value={editTaskData.responsavel} onChange={e => setEditTaskData({...editTaskData, responsavel: e.target.value})} className="w-28 bg-gray-900 border border-gray-600 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
-                              <option value="">Sem Resp.</option>
-                              {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
-                            </select>
-                          </div>
-                          <div className="flex flex-wrap gap-2 items-center">
-                            <input type="date" value={editTaskData.data} onChange={(e) => setEditTaskData({...editTaskData, data: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
-                            <input type="time" value={editTaskData.hora} onChange={(e) => setEditTaskData({...editTaskData, hora: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
-                            <select value={editTaskData.recorrencia} onChange={(e) => setEditTaskData({...editTaskData, recorrencia: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none cursor-pointer">
-                              <option value="none">S/ Repetição</option>
-                              <option value="daily">🔁 Diário</option>
-                              <option value="weekly">🔁 Semanal</option>
-                              <option value="monthly">🔁 Mensal</option>
-                            </select>
-                            <div className="flex gap-1 ml-auto">
-                              <button onClick={() => setEditingTaskId(null)} className="p-1 bg-gray-700 hover:bg-gray-600 text-white rounded"><X size={14}/></button>
-                              <button onClick={() => saveTaskEdit(item.id)} className="p-1 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={14}/></button>
+                  if (tasksToRender.length === 0) {
+                    return (
+                      <p className="text-xs text-gray-500 italic p-2 border border-dashed border-gray-700 rounded-lg text-center">
+                        Nenhuma tarefa pendente ou concluída recentemente.
+                      </p>
+                    );
+                  }
+
+                  return tasksToRender.map(item => {
+                    const isEditing = editingTaskId === item.id;
+                    const canEditTask = isManager || item.criadoPor === username;
+
+                    return (
+                      <div key={item.id} className="flex flex-col bg-gray-800 p-2.5 rounded-lg border border-gray-700 group shadow-sm transition-all">
+                        {isEditing ? (
+                          /* MODO DE EDIÇÃO */
+                          <div className="flex flex-col gap-2 w-full animate-in fade-in duration-200">
+                            <div className="flex gap-2">
+                              <input type="text" value={editTaskData.texto} onChange={e => setEditTaskData({...editTaskData, texto: e.target.value})} className="flex-1 bg-gray-900 border border-gray-600 rounded p-1.5 text-sm text-white outline-none focus:border-indigo-500" />
+                              <select value={editTaskData.responsavel} onChange={e => setEditTaskData({...editTaskData, responsavel: e.target.value})} className="w-28 bg-gray-900 border border-gray-600 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
+                                <option value="">Sem Resp.</option>
+                                {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
+                              </select>
                             </div>
-                          </div>
-                        </div>
-                      ) : (
-                        /* MODO DE LEITURA NORMAL */
-                        <div className="flex items-start justify-between w-full">
-                          <div className="flex items-start gap-3 flex-1">
-                            <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-4 h-4 mt-0.5 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" />
-                            <div className="flex-1 flex flex-col">
-                              <span className={`text-sm font-medium ${item.feita ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{item.texto}</span>
-                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                {item.data && (
-                                  <span className="text-[9px] bg-gray-900 border border-gray-700 text-amber-400 px-1.5 py-0.5 rounded font-bold flex items-center gap-1 shadow-sm">
-                                    <CalendarDays size={10} /> 
-                                    {item.data.split('-').reverse().join('/')} {item.hora && `às ${item.hora}`}
-                                  </span>
-                                )}
-                                {item.recorrencia && item.recorrencia !== 'none' && (
-                                  <span className="text-[9px] bg-indigo-900/40 border border-indigo-500/50 text-indigo-300 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
-                                    🔁 {item.recorrencia === 'daily' ? 'Diário' : item.recorrencia === 'weekly' ? 'Semanal' : 'Mensal'}
-                                  </span>
-                                )}
-                                {item.responsavel && <span className="text-[9px] text-gray-400 border border-gray-600 px-1.5 py-0.5 rounded shadow-sm">Resp: {item.responsavel}</span>}
-                                {item.criadoPor && <span className="text-[9px] text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded shadow-sm">Por: {item.criadoPor}</span>}
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <input type="date" value={editTaskData.data} onChange={(e) => setEditTaskData({...editTaskData, data: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
+                              <input type="time" value={editTaskData.hora} onChange={(e) => setEditTaskData({...editTaskData, hora: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
+                              <select value={editTaskData.recorrencia} onChange={(e) => setEditTaskData({...editTaskData, recorrencia: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none cursor-pointer">
+                                <option value="none">S/ Repetição</option>
+                                <option value="daily">🔁 Diário</option>
+                                <option value="weekly">🔁 Semanal</option>
+                                <option value="monthly">🔁 Mensal</option>
+                              </select>
+                              <div className="flex gap-1 ml-auto">
+                                <button type="button" onClick={() => setEditingTaskId(null)} className="p-1 bg-gray-700 hover:bg-gray-600 text-white rounded"><X size={14}/></button>
+                                <button type="button" onClick={() => saveTaskEdit(item.id)} className="p-1 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={14}/></button>
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
-                            {canEditTask && (
-                              <button onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1 bg-gray-900 rounded"><Edit2 size={14}/></button>
-                            )}
-                            <button onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 p-1 bg-gray-900 rounded"><Trash2 size={14}/></button>
+                        ) : (
+                          /* MODO DE LEITURA NORMAL */
+                          <div className="flex items-start justify-between w-full">
+                            <div className="flex items-start gap-3 flex-1">
+                              <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-4 h-4 mt-0.5 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" />
+                              <div className="flex-1 flex flex-col">
+                                <span className={`text-sm font-medium ${item.feita ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{item.texto}</span>
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                  {item.data && (
+                                    <span className="text-[9px] bg-gray-900 border border-gray-700 text-amber-400 px-1.5 py-0.5 rounded font-bold flex items-center gap-1 shadow-sm">
+                                      <CalendarDays size={10} /> 
+                                      {item.data.split('-').reverse().join('/')} {item.hora && `às ${item.hora}`}
+                                    </span>
+                                  )}
+                                  {item.recorrencia && item.recorrencia !== 'none' && (
+                                    <span className="text-[9px] bg-indigo-900/40 border border-indigo-500/50 text-indigo-300 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
+                                      🔁 {item.recorrencia === 'daily' ? 'Diário' : item.recorrencia === 'weekly' ? 'Semanal' : 'Mensal'}
+                                    </span>
+                                  )}
+                                  {item.responsavel && <span className="text-[9px] text-gray-400 border border-gray-600 px-1.5 py-0.5 rounded shadow-sm">Resp: {item.responsavel}</span>}
+                                  {item.criadoPor && <span className="text-[9px] text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded shadow-sm">Por: {item.criadoPor}</span>}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                              {canEditTask && (
+                                <button type="button" onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1 bg-gray-900 rounded"><Edit2 size={14}/></button>
+                              )}
+                              <button type="button" onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 p-1 bg-gray-900 rounded"><Trash2 size={14}/></button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {(!store.checklists || store.checklists.length === 0) && (
-                  <p className="text-xs text-gray-500 italic p-2 border border-dashed border-gray-700 rounded-lg text-center">Nenhuma tarefa pendente.</p>
-                )}
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
               
               {/* Formulário Nova Tarefa */}
@@ -563,31 +580,80 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               </div>
             </div>
 
-            {/* 2. HISTÓRICO DE AÇÕES (Recuperado) */}
+            {/* 2. HISTÓRICO DE AÇÕES */}
             <div>
-              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Histórico de Ações</h4>
-              <div className="flex gap-2">
-                <textarea value={newLog} onChange={e => setNewLog(e.target.value)} placeholder="Descreva o que você fez hoje nesta conta..." className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-blue-500 min-h-[50px] max-h-[120px] custom-scrollbar" />
-                <button onClick={addLog} className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors shadow-md"><Send size={16}/> <span className="text-[10px] font-bold uppercase tracking-wider">Lançar</span></button>
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Histórico de Ações</h4>
+                <span className="text-[9px] font-bold text-gray-400 bg-gray-800 border border-gray-700 px-2 py-0.5 rounded shadow-sm">
+                  Últimos 7 dias
+                </span>
               </div>
-              <div className="space-y-4 mb-4 border-l-2 border-gray-700 ml-2 pl-4">
-                {store.taskLogs?.slice().reverse().map(log => (
-                  <div key={log.id} className="relative group/log">
-                    <div className="absolute -left-[21px] top-1.5 w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_5px_rgba(59,130,246,0.8)]"></div>
-                    <div className="flex justify-between items-center mb-1">
-                      <div className="text-[10px] text-blue-400 font-bold">
-                        {log.data} <span className="text-gray-500 font-normal ml-1">por {log.author}</span>
+
+              {/* Caixa de Entrada posicionada no Topo */}
+              <div className="flex gap-2 mb-4 bg-gray-800/40 p-2.5 rounded-xl border border-gray-700/60 shadow-inner">
+                <textarea 
+                  value={newLog} 
+                  onChange={e => setNewLog(e.target.value)} 
+                  placeholder="Descreva o que você fez hoje nesta conta..." 
+                  className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-blue-500 min-h-[44px] max-h-[100px] resize-none custom-scrollbar leading-relaxed" 
+                />
+                <button 
+                  onClick={addLog} 
+                  className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors shadow-md shrink-0 group"
+                >
+                  <Send size={14} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" /> 
+                  <span className="text-[9px] font-bold uppercase tracking-wider">Lançar</span>
+                </button>
+              </div>
+
+              {/* Lista Dinâmica com Filtro Temporal de 7 Dias */}
+              <div className="space-y-3 border-l-2 border-gray-700 ml-2 pl-4 max-h-[260px] overflow-y-auto custom-scrollbar pr-1">
+                {(() => {
+                  const sevenDaysAgo = new Date();
+                  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                  sevenDaysAgo.setHours(0, 0, 0, 0);
+
+                  // Filtra apenas registros criados na última semana
+                  const filteredLogs = (store.taskLogs || []).filter(log => {
+                    try {
+                      if (!log.data) return false;
+                      const datePart = log.data.split(',')[0].split(' ')[0]; // Pega a parte do "DD/MM/AAAA"
+                      const [day, month, year] = datePart.split('/').map(Number);
+                      const logDate = new Date(year, month - 1, day);
+                      return logDate >= sevenDaysAgo;
+                    } catch (e) {
+                      return true; // Fallback: Exibe o log caso o formato destoe
+                    }
+                  });
+
+                  if (filteredLogs.length === 0) {
+                    return (
+                      <div className="text-xs text-gray-500 italic p-3 border border-dashed border-gray-800 rounded-lg text-center ml-[-16px]">
+                        Nenhuma ação registrada nos últimos 7 dias.
                       </div>
-                      {isManager && (
-                        <button onClick={() => deleteLog(log.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity mr-2 p-1">
-                          <Trash2 size={12}/>
-                        </button>
-                      )}
+                    );
+                  }
+
+                  // Renderiza em ordem cronológica inversa (mais novos no topo)
+                  return filteredLogs.slice().reverse().map(log => (
+                    <div key={log.id} className="relative group/log animate-in fade-in duration-200">
+                      <div className="absolute -left-[21px] top-1.5 w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_4px_rgba(59,130,246,0.6)]"></div>
+                      <div className="flex justify-between items-center mb-1">
+                        <div className="text-[10px] text-blue-400 font-bold">
+                          {log.data} <span className="text-gray-500 font-normal ml-1">por {log.author}</span>
+                        </div>
+                        {isManager && (
+                          <button onClick={() => deleteLog(log.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity mr-1 p-0.5">
+                            <Trash2 size={12}/>
+                          </button>
+                        )}
+                      </div>
+                      <div className="bg-gray-800/60 p-2.5 rounded-lg border border-gray-700/70 text-sm text-gray-300 shadow-sm leading-relaxed whitespace-pre-wrap">
+                        {log.texto}
+                      </div>
                     </div>
-                    <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 text-sm text-gray-300 shadow-sm leading-relaxed">{log.texto}</div>
-                  </div>
-                ))}
-                {(!store.taskLogs || store.taskLogs.length === 0) && <div className="text-xs text-gray-500 italic p-2 border border-dashed border-gray-700 rounded-lg text-center">Nenhum log registrado.</div>}
+                  ));
+                })()}
               </div>
             </div>
           </div>
