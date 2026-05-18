@@ -21,14 +21,37 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     if (!myName) return [];
 
     const groups = {};
+    
+    // Pegar a data e hora exatas de agora no fuso correto
+    const now = new Date();
+    const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    const currentTimeStr = now.toTimeString().substring(0, 5); // Fica no formato "HH:MM"
 
     stores.forEach(store => {
       const notificationReasons = [];
 
-      // Regra 1: Tarefas delegadas
-      const delegatedTasksCount = store.checklists?.filter(c => !c.feita && c.responsavel === myName).length || 0;
+      // Regra 1: Tarefas delegadas (AGORA COM INTELIGÊNCIA DE TEMPO)
+      const delegatedTasksCount = store.checklists?.filter(c => {
+        if (c.feita || c.responsavel !== myName) return false;
+        
+        // Se não tem data, alerta sempre
+        if (!c.data) return true;
+
+        // Se a data é no passado, alerta sempre (atrasada)
+        if (c.data < todayStr) return true;
+
+        // Se a data é hoje, checa a hora
+        if (c.data === todayStr) {
+          if (!c.hora) return true; // Se não tem hora marcada, avisa o dia todo
+          return c.hora <= currentTimeStr; // Só avisa se a hora já chegou ou passou
+        }
+
+        // Se é no futuro (amanhã em diante), NÃO alerta na caixa de entrada
+        return false;
+      }).length || 0;
+
       if (delegatedTasksCount > 0) {
-        notificationReasons.push(`${delegatedTasksCount} tarefa(s) delegada(s) a você`);
+        notificationReasons.push(`${delegatedTasksCount} tarefa(s) no prazo ou atrasada(s)`);
       }
 
       // Regra 2: Atualizado por outra pessoa
@@ -45,7 +68,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
           groups[store.client] = {
             clientName: store.client,
             stores: [],
-            lastAccess: store.dataUltimoAcesso || 0 // Usado para ordenar
+            lastAccess: store.dataUltimoAcesso || 0
           };
         }
         
@@ -54,7 +77,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
           highlightMessages: notificationReasons
         });
 
-        // Atualiza a data do grupo para empurrar os clientes recentemente mexidos para o final
         const currentStoreAccess = new Date(store.dataUltimoAcesso || 0);
         const groupOldestAccess = new Date(groups[store.client].lastAccess);
         if (currentStoreAccess < groupOldestAccess) {
@@ -63,7 +85,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
       }
     });
 
-    // Converte o objeto em lista e ordena (Clientes com pendências antigas vêm primeiro)
     return Object.values(groups).sort((a, b) => new Date(a.lastAccess || 0) - new Date(b.lastAccess || 0));
   }, [stores, myName]);
 
@@ -91,12 +112,16 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
       // Agrupamento por Data
       if (!store.dataProximoAcesso) {
         groups.semData.push(store);
-      } else if (store.dataProximoAcesso < today) {
-        groups.atrasadas.push(store);
-      } else if (store.dataProximoAcesso === today) {
-        groups.hoje.push(store);
       } else {
-        groups.futuro.push(store);
+        const storeDateOnly = store.dataProximoAcesso.split('T')[0];
+        
+        if (storeDateOnly < today) {
+          groups.atrasadas.push(store);
+        } else if (storeDateOnly === today) {
+          groups.hoje.push(store);
+        } else {
+          groups.futuro.push(store);
+        }
       }
     });
 
@@ -120,8 +145,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
       {/* CABEÇALHO DO CARD */}
       <div className="flex justify-between items-start mb-1">
         <h4 className={`font-bold text-sm ${isHighlighted ? 'text-indigo-100' : 'text-gray-200'} flex items-center gap-1`}>
-          {store.client}
-          {/* 1. EXIBIÇÃO DO MARKETPLACE NO TÍTULO */}
+          {store.store}
           {store.marketplace && (
             <span className="text-[10px] text-gray-500 font-normal">({store.marketplace})</span>
           )}
@@ -154,7 +178,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
           )}
         </div>
       </div>
-      <p className="text-xs text-gray-400 mb-2">{store.store}</p>
       
       {/* CADA NOTIFICAÇÃO EM SUA PRÓPRIA DIV */}
       {isHighlighted && highlightMessages.length > 0 && (
@@ -224,7 +247,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
       <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <CalendarDays className="text-indigo-500" /> Gestão de Contas (Workflow)
+            <CalendarDays className="text-indigo-500" /> Gestão de Contas
           </h2>
           <p className="text-gray-400 text-sm mt-1">Gerencie checklists, responsáveis e agendamentos das contas.</p>
         </div>
@@ -233,7 +256,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
           onClick={openBulkTaskModal} 
           className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg transition-all"
         >
-          <CopyPlus size={18} /> Tarefa em Massa
+          <CopyPlus size={18} /> Criar Tarefa em Massa
         </button>
       </div>
 

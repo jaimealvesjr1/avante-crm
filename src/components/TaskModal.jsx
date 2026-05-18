@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers }) {
   const [newLog, setNewLog] = useState('');
   const [newChecklist, setNewChecklist] = useState('');
   const [newChecklistResp, setNewChecklistResp] = useState('');
+  const [newTaskDate, setNewTaskDate] = useState('');
+  const [newTaskTime, setNewTaskTime] = useState('');
+  const [newTaskRecurrence, setNewTaskRecurrence] = useState('none');
+
   const [nextDate, setNextDate] = useState(store.dataProximoAcesso || '');
   const [storeResp, setStoreResp] = useState(store.responsavel || '');
   const [fixedNotes, setFixedNotes] = useState(store.notasFixas || '');
@@ -14,6 +18,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   const [isAddingTask, setIsAddingTask] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editTaskData, setEditTaskData] = useState({});
 
   const [dailyGMV, setDailyGMV] = useState('');
   const [dailyAds, setDailyAds] = useState('');
@@ -36,6 +42,26 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     setStoreResp(newResp);
     saveChanges({ ...store, responsavel: newResp });
     toast.success('Responsável atualizado com sucesso!');
+  };
+
+  const autoScheduleStore = (currentChecklists) => {
+    const pendingWithDate = currentChecklists.filter(t => !t.feita && t.data);
+    let nextAccessStr = '';
+
+    if (pendingWithDate.length > 0) {
+      // Ordena para achar a data mais próxima
+      pendingWithDate.sort((a, b) => {
+        const dateA = new Date(`${a.data}T${a.hora || '00:00'}:00`);
+        const dateB = new Date(`${b.data}T${b.hora || '00:00'}:00`);
+        return dateA - dateB;
+      });
+      
+      const earliest = pendingWithDate[0];
+      // Salva no formato YYYY-MM-DDTHH:MM para a loja
+      nextAccessStr = `${earliest.data}T${earliest.hora || '00:00'}`;
+    }
+
+    return nextAccessStr; // Retorna a nova data ou vazio
   };
 
   const addLog = () => {
@@ -149,47 +175,128 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       texto: newChecklist, 
       feita: false, 
       responsavel: newChecklistResp.trim(),
-      criadoPor: username
+      criadoPor: username,
+      data: newTaskDate,
+      hora: newTaskTime,
+      recorrencia: newTaskRecurrence
     };
-    saveChanges({ ...store, checklists: [...(store.checklists || []), item] });
+    
+    const updatedChecklists = [...(store.checklists || []), item];
+    const newNextAccess = autoScheduleStore(updatedChecklists);
+
+    saveChanges({ 
+      ...store, 
+      checklists: updatedChecklists,
+      dataProximoAcesso: newNextAccess || store.dataProximoAcesso
+    });
     
     setTimeout(() => {
       setNewChecklist('');
       setNewChecklistResp('');
+      setNewTaskDate('');
+      setNewTaskTime('');
+      setNewTaskRecurrence('none');
       setIsAddingTask(false);
-      toast.success('Tarefa adicionada!');
+      toast.success('Tarefa adicionada com sucesso!');
     }, 500);
   };
 
   const toggleChecklist = (id) => {
-    const item = store.checklists.find(c => c.id === id);
-    const isCompleting = !item.feita;
-    
-    const updatedChecklists = store.checklists.map(c => c.id === id ? { ...c, feita: !c.feita } : c);
-    
+    const task = store.checklists.find(c => c.id === id);
+    const isCompleting = !task.feita;
+    let updatedChecklists = [...store.checklists];
+
+    if (isCompleting && task.recorrencia && task.recorrencia !== 'none') {
+      // 1. Marca a atual como feita
+      const currentIndex = updatedChecklists.findIndex(t => t.id === id);
+      updatedChecklists[currentIndex].feita = true;
+
+      // 2. Gera a próxima tarefa automaticamente
+      const [year, month, day] = task.data.split('-').map(Number);
+      let nextDate = new Date(year, month - 1, day);
+
+      if (task.recorrencia === 'daily') nextDate.setDate(nextDate.getDate() + 1);
+      if (task.recorrencia === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
+      if (task.recorrencia === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+
+      const nextDateStr = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
+
+      updatedChecklists.push({
+        ...task,
+        id: Date.now() + 1,
+        feita: false,
+        data: nextDateStr
+      });
+      toast.success('Tarefa concluída! Próxima repetição gerada.');
+    } else {
+      updatedChecklists = updatedChecklists.map(c => c.id === id ? { ...c, feita: !c.feita } : c);
+      toast.success(isCompleting ? '✅ Tarefa concluída!' : 'Tarefa reaberta!');
+    }
+
     let updatedLogs = store.taskLogs || [];
     if (isCompleting) {
       updatedLogs = [...updatedLogs, { 
         id: Date.now(), 
         data: new Date().toLocaleString('pt-BR'), 
-        texto: `✅ Tarefa concluída: "${item.texto}"`, 
+        texto: `✅ Tarefa concluída: "${task.texto}"`, 
         author: username 
       }];
     }
+
+    const newNextAccess = autoScheduleStore(updatedChecklists);
 
     saveChanges({ 
       ...store, 
       checklists: updatedChecklists, 
       taskLogs: updatedLogs,
-      dataUltimoAcesso: new Date().toISOString()
+      dataUltimoAcesso: new Date().toISOString(),
+      dataProximoAcesso: newNextAccess || store.dataProximoAcesso
     });
-    
-    toast.success(isCompleting ? '✅ Tarefa concluída!' : 'Tarefa reaberta!');
   };
 
   const deleteChecklist = (id) => {
     saveChanges({ ...store, checklists: store.checklists.filter(c => c.id !== id) });
     toast.success('Tarefa removida!');
+  };
+
+  const startEditingTask = (task) => {
+    setEditingTaskId(task.id);
+    setEditTaskData({
+      texto: task.texto,
+      responsavel: task.responsavel || '',
+      data: task.data || '',
+      hora: task.hora || '',
+      recorrencia: task.recorrencia || 'none'
+    });
+  };
+
+  const saveTaskEdit = (taskId) => {
+    if (!editTaskData.texto.trim()) return toast.error("O texto da tarefa não pode estar vazio.");
+    
+    const updatedChecklists = store.checklists.map(t =>
+      t.id === taskId ? { ...t, ...editTaskData } : t
+    );
+
+    const log = {
+      id: Date.now(),
+      data: new Date().toLocaleString('pt-BR'),
+      texto: `✏️ Tarefa atualizada: "${editTaskData.texto}"`,
+      author: username
+    };
+
+    // A edição da data pode mudar a ordem da loja no Workflow
+    const newNextAccess = autoScheduleStore(updatedChecklists);
+
+    saveChanges({
+      ...store,
+      checklists: updatedChecklists,
+      taskLogs: [...(store.taskLogs || []), log],
+      dataProximoAcesso: newNextAccess || store.dataProximoAcesso,
+      dataUltimoAcesso: new Date().toISOString()
+    });
+
+    setEditingTaskId(null);
+    toast.success('Tarefa atualizada e sincronizada!');
   };
 
   const saveNextDate = () => {
@@ -288,7 +395,9 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
         
         {/* LADO ESQUERDO: CHECKLIST E HISTÓRICO */}
         <div className="flex-1 flex flex-col border-r border-gray-700 bg-gray-900/50">
-          <div className="p-4 border-b border-gray-700 bg-gray-900 flex justify-between items-center">
+          
+          {/* CABEÇALHO DA LOJA */}
+          <div className="p-4 border-b border-gray-700 bg-gray-900 flex justify-between items-center shrink-0">
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <CheckCircle2 size={18} className="text-indigo-400"/> {store.client}
@@ -310,213 +419,249 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
             <button onClick={onClose} className="md:hidden p-1 hover:bg-gray-700 rounded-lg"><X size={20} className="text-gray-400" /></button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">
-            {/* SESSÃO DE CHECKLIST */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-8 custom-scrollbar">
+            
+            {/* 1. SESSÃO DE CHECKLIST */}
             <div>
               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">To-Do List</h4>
-              <div className="space-y-2 mb-3">
-                {store.checklists?.map(item => (
-                  <div key={item.id} className="flex items-center justify-between bg-gray-800 p-2.5 rounded-lg border border-gray-700 group">
-                    <div className="flex items-center gap-3 flex-1">
-                      <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-4 h-4 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" />
-                      <span className={`text-sm ${item.feita ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{item.texto}</span>
-                      {item.responsavel && (
-                        <span className="text-[10px] bg-indigo-900/40 text-indigo-300 px-2 py-0.5 rounded ml-2 border border-indigo-800/50 whitespace-nowrap">
-                          Resp: {item.responsavel}
-                        </span>
-                      )}
+              
+              {/* Lista de Tarefas */}
+              <div className="space-y-2 mb-4">
+                {store.checklists?.map(item => {
+                  const isEditing = editingTaskId === item.id;
+                  const canEditTask = isManager || item.criadoPor === username; // Apenas criador ou gestor edita
 
-                      {item.criadoPor && (
-                        <span className="text-[10px] bg-gray-700 text-gray-400 px-2 py-0.5 rounded ml-1 border border-gray-600 whitespace-nowrap">
-                          Por: {item.criadoPor}
-                        </span>
+                  return (
+                    <div key={item.id} className="flex flex-col bg-gray-800 p-2.5 rounded-lg border border-gray-700 group shadow-sm transition-all">
+                      {isEditing ? (
+                        /* MODO DE EDIÇÃO */
+                        <div className="flex flex-col gap-2 w-full animate-in fade-in duration-200">
+                          <div className="flex gap-2">
+                            <input type="text" value={editTaskData.texto} onChange={e => setEditTaskData({...editTaskData, texto: e.target.value})} className="flex-1 bg-gray-900 border border-gray-600 rounded p-1.5 text-sm text-white outline-none focus:border-indigo-500" />
+                            <select value={editTaskData.responsavel} onChange={e => setEditTaskData({...editTaskData, responsavel: e.target.value})} className="w-28 bg-gray-900 border border-gray-600 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
+                              <option value="">Sem Resp.</option>
+                              {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
+                            </select>
+                          </div>
+                          <div className="flex flex-wrap gap-2 items-center">
+                            <input type="date" value={editTaskData.data} onChange={(e) => setEditTaskData({...editTaskData, data: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
+                            <input type="time" value={editTaskData.hora} onChange={(e) => setEditTaskData({...editTaskData, hora: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
+                            <select value={editTaskData.recorrencia} onChange={(e) => setEditTaskData({...editTaskData, recorrencia: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none cursor-pointer">
+                              <option value="none">S/ Repetição</option>
+                              <option value="daily">🔁 Diário</option>
+                              <option value="weekly">🔁 Semanal</option>
+                              <option value="monthly">🔁 Mensal</option>
+                            </select>
+                            <div className="flex gap-1 ml-auto">
+                              <button onClick={() => setEditingTaskId(null)} className="p-1 bg-gray-700 hover:bg-gray-600 text-white rounded"><X size={14}/></button>
+                              <button onClick={() => saveTaskEdit(item.id)} className="p-1 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={14}/></button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        /* MODO DE LEITURA NORMAL */
+                        <div className="flex items-start justify-between w-full">
+                          <div className="flex items-start gap-3 flex-1">
+                            <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-4 h-4 mt-0.5 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" />
+                            <div className="flex-1 flex flex-col">
+                              <span className={`text-sm font-medium ${item.feita ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{item.texto}</span>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {item.data && (
+                                  <span className="text-[9px] bg-gray-900 border border-gray-700 text-amber-400 px-1.5 py-0.5 rounded font-bold flex items-center gap-1 shadow-sm">
+                                    <CalendarDays size={10} /> 
+                                    {item.data.split('-').reverse().join('/')} {item.hora && `às ${item.hora}`}
+                                  </span>
+                                )}
+                                {item.recorrencia && item.recorrencia !== 'none' && (
+                                  <span className="text-[9px] bg-indigo-900/40 border border-indigo-500/50 text-indigo-300 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
+                                    🔁 {item.recorrencia === 'daily' ? 'Diário' : item.recorrencia === 'weekly' ? 'Semanal' : 'Mensal'}
+                                  </span>
+                                )}
+                                {item.responsavel && <span className="text-[9px] text-gray-400 border border-gray-600 px-1.5 py-0.5 rounded shadow-sm">Resp: {item.responsavel}</span>}
+                                {item.criadoPor && <span className="text-[9px] text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded shadow-sm">Por: {item.criadoPor}</span>}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                            {canEditTask && (
+                              <button onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1 bg-gray-900 rounded"><Edit2 size={14}/></button>
+                            )}
+                            <button onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 p-1 bg-gray-900 rounded"><Trash2 size={14}/></button>
+                          </div>
+                        </div>
                       )}
                     </div>
-                    <button onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
-                  </div>
-                ))}
+                  );
+                })}
+                {(!store.checklists || store.checklists.length === 0) && (
+                  <p className="text-xs text-gray-500 italic p-2 border border-dashed border-gray-700 rounded-lg text-center">Nenhuma tarefa pendente.</p>
+                )}
               </div>
-              <div className="flex flex-col md:flex-row gap-2">
-                <input type="text" value={newChecklist} onChange={e => setNewChecklist(e.target.value)} onKeyDown={e => e.key === 'Enter' && addChecklist()} placeholder="O que fazer? Ex: Ajustar Preços..." className="flex-[2] bg-gray-800 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
-                <div className="flex gap-2">
-                  <select value={newChecklistResp} onChange={e => setNewChecklistResp(e.target.value)} className="w-36 bg-gray-800 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer">
+              
+              {/* Formulário Nova Tarefa */}
+              <div className="flex flex-col gap-3 bg-gray-800 p-3.5 rounded-xl border border-gray-700 shadow-inner">
+                <div className="flex flex-col md:flex-row gap-2">
+                  <input type="text" value={newChecklist} onChange={e => setNewChecklist(e.target.value)} onKeyDown={e => e.key === 'Enter' && addChecklist()} placeholder="O que fazer? Ex: Ajustar Preços..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
+                  <select value={newChecklistResp} onChange={e => setNewChecklistResp(e.target.value)} className="w-full md:w-36 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer">
                     <option value="">Sem Resp.</option>
                     {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
+                </div>
+                
+                <div className="flex flex-wrap gap-2 items-center">
+                  <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg p-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" title="Data da Tarefa" />
+                  <input type="time" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg p-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" title="Hora de Brasília" />
+                  
+                  <select value={newTaskRecurrence} onChange={(e) => setNewTaskRecurrence(e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg p-1.5 text-xs text-white outline-none cursor-pointer flex-1 min-w-[130px]">
+                    <option value="none">S/ Repetição</option>
+                    <option value="daily">🔁 Diário</option>
+                    <option value="weekly">🔁 Semanal</option>
+                    <option value="monthly">🔁 Mensal</option>
+                  </select>
+
                   <button 
                     onClick={addChecklist} 
                     disabled={isAddingTask}
-                    className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors shrink-0 min-w-[120px]"
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-xs shrink-0 shadow-md"
                   >
-                    {isAddingTask ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : <><Plus size={16}/> Add Tarefa</>}
+                    {isAddingTask ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14}/> Add Tarefa</>}
                   </button>
                 </div>
               </div>
             </div>
 
+            {/* 2. HISTÓRICO DE AÇÕES (Recuperado) */}
             <div>
-              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 mt-6">Histórico de Ações</h4>
-              <div className="space-y-3 mb-3 border-l-2 border-gray-700 ml-2 pl-4">
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Histórico de Ações</h4>
+              <div className="space-y-4 mb-4 border-l-2 border-gray-700 ml-2 pl-4">
                 {store.taskLogs?.slice().reverse().map(log => (
                   <div key={log.id} className="relative group/log">
-                    <div className="absolute -left-[21px] top-1.5 w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <div className="flex justify-between items-center mb-0.5">
+                    <div className="absolute -left-[21px] top-1.5 w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_5px_rgba(59,130,246,0.8)]"></div>
+                    <div className="flex justify-between items-center mb-1">
                       <div className="text-[10px] text-blue-400 font-bold">
                         {log.data} <span className="text-gray-500 font-normal ml-1">por {log.author}</span>
                       </div>
                       {isManager && (
-                        <button onClick={() => deleteLog(log.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity mr-2">
+                        <button onClick={() => deleteLog(log.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity mr-2 p-1">
                           <Trash2 size={12}/>
                         </button>
                       )}
                     </div>
-                    <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 text-sm text-gray-300 shadow-sm">{log.texto}</div>
+                    <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 text-sm text-gray-300 shadow-sm leading-relaxed">{log.texto}</div>
                   </div>
                 ))}
-                {(!store.taskLogs || store.taskLogs.length === 0) && <div className="text-xs text-gray-500 italic">Nenhum log registrado.</div>}
+                {(!store.taskLogs || store.taskLogs.length === 0) && <div className="text-xs text-gray-500 italic p-2 border border-dashed border-gray-700 rounded-lg text-center">Nenhum log registrado.</div>}
               </div>
-              <div className="flex gap-2 mt-4">
-                <textarea value={newLog} onChange={e => setNewLog(e.target.value)} placeholder="Descreva o que você fez hoje nesta conta..." className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-blue-500 min-h-[60px] resize-none" />
-                <button onClick={addLog} className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors"><Send size={16}/> <span className="text-[10px] font-bold">Lançar</span></button>
+              <div className="flex gap-2">
+                <textarea value={newLog} onChange={e => setNewLog(e.target.value)} placeholder="Descreva o que você fez hoje nesta conta..." className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-blue-500 min-h-[50px] max-h-[120px] custom-scrollbar" />
+                <button onClick={addLog} className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors shadow-md"><Send size={16}/> <span className="text-[10px] font-bold uppercase tracking-wider">Lançar</span></button>
               </div>
             </div>
+            
           </div>
         </div>
 
         {/* LADO DIREITO: AGENDAMENTO E NOTAS */}
-        <div className="w-full md:w-80 bg-gray-800 flex flex-col border-l border-gray-700">
-          <div className="hidden md:flex justify-end p-4">
-            <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded-lg transition-colors">
+        <div className="w-full md:w-80 bg-gray-800 flex flex-col border-l border-gray-700 shrink-0">
+          <div className="hidden md:flex justify-end p-3 border-b border-gray-800">
+            <button onClick={onClose} className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors">
               <X size={20} className="text-gray-400 hover:text-white" />
             </button>
           </div>
           
-          <div className="p-5 pt-0 flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
+          <div className="p-5 flex-1 flex flex-col gap-5 overflow-y-auto custom-scrollbar">
             
             {/* 1. DESEMPENHO DIÁRIO */}
-            <div className="bg-gray-900 p-4 rounded-xl border border-blue-500/30 shrink-0">
+            <div className="bg-gray-900 p-4 rounded-xl border border-blue-500/30 shrink-0 shadow-sm">
               <h4 className="text-xs font-bold text-blue-400 uppercase flex items-center gap-2 mb-3">
                 <TrendingUp size={14} /> Lançamento de Desempenho
               </h4>
               
-              <div className="grid grid-cols-4 gap-2 mb-3">
-                {/* Campo de Dia */}
+              <div className="grid grid-cols-4 gap-2 mb-4">
                 <div className="col-span-1">
                   <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">Dia</label>
-                  <input 
-                    type="number" 
-                    value={entryDay}
-                    onChange={e => setEntryDay(e.target.value)}
-                    className="w-full bg-blue-900/20 border border-blue-500/30 rounded-lg p-2 text-xs text-white outline-none text-center font-bold"
-                  />
+                  <input type="number" value={entryDay} onChange={e => setEntryDay(e.target.value)} className="w-full bg-blue-900/20 border border-blue-500/30 rounded-lg p-2 text-xs text-white outline-none text-center font-bold" />
                 </div>
-                {/* GMV */}
                 <div className="col-span-3">
                   <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">GMV (R$)</label>
-                  <input 
-                    type="number" 
-                    value={dailyGMV}
-                    onChange={e => setDailyGMV(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
-                  />
+                  <input type="number" value={dailyGMV} onChange={e => setDailyGMV(e.target.value)} placeholder="0.00" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500" />
                 </div>
-                {/* ADS */}
                 <div className="col-span-2">
                   <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">Ads (R$)</label>
-                  <input 
-                    type="number" 
-                    value={dailyAds}
-                    onChange={e => setDailyAds(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
-                  />
+                  <input type="number" value={dailyAds} onChange={e => setDailyAds(e.target.value)} placeholder="0.00" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500" />
                 </div>
-                {/* Pedidos */}
                 <div className="col-span-1">
-                  <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">Pedidos</label>
-                  <input 
-                    type="number" 
-                    value={dailyOrders}
-                    onChange={e => setDailyOrders(e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
-                  />
+                  <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">Ped.</label>
+                  <input type="number" value={dailyOrders} onChange={e => setDailyOrders(e.target.value)} placeholder="0" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500 text-center" />
                 </div>
-                {/* Unidades */}
                 <div className="col-span-1">
-                  <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">Unidades</label>
-                  <input 
-                    type="number" 
-                    value={dailyUnits}
-                    onChange={e => setDailyUnits(e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
-                  />
+                  <label className="text-[9px] text-gray-500 font-bold block mb-1 uppercase">Unid.</label>
+                  <input type="number" value={dailyUnits} onChange={e => setDailyUnits(e.target.value)} placeholder="0" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500 text-center" />
                 </div>
               </div>
 
               <button 
                 onClick={saveDailyEntry}
                 disabled={isSavingDaily}
-                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 text-white font-bold py-2 rounded-lg text-xs transition-all flex items-center justify-center gap-2"
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 text-white font-bold py-2 rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-md"
               >
-                {isSavingDaily ? <Loader2 size={14} className="animate-spin" /> : `Lançar Dados para o dia ${entryDay}`}
+                {isSavingDaily ? <Loader2 size={14} className="animate-spin" /> : `Lançar Dia ${entryDay}`}
               </button>
             </div>
 
             {/* 2. NOTAS FIXAS */}
-            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 flex-1 flex flex-col min-h-[200px]">
-              <div className="flex justify-between items-center mb-2">
+            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 flex-1 flex flex-col min-h-[220px] shadow-sm">
+              <div className="flex justify-between items-center mb-3">
                 <h4 className="text-xs font-bold text-emerald-400 uppercase flex items-center gap-2">
                   <StickyNote size={14} /> Bloco de Notas
                 </h4>
                 {!isDuplicating && (
-                  <div className="flex gap-1">
-                    <button onClick={() => setIsDuplicating(true)} className="p-1 text-gray-500 hover:text-blue-400 transition-colors"><Copy size={12}/></button>
-                    <button onClick={deleteFixedNotes} className="p-1 text-gray-500 hover:text-red-400 transition-colors"><Eraser size={12}/></button>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => setIsDuplicating(true)} className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-gray-800 rounded transition-colors" title="Duplicar nota para outra loja"><Copy size={12}/></button>
+                    <button onClick={deleteFixedNotes} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-800 rounded transition-colors" title="Apagar notas"><Eraser size={12}/></button>
                   </div>
                 )}
               </div>
 
               {isDuplicating ? (
-                <div className="flex flex-col gap-2 flex-1">
+                <div className="flex flex-col gap-2 flex-1 justify-center bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+                  <p className="text-[10px] text-gray-400 mb-1">Copiar bloco de notas para:</p>
                   <select 
                     value={duplicateTargetId} 
                     onChange={e => setDuplicateTargetId(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-[10px] text-white outline-none"
+                    className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-[11px] text-white outline-none mb-2"
                   >
                     <option value="">Selecionar destino...</option>
                     {stores.filter(s => s.id !== store.id).map(s => (
                       <option key={s.id} value={s.id}>{s.client} - {s.store}</option>
                     ))}
                   </select>
-                  <div className="flex gap-1">
-                    <button onClick={() => setIsDuplicating(false)} className="flex-1 bg-gray-700 text-[10px] py-1.5 rounded">Sair</button>
-                    <button onClick={confirmDuplication} className="flex-1 bg-blue-600 text-[10px] py-1.5 rounded">OK</button>
+                  <div className="flex gap-2">
+                    <button onClick={() => setIsDuplicating(false)} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold text-[10px] py-2 rounded transition-colors">Cancelar</button>
+                    <button onClick={confirmDuplication} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] py-2 rounded transition-colors shadow-md">Confirmar</button>
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col gap-2 flex-1">
+                <div className="flex flex-col gap-3 flex-1">
                   <textarea 
                     value={fixedNotes} 
                     onChange={(e) => setFixedNotes(e.target.value)} 
-                    placeholder="Acessos, regras, preços..."
-                    className="w-full flex-1 bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-[11px] text-gray-300 outline-none resize-none focus:border-emerald-500"
+                    placeholder="Regras de frete, limites de desconto, acessos..."
+                    className="w-full flex-1 bg-gray-800 border border-gray-700 rounded-lg p-3 text-xs text-gray-300 outline-none resize-none focus:border-emerald-500 custom-scrollbar"
                   />
                   <button 
                     onClick={saveFixedNotes} 
                     disabled={isSavingNotes}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-900 text-white font-bold py-2 rounded-lg text-xs flex justify-center items-center gap-2"
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-900 text-white font-bold py-2 rounded-lg text-xs flex justify-center items-center gap-2 shadow-md transition-colors"
                   >
-                    {isSavingNotes ? <Loader2 size={14} className="animate-spin" /> : <><Save size={14} /> Salvar</>}
+                    {isSavingNotes ? <Loader2 size={14} className="animate-spin" /> : <><Save size={14} /> Salvar Notas</>}
                   </button>
                 </div>
               )}
             </div>
 
             {/* 3. PRÓXIMO ACESSO */}
-            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 shrink-0 mb-2">
+            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 shrink-0 shadow-sm">
               <h4 className="text-xs font-bold text-amber-400 uppercase flex items-center gap-2 mb-3">
                 <CalendarDays size={14} /> Próximo Acesso
               </h4>
@@ -529,9 +674,9 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               <button 
                 onClick={saveNextDate} 
                 disabled={isScheduling}
-                className="w-full bg-amber-600 hover:bg-amber-500 disabled:bg-amber-900 text-white font-bold py-2 rounded-lg text-xs mt-2 transition-all flex items-center justify-center gap-2"
+                className="w-full bg-amber-600 hover:bg-amber-500 disabled:bg-amber-900 text-white font-bold py-2 rounded-lg text-xs mt-3 transition-all flex items-center justify-center gap-2 shadow-md"
               >
-                {isScheduling ? <Loader2 size={14} className="animate-spin" /> : 'Agendar Retorno'}
+                {isScheduling ? <Loader2 size={14} className="animate-spin" /> : 'Agendar Manualmente'}
               </button>
             </div>
           </div>
