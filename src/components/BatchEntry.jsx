@@ -36,20 +36,31 @@ export default function BatchEntry({ stores, onClose, onSaveBatch, currentDay })
 
   const handleSave = () => {
     if (!batchDay || batchDay < 1 || batchDay > 31) {
-      toast.error("Por favor, informe um dia de apuração válido.");
+      toast.error("Por favor, informe um dia válido.");
       return;
     }
 
     const dayVal = Number(batchDay);
+    const updates = []; // Agora é um array vazio que só vai receber as lojas editadas!
 
-    const updates = stores.map(s => {
+    // Função faxineira: converte "1.500,50" ou "1500.50" num número perfeito para o banco
+    const parseSafeNumber = (val) => {
+      if (!val) return 0;
+      return Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
+    };
+
+    stores.forEach(s => {
       const data = formData[s.id];
-      const cumRev = parseShopeeNumber(data.currentRevenue);
-      const cumAds = parseShopeeNumber(data.adsInvestment);
+      if (!data) return;
+
+      // TRAVA DE SEGURANÇA: Se o usuário deixou tudo em branco nesta loja, nós a ignoramos!
+      if (!data.currentRevenue && !data.adsInvestment && !data.orders && !data.units) return;
+
+      const cumRev = parseSafeNumber(data.currentRevenue);
+      const cumAds = parseSafeNumber(data.adsInvestment);
       const cumOrd = parseInt(data.orders, 10) || 0;
       const cumUni = parseInt(data.units, 10) || 0;
 
-      // 1. Encontra o dia anterior mais próximo para descobrir o ganho real deste dia específico
       let prevRev = 0, prevAds = 0, prevOrd = 0, prevUni = 0;
       const pastEntries = [...(s.history || [])].filter(h => h.day < dayVal).sort((a, b) => b.day - a.day);
       if (pastEntries.length > 0) {
@@ -61,7 +72,6 @@ export default function BatchEntry({ stores, onClose, onSaveBatch, currentDay })
 
       const dailyRev = cumRev - prevRev;
 
-      // 2. Monta a estrutura exata do gráfico analítico
       const entry = {
         id: Date.now() + s.id,
         day: dayVal,
@@ -73,33 +83,21 @@ export default function BatchEntry({ stores, onClose, onSaveBatch, currentDay })
         date: new Date().toLocaleDateString('pt-BR')
       };
 
-      // 3. Atualiza ou insere o ponto no histórico da loja
-      let updatedHistory = [...(s.history || [])];
-      const existingIndex = updatedHistory.findIndex(h => h.day === dayVal);
-      if (existingIndex >= 0) {
-        entry.id = updatedHistory[existingIndex].id;
-        updatedHistory[existingIndex] = entry;
-      } else {
-        updatedHistory.push(entry);
-      }
-
-      // 4. Registra no Histórico de Ações interno para auditoria
       const log = {
         id: Date.now() + s.id + 1,
         data: new Date().toLocaleString('pt-BR'),
-        texto: `📊 Lançamento em Massa [Dia ${dayVal}]: Totais atualizados para Faturamento R$${cumRev} | Ads R$${cumAds}`,
+        texto: `📊 Lançamento Lote [Dia ${dayVal}]: Totais: Faturamento R$${cumRev} | Ads R$${cumAds}`,
         author: 'Sistema (Massa)'
       };
 
-      return {
+      updates.push({
         ...s,
         currentRevenue: cumRev,
         adsInvestment: cumAds,
         orders: cumOrd,
         units: cumUni,
-        history: updatedHistory.sort((a, b) => a.day - b.day),
         taskLogs: [...(s.taskLogs || []), log]
-      };
+      });
     });
     
     onSaveBatch(updates, dayVal);

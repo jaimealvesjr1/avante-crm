@@ -196,7 +196,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     saveChanges({ 
       ...store, 
       checklists: updatedChecklists,
-      dataProximoAcesso: newNextAccess || store.dataProximoAcesso
+      dataProximoAcesso: newNextAccess || store.dataProximoAcesso || ''
     });
     
     setTimeout(() => {
@@ -257,7 +257,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     if (!newNextAccess && isCompleting && task.data) {
       finalNextAccess = '';
     } else if (!newNextAccess) {
-      finalNextAccess = store.dataProximoAcesso;
+      finalNextAccess = store.dataProximoAcesso || '';
     }
 
     saveChanges({ 
@@ -278,7 +278,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     if (!newNextAccess && task?.data) {
       finalNextAccess = '';
     } else if (!newNextAccess) {
-      finalNextAccess = store.dataProximoAcesso;
+      finalNextAccess = store.dataProximoAcesso || '';
     }
 
     saveChanges({ ...store, checklists: updatedChecklists, dataProximoAcesso: finalNextAccess });
@@ -317,7 +317,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     if (!newNextAccess && (oldTask?.data || editTaskData.data)) {
       finalNextAccess = '';
     } else if (!newNextAccess) {
-      finalNextAccess = store.dataProximoAcesso;
+      finalNextAccess = store.dataProximoAcesso || '';
     }
 
     saveChanges({

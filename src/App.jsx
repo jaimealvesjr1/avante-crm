@@ -91,6 +91,28 @@ export default function App() {
   const isManager = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager';
   const canUseBatchEntry = isManager || currentUserData?.role === 'Supervisor';
 
+  const now = new Date();
+  const localToday = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+  const currentTimeStr = now.toTimeString().substring(0, 5);
+
+  const globalPendingTasks = useMemo(() => {
+    if (!currentUserData) return 0;
+    const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0];
+    
+    return stores.flatMap(s => s.checklists || []).filter(c => {
+      if (c.feita) return false;
+      const isAssignedToMe = c.responsavel === myName;
+      
+      if (!isAssignedToMe) return false; 
+      
+      if (!c.data) return true;
+      if (c.data < localToday) return true; // Atrasada
+      if (c.data === localToday) return !c.hora || c.hora <= currentTimeStr;
+
+      return false;
+    }).length;
+  }, [stores, currentUserData, localToday, currentTimeStr]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -238,28 +260,23 @@ export default function App() {
     else if (currentRole === 'Admin') newRole = 'Operacional';
 
     try {
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('email', '==', email));
-      const querySnapshot = await getDocs(q);
+      // 1. Aponta diretamente para o documento do usuário na coleção CORRETA ("equipe")
+      const userDocRef = doc(db, "equipe", email.toLowerCase());
       
-      if (!querySnapshot.empty) {
-        const userDoc = querySnapshot.docs[0];
-        await updateDoc(userDoc.ref, { role: newRole });
-        
-        // Atualiza a lista na tela instantaneamente sem precisar recarregar o banco
-        setTeamMembers(prevMembers => 
-          prevMembers.map(member => 
-            member.email === email ? { ...member, role: newRole } : member
-          )
-        );
-        
-        toast.success(`Cargo atualizado para ${newRole}!`);
-      } else {
-        toast.error("Erro: Usuário não encontrado no banco de dados.");
-      }
+      // 2. Atualiza apenas o campo 'role', mantendo o resto intacto (usando setDoc com merge)
+      await setDoc(userDocRef, { role: newRole }, { merge: true });
+      
+      // 3. Atualiza a tela instantaneamente
+      setTeamMembers(prevMembers => 
+        prevMembers.map(member => 
+          member.email === email ? { ...member, role: newRole } : member
+        )
+      );
+      
+      toast.success(`Cargo atualizado para ${newRole}!`);
     } catch (error) {
       console.error("Erro ao atualizar cargo:", error);
-      toast.error("Erro ao atualizar cargo.");
+      toast.error("Erro ao atualizar cargo. Verifique o console.");
     }
   };
 
@@ -669,8 +686,13 @@ export default function App() {
             <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'operacional' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
               <Briefcase size={16} /> Portfólio
             </button>
-            <button onClick={() => setActiveView('rotinas')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'rotinas' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+            <button onClick={() => setActiveView('rotinas')} className={`relative px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'rotinas' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
               <CalendarDays size={16} /> Workflow
+              {globalPendingTasks > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 border border-gray-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-lg animate-pulse">
+                  {globalPendingTasks}
+                </span>
+              )}
             </button>
             {canEdit && <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap ${activeView === 'admin' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}>Equipe</button>}
           </div>
@@ -880,6 +902,8 @@ export default function App() {
                       <button onClick={() => {
                         const entryDay = Number(newHistoryDay);
                         
+                        const parseSafeNumber = (val) => Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
+
                         let prevRev = 0, prevAds = 0, prevOrd = 0, prevUni = 0;
                         const pastEntries = [...(activeStore.history || [])].filter(h => h.day < entryDay).sort((a,b) => b.day - a.day);
                         if(pastEntries.length > 0) {
@@ -889,15 +913,15 @@ export default function App() {
                             prevUni = pastEntries[0].units || 0;
                         }
 
-                        const cumRev = prevRev + Number(newHistoryRevenue);
-                        const cumAds = prevAds + Number(newHistoryAds);
-                        const cumOrd = prevOrd + Number(newHistoryOrders);
-                        const cumUni = prevUni + Number(newHistoryUnits);
+                        const cumRev = prevRev + parseSafeNumber(newHistoryRevenue);
+                        const cumAds = prevAds + parseSafeNumber(newHistoryAds);
+                        const cumOrd = prevOrd + parseSafeNumber(newHistoryOrders);
+                        const cumUni = prevUni + parseSafeNumber(newHistoryUnits);
 
                         const entry = {
                           id: Date.now() + Math.random(),
                           day: entryDay,
-                          dailyRevenue: Number(newHistoryRevenue),
+                          dailyRevenue: parseSafeNumber(newHistoryRevenue),
                           revenue: cumRev,
                           ads: cumAds,
                           orders: cumOrd,

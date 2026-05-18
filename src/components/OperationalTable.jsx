@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Plus, Activity, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, Edit2, Check, X, MessageCircle, Trash2, BarChart2, Filter } from 'lucide-react';
+import { Search, Plus, Zap, Activity, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, Edit2, Check, X, MessageCircle, Trash2, BarChart2, Filter } from 'lucide-react';
 
 export default function OperationalTable({
   canEdit,
@@ -107,7 +107,7 @@ export default function OperationalTable({
               <Plus size={18} /> Add Conta
             </button>
           )}
-          
+
           {/* Lançamento em Massa liberado para Gestores e Supervisores */}
           {canUseBatchEntry && (
             <button 

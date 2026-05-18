@@ -25,7 +25,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     // Pegar a data e hora exatas de agora no fuso correto
     const now = new Date();
     const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-    const currentTimeStr = now.toTimeString().substring(0, 5); // Fica no formato "HH:MM"
+    const currentTimeStr = now.toTimeString().substring(0, 5);
 
     stores.forEach(store => {
       const notificationReasons = [];
@@ -218,7 +218,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
 
     let updatedStore = { ...store };
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
 
     if (action === 'accessed') {
       // 1. Registra que você acessou agora

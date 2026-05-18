@@ -181,7 +181,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
         <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
           <h3 className="text-lg font-bold text-white mb-6">Participação por Cliente</h3>
           <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <PieChart>
                 <Pie data={pieData} cx="50%" cy="50%" innerRadius={80} outerRadius={110} paddingAngle={5} dataKey="value">
                   {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
@@ -195,7 +195,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
         <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
           <h3 className="text-lg font-bold text-white mb-6">Ranking de ROAS (Média: {avgRoas.toFixed(1)}x)</h3>
           <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <BarChart data={roasData} layout="vertical" margin={{ left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={true} vertical={false} />
                 <XAxis type="number" hide />
@@ -216,7 +216,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
       <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
         <h3 className="text-lg font-bold text-white mb-6">Evolução: Clientes vs Agência</h3>
         <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <LineChart data={monthlyComparisonData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
               <XAxis dataKey="month" stroke="#9CA3AF" fontSize={12} />
