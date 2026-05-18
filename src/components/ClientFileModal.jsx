@@ -4,8 +4,6 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis
 import { toast } from 'react-hot-toast';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
-
-// Lista oficial padronizada para checagem do Radar
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
 
 export default function ClientFileModal({ 
@@ -19,12 +17,11 @@ export default function ClientFileModal({
   currentDay,
   currentUserData,
   user,
-  canUseBatchEntry,
-  canEdit
+  canUseBatchEntry, 
+  canEdit           
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // Estados para o Lançamento Diário (Aba Apuração)
   const [batchDay, setBatchDay] = useState(currentDay || 1);
   const [formData, setFormData] = useState(() => {
     const initial = {};
@@ -41,48 +38,74 @@ export default function ClientFileModal({
     return initial;
   });
 
-  // Estado para nova anotação
   const [newNoteText, setNewNoteText] = useState('');
 
   if (!clientGroup) return null;
 
-  // 1. RADAR DE EXPANSÃO COM UNIFICAÇÃO INTELIGENTE
+  // === A MÁGICA DA REATIVIDADE ===
+  // Lemos as lojas diretamente do estado global que se atualiza na hora!
+  const liveStores = useMemo(() => {
+    return stores.filter(s => s.client === clientGroup.client);
+  }, [stores, clientGroup.client]);
+
+  // 1. LÓGICA DO RADAR: MARKETPLACES ATIVOS (Verdes)
   const activeMarketplaces = useMemo(() => {
     const active = new Set();
-    clientGroup.stores.forEach(s => {
+    liveStores.forEach(s => {
       if (s.marketplace) {
         let mkt = s.marketplace.toLowerCase().trim();
-        
-        // REPASSADA/UNIFICAÇÃO: Se o registro antigo for apenas 'tiktok', padroniza para 'tiktok shop'
-        if (mkt === 'tiktok') {
-          mkt = 'tiktok shop';
-        }
-        
+        if (mkt === 'tiktok') mkt = 'tiktok shop';
         active.add(mkt);
       }
     });
     return active;
-  }, [clientGroup]);
+  }, [liveStores]);
 
-  // 2. Dados para os Gráficos
+  // 2. LÓGICA DO RADAR: MARKETPLACES POTENCIAIS (Laranjas)
+  const potentialMarketplaces = useMemo(() => {
+    return liveStores[0]?.potentialMarketplaces || [];
+  }, [liveStores]);
+
+  // 3. FUNÇÃO PARA ALTERAR O POTENCIAL
+  const togglePotentialMarketplace = (mkt) => {
+    if (!canUseBatchEntry) return; 
+    if (activeMarketplaces.has(mkt)) return; 
+
+    let newPotentials = [...potentialMarketplaces];
+    if (newPotentials.includes(mkt)) {
+      newPotentials = newPotentials.filter(p => p !== mkt); 
+    } else {
+      newPotentials.push(mkt); 
+    }
+
+    let updatedStoresGlobal = [...stores];
+    liveStores.forEach(store => {
+      const updatedStore = { ...store, potentialMarketplaces: newPotentials };
+      updateStoreInCloud(updatedStore);
+      updatedStoresGlobal = updatedStoresGlobal.map(globalStore => globalStore.id === store.id ? updatedStore : globalStore);
+    });
+
+    setStores(updatedStoresGlobal); // Atualiza na hora e o radar reage visualmente!
+  };
+
+  // Dados para os Gráficos (Agora reativos)
   const pieData = useMemo(() => 
-    clientGroup.stores.map(s => ({ name: s.store, value: s.currentRevenue || 0 })).filter(s => s.value > 0)
-  , [clientGroup]);
+    liveStores.map(s => ({ name: s.store, value: s.currentRevenue || 0 })).filter(s => s.value > 0)
+  , [liveStores]);
 
   const roasData = useMemo(() => 
-    clientGroup.stores.map(s => ({ 
+    liveStores.map(s => ({ 
       name: s.store, 
       roas: s.adsInvestment > 0 ? Number((s.currentRevenue / s.adsInvestment).toFixed(1)) : 0 
     })).sort((a, b) => b.roas - a.roas)
-  , [clientGroup]);
+  , [liveStores]);
 
-  // 3. Funções de Salvamento de Apuração
+  // Funções de Salvamento de Apuração
   const handleFormChange = (id, field, value) => {
     setFormData(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
   };
 
   const handleSaveBatch = () => {
-    // Trava de segurança extra no código
     if (!canUseBatchEntry) {
       return toast.error("Acesso negado. Apenas Supervisores ou Admins podem fazer apuração financeira.");
     }
@@ -94,7 +117,7 @@ export default function ClientFileModal({
     
     let updatedStoresGlobal = [...stores];
 
-    clientGroup.stores.forEach(s => {
+    liveStores.forEach(s => {
       const data = formData[s.id];
       if (!data || (!data.currentRevenue && !data.adsInvestment && !data.orders && !data.units)) return;
 
@@ -147,7 +170,7 @@ export default function ClientFileModal({
 
   const handleSaveNote = () => {
     if (!newNoteText.trim()) return;
-    const firstStore = clientGroup.stores[0];
+    const firstStore = liveStores[0];
     if (!firstStore) return toast.error("Este cliente não tem lojas.");
 
     const username = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
@@ -188,6 +211,7 @@ export default function ClientFileModal({
             )}
             <button onClick={() => setActiveTab('historico')} className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'historico' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}><ClipboardList size={16}/> Histórico & Notas</button>
           </div>
+
           <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-lg text-gray-400 transition-colors"><X size={24}/></button>
         </div>
 
@@ -196,14 +220,33 @@ export default function ClientFileModal({
           {/* ABA 1: DASHBOARD E RADAR */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-in fade-in">
-              {/* RADAR DE MARKETPLACES */}
+              {/* RADAR DE MARKETPLACES (AGORA REATIVO!) */}
               <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Target size={14}/> Radar de Expansão (Marketplaces)</h3>
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2"><Target size={14}/> Radar de Expansão</h3>
+                  {canUseBatchEntry && <span className="text-[10px] text-gray-500 italic">Clique nos canais inativos para marcá-los como oportunidade.</span>}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {ALL_MARKETPLACES.map(mkt => {
                     const isActive = activeMarketplaces.has(mkt);
+                    const isPotential = potentialMarketplaces.includes(mkt);
+                    
+                    let btnStyle = 'bg-gray-900 text-gray-600 border-gray-800'; 
+                    if (isActive) {
+                      btnStyle = 'bg-green-900/30 text-green-400 border-green-800 shadow-[0_0_10px_rgba(16,185,129,0.1)]'; 
+                    } else if (isPotential) {
+                      btnStyle = 'bg-amber-900/30 text-amber-500 border-amber-800 shadow-[0_0_10px_rgba(245,158,11,0.1)]'; 
+                    }
+
+                    const canClick = canUseBatchEntry && !isActive;
+
                     return (
-                      <span key={mkt} className={`px-3 py-1 rounded text-xs font-bold uppercase tracking-wider border ${isActive ? 'bg-green-900/30 text-green-400 border-green-800 shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 'bg-gray-900 text-gray-600 border-gray-800'}`}>
+                      <span 
+                        key={mkt} 
+                        onClick={() => togglePotentialMarketplace(mkt)}
+                        className={`px-3 py-1 rounded text-xs font-bold uppercase tracking-wider border transition-colors select-none ${btnStyle} ${canClick ? 'cursor-pointer hover:border-amber-500' : 'cursor-default'}`}
+                        title={isActive ? "Cliente já opera neste canal" : canClick ? "Clique para marcar/desmarcar como Oportunidade" : ""}
+                      >
                         {mkt}
                       </span>
                     );
@@ -301,23 +344,23 @@ export default function ClientFileModal({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
-                    {clientGroup.stores.map(store => (
+                    {liveStores.map(store => (
                       <tr key={store.id} className="hover:bg-gray-800/50 transition-colors">
                         <td className="p-3">
                           <div className="font-bold text-gray-200 cursor-pointer hover:text-blue-400 transition-colors" onClick={() => { onClose(); openTaskModal(store); }}>{store.store}</div>
                           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{store.marketplace || 'Marketplace'}</div>
                         </td>
                         <td className="p-3">
-                          <input type="text" value={formData[store.id].currentRevenue} onChange={(e) => handleFormChange(store.id, 'currentRevenue', e.target.value)} className="w-full bg-gray-950 border border-gray-700 text-blue-300 rounded p-2 focus:ring-1 focus:ring-blue-500 outline-none text-sm font-bold" placeholder="0,00" />
+                          <input type="text" value={formData[store.id]?.currentRevenue || ''} onChange={(e) => handleFormChange(store.id, 'currentRevenue', e.target.value)} className="w-full bg-gray-950 border border-gray-700 text-blue-300 rounded p-2 focus:ring-1 focus:ring-blue-500 outline-none text-sm font-bold" placeholder="0,00" />
                         </td>
                         <td className="p-3">
-                          <input type="text" value={formData[store.id].adsInvestment} onChange={(e) => handleFormChange(store.id, 'adsInvestment', e.target.value)} className="w-full bg-gray-950 border border-gray-700 text-amber-300 rounded p-2 focus:ring-1 focus:ring-amber-500 outline-none text-sm font-bold" placeholder="0,00" />
+                          <input type="text" value={formData[store.id]?.adsInvestment || ''} onChange={(e) => handleFormChange(store.id, 'adsInvestment', e.target.value)} className="w-full bg-gray-950 border border-gray-700 text-amber-300 rounded p-2 focus:ring-1 focus:ring-amber-500 outline-none text-sm font-bold" placeholder="0,00" />
                         </td>
                         <td className="p-3">
-                          <input type="number" value={formData[store.id].orders} onChange={(e) => handleFormChange(store.id, 'orders', e.target.value)} className="w-full bg-gray-950 border border-gray-700 text-green-300 rounded p-2 focus:ring-1 focus:ring-green-500 outline-none text-sm font-bold" placeholder="0" />
+                          <input type="number" value={formData[store.id]?.orders || ''} onChange={(e) => handleFormChange(store.id, 'orders', e.target.value)} className="w-full bg-gray-950 border border-gray-700 text-green-300 rounded p-2 focus:ring-1 focus:ring-green-500 outline-none text-sm font-bold" placeholder="0" />
                         </td>
                         <td className="p-3">
-                          <input type="number" value={formData[store.id].units} onChange={(e) => handleFormChange(store.id, 'units', e.target.value)} className="w-full bg-gray-950 border border-gray-700 text-purple-300 rounded p-2 focus:ring-1 focus:ring-purple-500 outline-none text-sm font-bold" placeholder="0" />
+                          <input type="number" value={formData[store.id]?.units || ''} onChange={(e) => handleFormChange(store.id, 'units', e.target.value)} className="w-full bg-gray-950 border border-gray-700 text-purple-300 rounded p-2 focus:ring-1 focus:ring-purple-500 outline-none text-sm font-bold" placeholder="0" />
                         </td>
                       </tr>
                     ))}
@@ -337,7 +380,7 @@ export default function ClientFileModal({
                   <ClipboardList size={16} className="text-indigo-400" /> Tarefas Pendentes nas Lojas
                 </h3>
                 <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
-                  {clientGroup.stores.flatMap(s => (s.checklists || []).map(t => ({...t, storeName: s.store}))).filter(t => !t.feita).map(task => (
+                  {liveStores.flatMap(s => (s.checklists || []).map(t => ({...t, storeName: s.store}))).filter(t => !t.feita).map(task => (
                     <div key={task.id} className="bg-gray-900 p-3 rounded-lg border border-gray-700 text-sm text-gray-300 flex items-start gap-3 shadow-sm">
                       <div className="w-2 h-2 bg-indigo-500 rounded-full mt-1.5 shrink-0 shadow-[0_0_8px_rgba(99,102,241,0.6)]"></div>
                       <div className="flex-1">
@@ -349,7 +392,7 @@ export default function ClientFileModal({
                       </div>
                     </div>
                   ))}
-                  {clientGroup.stores.every(s => !s.checklists?.some(t => !t.feita)) && (
+                  {liveStores.every(s => !s.checklists?.some(t => !t.feita)) && (
                     <div className="text-center p-8 border border-dashed border-gray-700 rounded-lg h-full flex items-center justify-center">
                       <p className="text-gray-500 text-sm italic font-medium">Nenhuma tarefa pendente registrada.</p>
                     </div>
@@ -364,7 +407,7 @@ export default function ClientFileModal({
                 </h3>
                 
                 <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar border-l-2 border-gray-700 ml-2 pl-4 mb-4 space-y-4">
-                  {clientGroup.stores.flatMap(s => (s.taskLogs || []).map(l => ({...l, store: s.store})))
+                  {liveStores.flatMap(s => (s.taskLogs || []).map(l => ({...l, store: s.store})))
                     .sort((a,b) => b.id - a.id).map(log => (
                     <div key={log.id} className="relative group">
                       <div className="absolute -left-[23px] top-1.5 w-2.5 h-2.5 bg-gray-900 rounded-full border-2 border-emerald-500"></div>
@@ -376,7 +419,7 @@ export default function ClientFileModal({
                       <p className="text-sm text-gray-300 leading-relaxed bg-gray-900 p-3 rounded-lg border border-gray-700">{log.texto}</p>
                     </div>
                   ))}
-                  {clientGroup.stores.every(s => !s.taskLogs || s.taskLogs.length === 0) && (
+                  {liveStores.every(s => !s.taskLogs || s.taskLogs.length === 0) && (
                      <div className="h-full flex items-center text-gray-500 text-sm italic font-medium -ml-4 pl-4">Nenhum registro de atividade.</div>
                   )}
                 </div>
@@ -398,8 +441,10 @@ export default function ClientFileModal({
                   </button>
                 </div>
               </div>
+
             </div>
           )}
+
         </div>
       </div>
     </div>
