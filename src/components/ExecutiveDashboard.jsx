@@ -13,32 +13,56 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
     return roasData.length > 0 ? roasData.reduce((acc, curr) => acc + curr.roas, 0) / roasData.length : 0;
   }, [roasData]);
 
-  // 3. Agregação para Gráfico Mensal (Duas Linhas)
+  // 3. BUG FIX: Agregação por CLIENTE para evitar a multiplicação de taxa fixa por loja
   const monthlyComparisonData = useMemo(() => {
     const monthlyStats = {};
 
     dashboardData.groupedClients.forEach(group => {
+      // Coleta as configurações de contrato unificadas do cliente (com fallback seguro para a primeira loja)
+      const isFixed = group.feeType === 'fixed' || (group.stores[0]?.feeType === 'fixed') || Number(group.fixedFee || group.stores[0]?.fixedFee || 0) > 0;
+      const fixedFee = Number(group.fixedFee || group.stores[0]?.fixedFee || 0);
+      const feePercent = Number(group.feePercent || group.stores[0]?.feePercent || 0);
+
+      // Mapeia o GMV mensal somado de todas as lojas deste cliente específico
+      const clientMonths = {};
       group.stores.forEach(store => {
         (store.monthlyHistory || []).forEach(h => {
-          if (!monthlyStats[h.month]) monthlyStats[h.month] = { month: h.month, clientRevenue: 0, agencyRevenue: 0 };
-          monthlyStats[h.month].clientRevenue += h.gmv;
-          const isFixed = store.feeType === 'fixed' || store.fixedFee > 0;
-          monthlyStats[h.month].agencyRevenue += isFixed ? Number(store.fixedFee) : h.gmv * (Number(store.feePercent) / 100);
+          if (!clientMonths[h.month]) clientMonths[h.month] = 0;
+          clientMonths[h.month] += h.gmv;
         });
+      });
+
+      // Calcula a receita real da agência aplicando a regra uma única vez por mês por cliente
+      Object.entries(clientMonths).forEach(([month, totalGmv]) => {
+        if (!monthlyStats[month]) {
+          monthlyStats[month] = { month, clientRevenue: 0, agencyRevenue: 0 };
+        }
+        
+        monthlyStats[month].clientRevenue += totalGmv;
+        
+        // Aplica a regra de cobrança de forma correta (sem duplicar por número de lojas)
+        if (isFixed) {
+          monthlyStats[month].agencyRevenue += fixedFee;
+        } else {
+          monthlyStats[month].agencyRevenue += totalGmv * (feePercent / 100);
+        }
       });
     });
 
+    // Transforma em lista ordenada para o Recharts
     const data = Object.values(monthlyStats);
-    // Adiciona o mês atual como projeção
+    
+    // Adiciona o mês atual como projeção final estável
     data.push({
       month: 'Atual (Proj.)',
       clientRevenue: dashboardData.totalProjected,
       agencyRevenue: dashboardData.totalAgencyRevenue
     });
+    
     return data;
   }, [dashboardData]);
 
-  // 4. Mock de Log de Alterações (Para demonstrar a UI)
+  // 4. Alertas de Ritmo baseados em Metas
   const changeLogs = useMemo(() => {
     return dashboardData.groupedClients.filter(g => g.status !== 'success').map(g => ({
       id: g.client,
@@ -52,9 +76,8 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
-      {/* 1. QUADROS DE KPI (REESTRUTURADOS) */}
+      {/* 1. QUADROS DE KPI */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        
         {/* FATURAMENTO */}
         <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-lg">
           <div className="flex justify-between items-center mb-4">
@@ -69,9 +92,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             <div className="grid grid-cols-2 gap-2 border-t border-gray-700 pt-3">
               <div>
                 <p className="text-[10px] text-gray-500 uppercase">Atual</p>
-                <p className="text-sm font-bold text-gray-300">
-                  {formatCurrency(dashboardData.totalCurrentRevenue)} 
-                </p>
+                <p className="text-sm font-bold text-gray-300">{formatCurrency(dashboardData.totalCurrentRevenue)}</p>
               </div>
               <div>
                 <p className="text-[10px] text-gray-500 uppercase">Meta</p>
@@ -191,7 +212,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
         </div>
       </div>
 
-      {/* 3. GRÁFICO DE COMPARAÇÃO MENSAL (DUAS LINHAS) */}
+      {/* 3. GRÁFICO DE COMPARAÇÃO MENSAL (DUAS LINHAS CORRIGIDO) */}
       <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
         <h3 className="text-lg font-bold text-white mb-6">Evolução: Clientes vs Agência</h3>
         <div className="h-80">
@@ -199,8 +220,10 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             <LineChart data={monthlyComparisonData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
               <XAxis dataKey="month" stroke="#9CA3AF" fontSize={12} />
+              {/* Eixo Esquerdo - Faturamento Clientes */}
               <YAxis yAxisId="left" stroke="#3B82F6" fontSize={12} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
-              <YAxis yAxisId="right" orientation="right" stroke="#8B5CF6" fontSize={12} tickFormatter={(v) => `R$${v}`} />
+              {/* Eixo Direito Compactado - Receita Avante */}
+              <YAxis yAxisId="right" orientation="right" stroke="#8B5CF6" fontSize={12} tickFormatter={(v) => v >= 1000 ? `R$${(v/1000).toFixed(0)}k` : `R$${v}`} />
               <Tooltip contentStyle={{ backgroundColor: '#111827', border: 'none' }} formatter={(v) => formatCurrency(v)} />
               <Legend />
               <Line yAxisId="left" type="monotone" dataKey="clientRevenue" name="Receita Clientes" stroke="#3B82F6" strokeWidth={3} dot={{ r: 4 }} />
@@ -210,7 +233,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
         </div>
       </div>
 
-      {/* 4. LOG DE ALTERAÇÕES (FULL WIDTH) */}
+      {/* 4. LOG DE ALTERAÇÕES */}
       <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
         <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
           <Activity size={20} className="text-blue-500" /> Alertas e Mudanças de Ritmo

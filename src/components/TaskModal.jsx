@@ -566,6 +566,10 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
             {/* 2. HISTÓRICO DE AÇÕES (Recuperado) */}
             <div>
               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Histórico de Ações</h4>
+              <div className="flex gap-2">
+                <textarea value={newLog} onChange={e => setNewLog(e.target.value)} placeholder="Descreva o que você fez hoje nesta conta..." className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-blue-500 min-h-[50px] max-h-[120px] custom-scrollbar" />
+                <button onClick={addLog} className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors shadow-md"><Send size={16}/> <span className="text-[10px] font-bold uppercase tracking-wider">Lançar</span></button>
+              </div>
               <div className="space-y-4 mb-4 border-l-2 border-gray-700 ml-2 pl-4">
                 {store.taskLogs?.slice().reverse().map(log => (
                   <div key={log.id} className="relative group/log">
@@ -585,12 +589,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 ))}
                 {(!store.taskLogs || store.taskLogs.length === 0) && <div className="text-xs text-gray-500 italic p-2 border border-dashed border-gray-700 rounded-lg text-center">Nenhum log registrado.</div>}
               </div>
-              <div className="flex gap-2">
-                <textarea value={newLog} onChange={e => setNewLog(e.target.value)} placeholder="Descreva o que você fez hoje nesta conta..." className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-blue-500 min-h-[50px] max-h-[120px] custom-scrollbar" />
-                <button onClick={addLog} className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors shadow-md"><Send size={16}/> <span className="text-[10px] font-bold uppercase tracking-wider">Lançar</span></button>
-              </div>
             </div>
-            
           </div>
         </div>
 
