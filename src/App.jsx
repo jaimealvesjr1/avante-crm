@@ -345,7 +345,9 @@ export default function App() {
     toast.success(`Cadastro de ${store} realizado com sucesso!`);
   };
 
-  const handleSaveBulkTasks = (storeIds, text, resp) => {
+  const handleSaveBulkTasks = (storeIds, taskData) => {
+    // Agora recebemos um objeto com todas as configurações da tarefa
+    const { text, resp, data, hora, recorrencia } = taskData;
     const creatorName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
 
     const batchStores = stores.map(store => {
@@ -355,19 +357,41 @@ export default function App() {
           texto: text,
           feita: false,
           responsavel: resp.trim(),
-          criadoPor: creatorName, // Novo campo de log
-          dataCriacao: new Date().toLocaleDateString('pt-BR')
+          criadoPor: creatorName,
+          dataCriacao: new Date().toLocaleDateString('pt-BR'),
+          data: data || '',
+          hora: hora || '',
+          recorrencia: recorrencia || 'none'
         };
+        
+        const updatedChecklists = [...(store.checklists || []), newTask];
+        
+        // Auto-Agendamento: Se a tarefa em massa tem data, atualiza o próximo acesso da loja
+        let nextAccessStr = store.dataProximoAcesso || '';
+        const pendingWithDate = updatedChecklists.filter(t => !t.feita && t.data);
+        if (pendingWithDate.length > 0) {
+          pendingWithDate.sort((a, b) => {
+            const dateA = new Date(`${a.data}T${a.hora || '00:00'}:00`);
+            const dateB = new Date(`${b.data}T${b.hora || '00:00'}:00`);
+            return dateA - dateB;
+          });
+          const earliest = pendingWithDate[0];
+          nextAccessStr = `${earliest.data}T${earliest.hora || '00:00'}`;
+        }
+
         const updatedStore = {
           ...store,
-          checklists: [...(store.checklists || []), newTask],
+          checklists: updatedChecklists,
+          dataProximoAcesso: nextAccessStr,
           dataUltimoAcesso: new Date().toISOString()
         };
+        
         updateStoreInCloud(updatedStore);
         return updatedStore;
       }
       return store;
     });
+    
     setStores(batchStores);
     toast.success(`Tarefa replicada em ${storeIds.length} loja(s)!`);
   };

@@ -1,10 +1,16 @@
 import React, { useState, useMemo } from 'react';
-import { X, Search, CopyPlus, CheckSquare, Square } from 'lucide-react';
+import { X, Search, CopyPlus, CheckSquare, Square, Eraser } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMembers }) {
   const [taskText, setTaskText] = useState('');
   const [taskResp, setTaskResp] = useState('');
+  
+  // Novos Estados
+  const [taskDate, setTaskDate] = useState('');
+  const [taskTime, setTaskTime] = useState('');
+  const [taskRecurrence, setTaskRecurrence] = useState('none');
+
   const [searchTerm, setSearchTerm] = useState('');
   const [clientFilter, setClientFilter] = useState('');
   const [mktFilter, setMktFilter] = useState(''); 
@@ -17,7 +23,7 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
   const filteredStores = useMemo(() => {
     return stores.filter(s => {
       if (clientFilter && s.client !== clientFilter) return false;
-      if (mktFilter && s.marketplace !== mktFilter) return false; // Filtro por Marketplace
+      if (mktFilter && s.marketplace !== mktFilter) return false; 
       
       if (searchTerm) {
         const search = searchTerm.toLowerCase();
@@ -49,11 +55,21 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
     if (!taskText.trim()) return toast.error('A tarefa precisa de uma descrição.');
     if (selectedStores.length === 0) return toast.error('Selecione pelo menos uma loja para receber a tarefa.');
 
-    onSave(selectedStores, taskText, taskResp);
+    // Envia agora como objeto
+    onSave(selectedStores, {
+      text: taskText,
+      resp: taskResp,
+      data: taskDate,
+      hora: taskTime,
+      recorrencia: taskRecurrence
+    });
     
     // Limpar e fechar
     setTaskText('');
     setTaskResp('');
+    setTaskDate('');
+    setTaskTime('');
+    setTaskRecurrence('none');
     setSelectedStores([]);
     setSearchTerm('');
     setClientFilter('');
@@ -75,9 +91,11 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+          
           {/* CONFIGURAÇÃO DA TAREFA */}
-          <div className="mb-6 bg-gray-900/50 p-4 rounded-xl border border-gray-700">
-            <h4 className="text-xs font-bold text-gray-400 uppercase mb-3">1. O que precisa ser feito?</h4>
+          <div className="mb-6 bg-gray-900/50 p-4 rounded-xl border border-gray-700 space-y-3">
+            <h4 className="text-xs font-bold text-gray-400 uppercase">1. O que precisa ser feito?</h4>
+            
             <div className="flex flex-col md:flex-row gap-3">
               <input 
                 type="text" 
@@ -95,6 +113,26 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
                 {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
             </div>
+
+            {/* NOVOS CAMPOS DE DATA E RECORRÊNCIA */}
+            <div className="flex flex-wrap items-center gap-2">
+              <input type="date" value={taskDate} onChange={(e) => setTaskDate(e.target.value)} className="bg-gray-800 border border-gray-600 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" title="Data da Tarefa" />
+              <input type="time" value={taskTime} onChange={(e) => setTaskTime(e.target.value)} className="bg-gray-800 border border-gray-600 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" title="Hora" />
+              <select value={taskRecurrence} onChange={(e) => setTaskRecurrence(e.target.value)} className="bg-gray-800 border border-gray-600 rounded-lg p-2 text-xs text-white outline-none cursor-pointer flex-1 min-w-[130px]">
+                <option value="none">S/ Repetição</option>
+                <option value="daily">🔁 Diário</option>
+                <option value="weekly">🔁 Semanal</option>
+                <option value="monthly">🔁 Mensal</option>
+              </select>
+              
+              <button 
+                onClick={() => { setTaskDate(''); setTaskTime(''); setTaskRecurrence('none'); }} 
+                className="bg-gray-800 hover:bg-gray-700 text-gray-400 p-2 rounded-lg transition-colors border border-gray-600" 
+                title="Limpar Datas"
+              >
+                <Eraser size={14}/>
+              </button>
+            </div>
           </div>
 
           {/* SELEÇÃO DE LOJAS */}
@@ -108,7 +146,6 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               </div>
             </div>
 
-            {/* Filtros da Lista */}
             <div className="flex gap-2 mb-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-2.5 text-gray-500" size={14} />
@@ -120,35 +157,21 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
                   className="w-full bg-gray-900 border border-gray-700 text-white rounded-lg p-2 pl-9 outline-none text-xs" 
                 />
               </div>
-              <select 
-                value={clientFilter} 
-                onChange={e => setClientFilter(e.target.value)} 
-                className="bg-gray-900 border border-gray-700 text-white rounded-lg p-2 outline-none text-xs w-40 cursor-pointer"
-              >
+              <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="bg-gray-900 border border-gray-700 text-white rounded-lg p-2 outline-none text-xs w-40 cursor-pointer">
                 <option value="">Todos Clientes</option>
                 {clients.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-
-                <select 
-                    value={mktFilter} 
-                    onChange={e => setMktFilter(e.target.value)} 
-                    className="bg-gray-900 border border-gray-700 text-white rounded-lg p-2 outline-none text-xs w-32 cursor-pointer"
-                >
-                    <option value="">Marketplaces</option>
-                    {mkts.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
+              </select>
+              <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="bg-gray-900 border border-gray-700 text-white rounded-lg p-2 outline-none text-xs w-32 cursor-pointer">
+                <option value="">Marketplaces</option>
+                {mkts.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
             </div>
 
-            {/* Lista Scrollável */}
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-2 max-h-60 overflow-y-auto custom-scrollbar space-y-1">
               {filteredStores.map(store => {
                 const isSelected = selectedStores.includes(store.id);
                 return (
-                  <div 
-                    key={store.id} 
-                    onClick={() => toggleStore(store.id)}
-                    className={`flex items-center gap-3 p-2 rounded cursor-pointer border transition-all ${isSelected ? 'bg-indigo-900/30 border-indigo-500/50' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'}`}
-                  >
+                  <div key={store.id} onClick={() => toggleStore(store.id)} className={`flex items-center gap-3 p-2 rounded cursor-pointer border transition-all ${isSelected ? 'bg-indigo-900/30 border-indigo-500/50' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'}`}>
                     {isSelected ? <CheckSquare className="text-indigo-400" size={18}/> : <Square className="text-gray-500" size={18}/>}
                     <div className="flex flex-col">
                       <span className={`text-sm font-bold ${isSelected ? 'text-indigo-100' : 'text-gray-300'}`}>{store.store}</span>

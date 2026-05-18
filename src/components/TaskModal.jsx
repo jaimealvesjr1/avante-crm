@@ -49,19 +49,16 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     let nextAccessStr = '';
 
     if (pendingWithDate.length > 0) {
-      // Ordena para achar a data mais próxima
       pendingWithDate.sort((a, b) => {
         const dateA = new Date(`${a.data}T${a.hora || '00:00'}:00`);
         const dateB = new Date(`${b.data}T${b.hora || '00:00'}:00`);
         return dateA - dateB;
       });
-      
       const earliest = pendingWithDate[0];
-      // Salva no formato YYYY-MM-DDTHH:MM para a loja
       nextAccessStr = `${earliest.data}T${earliest.hora || '00:00'}`;
     }
 
-    return nextAccessStr; // Retorna a nova data ou vazio
+    return nextAccessStr; 
   };
 
   const addLog = () => {
@@ -121,22 +118,18 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       date: new Date().toLocaleDateString('pt-BR')
     };
 
-    // 4. Inserir ou atualizar no histórico
     let updatedHistory = [...(store.history || [])];
     const existingIndex = updatedHistory.findIndex(h => h.day === dayVal);
     
     if(existingIndex >= 0) {
-      // Já existe um lançamento para este dia! Vamos SOMAR em vez de apagar.
       const existingEntry = updatedHistory[existingIndex];
-      
-      entry.id = existingEntry.id; // Mantém o ID original
+      entry.id = existingEntry.id;
       entry.dailyRevenue = (existingEntry.dailyRevenue || 0) + gmvVal;
       entry.revenue = (existingEntry.revenue || 0) + gmvVal;
-      entry.ads = (existingEntry.ads || 0) + cumAds; // Mantém o acumulado anterior + o novo
+      entry.ads = (existingEntry.ads || 0) + cumAds;
       entry.orders = (existingEntry.orders || 0) + ordersVal;
       entry.units = (existingEntry.units || 0) + unitsVal;
-      
-      updatedHistory[existingIndex] = entry; // Substitui pela versão somada
+      updatedHistory[existingIndex] = entry;
     } else {
       updatedHistory.push(entry);
     }
@@ -145,7 +138,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       id: Date.now() + 1,
       data: new Date().toLocaleString('pt-BR'),
       texto: `📊 Lançamento [Dia ${dayVal}]: R$${gmvVal} | Ads R$${adsVal} | ${ordersVal} Ped`,
-      author: username // Certifique-se de que a variável username existe no componente
+      author: username 
     };
 
     const updatedStore = {
@@ -216,19 +209,17 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     let updatedChecklists = [...store.checklists];
 
     if (isCompleting && task.recorrencia && task.recorrencia !== 'none') {
-      // 1. Marca a atual como feita
       const currentIndex = updatedChecklists.findIndex(t => t.id === id);
       updatedChecklists[currentIndex].feita = true;
 
-      // 2. Gera a próxima tarefa automaticamente
       const [year, month, day] = task.data.split('-').map(Number);
-      let nextDate = new Date(year, month - 1, day);
+      let nextDateObj = new Date(year, month - 1, day);
 
-      if (task.recorrencia === 'daily') nextDate.setDate(nextDate.getDate() + 1);
-      if (task.recorrencia === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
-      if (task.recorrencia === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+      if (task.recorrencia === 'daily') nextDateObj.setDate(nextDateObj.getDate() + 1);
+      if (task.recorrencia === 'weekly') nextDateObj.setDate(nextDateObj.getDate() + 7);
+      if (task.recorrencia === 'monthly') nextDateObj.setMonth(nextDateObj.getMonth() + 1);
 
-      const nextDateStr = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
+      const nextDateStr = `${nextDateObj.getFullYear()}-${String(nextDateObj.getMonth() + 1).padStart(2, '0')}-${String(nextDateObj.getDate()).padStart(2, '0')}`;
 
       updatedChecklists.push({
         ...task,
@@ -310,10 +301,10 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       author: username
     };
 
-    // A edição da data pode mudar a ordem da loja no Workflow
     const newNextAccess = autoScheduleStore(updatedChecklists);
-    // BUG FIX: Se na edição removeu a data e não há outras pendências com prazo
     let finalNextAccess = newNextAccess;
+    const oldTask = store.checklists.find(t => t.id === taskId);
+    
     if (!newNextAccess && (oldTask?.data || editTaskData.data)) {
       finalNextAccess = '';
     } else if (!newNextAccess) {
@@ -329,17 +320,23 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     });
 
     setEditingTaskId(null);
-    toast.success('Tarefa atualizada e sincronizada!');
+    toast.success('Tarefa atualizada!');
   };
 
   const saveNextDate = () => {
-    setIsScheduling(true); // Liga o spinner
+    setIsScheduling(true);
     saveChanges({ ...store, dataProximoAcesso: nextDate });
     
     setTimeout(() => {
-      setIsScheduling(false); // Desliga o spinner
+      setIsScheduling(false);
       toast.success('Retorno agendado com sucesso!');
     }, 500);
+  };
+
+  const clearNextDate = () => {
+    setNextDate('');
+    saveChanges({ ...store, dataProximoAcesso: '' });
+    toast.success('Agendamento removido!');
   };
 
   const saveFixedNotes = () => {
@@ -386,7 +383,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const confirmDuplication = () => {
     if (!duplicateTargetId) return toast.error("Selecione uma loja de destino.");
     
-    // Procura a loja na lista baseando-se no ID selecionado
     const destinationStore = stores.find(s => s.id === Number(duplicateTargetId));
     if (!destinationStore) return;
 
@@ -404,10 +400,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       author: username 
     };
 
-    // Atualiza a loja atual (origem)
     saveChanges({ ...store, taskLogs: [...(store.taskLogs || []), logOrigem] });
 
-    // Atualiza a loja de destino
     const updatedDestStore = {
       ...destinationStore,
       notasFixas: fixedNotes,
@@ -429,7 +423,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
         {/* LADO ESQUERDO: CHECKLIST E HISTÓRICO */}
         <div className="flex-1 flex flex-col border-r border-gray-700 bg-gray-900/50">
           
-          {/* CABEÇALHO DA LOJA */}
           <div className="p-4 border-b border-gray-700 bg-gray-900 flex justify-between items-center shrink-0">
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -454,101 +447,86 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
           <div className="flex-1 overflow-y-auto p-5 space-y-8 custom-scrollbar">
             
-            {/* 1. SESSÃO DE CHECKLIST */}
             <div>
               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">To-Do List</h4>
               
-              {/* Lista de Tarefas (Pendentes + Últimas 5 Concluídas) */}
               <div className="space-y-2 mb-4">
-                {(() => {
-                  // 1. Separa as tarefas em dois grupos
-                  const pendingTasks = store.checklists?.filter(t => !t.feita) || [];
-                  const completedTasks = store.checklists?.filter(t => t.feita) || [];
-                  
-                  // 2. Pega apenas as últimas 5 concluídas (as mais recentes)
-                  const recentCompleted = completedTasks.slice(-5);
-                  
-                  // 3. Junta as duas listas para renderizar (pendentes primeiro)
-                  const tasksToRender = [...pendingTasks, ...recentCompleted];
+                {store.checklists?.map(item => {
+                  const isEditing = editingTaskId === item.id;
+                  const canEditTask = isManager || item.criadoPor === username;
 
-                  if (tasksToRender.length === 0) {
-                    return (
-                      <p className="text-xs text-gray-500 italic p-2 border border-dashed border-gray-700 rounded-lg text-center">
-                        Nenhuma tarefa pendente ou concluída recentemente.
-                      </p>
-                    );
-                  }
-
-                  return tasksToRender.map(item => {
-                    const isEditing = editingTaskId === item.id;
-                    const canEditTask = isManager || item.criadoPor === username;
-
-                    return (
-                      <div key={item.id} className="flex flex-col bg-gray-800 p-2.5 rounded-lg border border-gray-700 group shadow-sm transition-all">
-                        {isEditing ? (
-                          /* MODO DE EDIÇÃO */
-                          <div className="flex flex-col gap-2 w-full animate-in fade-in duration-200">
-                            <div className="flex gap-2">
-                              <input type="text" value={editTaskData.texto} onChange={e => setEditTaskData({...editTaskData, texto: e.target.value})} className="flex-1 bg-gray-900 border border-gray-600 rounded p-1.5 text-sm text-white outline-none focus:border-indigo-500" />
-                              <select value={editTaskData.responsavel} onChange={e => setEditTaskData({...editTaskData, responsavel: e.target.value})} className="w-28 bg-gray-900 border border-gray-600 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
-                                <option value="">Sem Resp.</option>
-                                {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
-                              </select>
+                  return (
+                    <div key={item.id} className="flex flex-col bg-gray-800 p-2.5 rounded-lg border border-gray-700 group shadow-sm transition-all">
+                      {isEditing ? (
+                        <div className="flex flex-col gap-2 w-full animate-in fade-in duration-200">
+                          <div className="flex gap-2">
+                            <input type="text" value={editTaskData.texto} onChange={e => setEditTaskData({...editTaskData, texto: e.target.value})} className="flex-1 bg-gray-900 border border-gray-600 rounded p-1.5 text-sm text-white outline-none focus:border-indigo-500" />
+                            <select value={editTaskData.responsavel} onChange={e => setEditTaskData({...editTaskData, responsavel: e.target.value})} className="w-28 bg-gray-900 border border-gray-600 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
+                              <option value="">Sem Resp.</option>
+                              {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
+                            </select>
+                          </div>
+                          <div className="flex flex-wrap gap-2 items-center">
+                            <input type="date" value={editTaskData.data} onChange={(e) => setEditTaskData({...editTaskData, data: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
+                            <input type="time" value={editTaskData.hora} onChange={(e) => setEditTaskData({...editTaskData, hora: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
+                            <select value={editTaskData.recorrencia} onChange={(e) => setEditTaskData({...editTaskData, recorrencia: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none cursor-pointer">
+                              <option value="none">S/ Repetição</option>
+                              <option value="daily">🔁 Diário</option>
+                              <option value="weekly">🔁 Semanal</option>
+                              <option value="monthly">🔁 Mensal</option>
+                            </select>
+                            <button 
+                              onClick={() => setEditTaskData({...editTaskData, data: '', hora: '', recorrencia: 'none'})} 
+                              className="p-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors" 
+                              title="Limpar Data e Hora"
+                            >
+                              <Eraser size={14}/>
+                            </button>
+                            <div className="flex gap-1 ml-auto">
+                              <button onClick={() => setEditingTaskId(null)} className="p-1 bg-gray-700 hover:bg-gray-600 text-white rounded"><X size={14}/></button>
+                              <button onClick={() => saveTaskEdit(item.id)} className="p-1 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={14}/></button>
                             </div>
-                            <div className="flex flex-wrap gap-2 items-center">
-                              <input type="date" value={editTaskData.data} onChange={(e) => setEditTaskData({...editTaskData, data: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
-                              <input type="time" value={editTaskData.hora} onChange={(e) => setEditTaskData({...editTaskData, hora: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
-                              <select value={editTaskData.recorrencia} onChange={(e) => setEditTaskData({...editTaskData, recorrencia: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none cursor-pointer">
-                                <option value="none">S/ Repetição</option>
-                                <option value="daily">🔁 Diário</option>
-                                <option value="weekly">🔁 Semanal</option>
-                                <option value="monthly">🔁 Mensal</option>
-                              </select>
-                              <div className="flex gap-1 ml-auto">
-                                <button type="button" onClick={() => setEditingTaskId(null)} className="p-1 bg-gray-700 hover:bg-gray-600 text-white rounded"><X size={14}/></button>
-                                <button type="button" onClick={() => saveTaskEdit(item.id)} className="p-1 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={14}/></button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start justify-between w-full">
+                          <div className="flex items-start gap-3 flex-1">
+                            <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-4 h-4 mt-0.5 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" />
+                            <div className="flex-1 flex flex-col">
+                              <span className={`text-sm font-medium ${item.feita ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{item.texto}</span>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {item.data && (
+                                  <span className="text-[9px] bg-gray-900 border border-gray-700 text-amber-400 px-1.5 py-0.5 rounded font-bold flex items-center gap-1 shadow-sm">
+                                    <CalendarDays size={10} /> 
+                                    {item.data.split('-').reverse().join('/')} {item.hora && `às ${item.hora}`}
+                                  </span>
+                                )}
+                                {item.recorrencia && item.recorrencia !== 'none' && (
+                                  <span className="text-[9px] bg-indigo-900/40 border border-indigo-500/50 text-indigo-300 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
+                                    🔁 {item.recorrencia === 'daily' ? 'Diário' : item.recorrencia === 'weekly' ? 'Semanal' : 'Mensal'}
+                                  </span>
+                                )}
+                                {item.responsavel && <span className="text-[9px] text-gray-400 border border-gray-600 px-1.5 py-0.5 rounded shadow-sm">Resp: {item.responsavel}</span>}
+                                {item.criadoPor && <span className="text-[9px] text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded shadow-sm">Por: {item.criadoPor}</span>}
                               </div>
                             </div>
                           </div>
-                        ) : (
-                          /* MODO DE LEITURA NORMAL */
-                          <div className="flex items-start justify-between w-full">
-                            <div className="flex items-start gap-3 flex-1">
-                              <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-4 h-4 mt-0.5 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" />
-                              <div className="flex-1 flex flex-col">
-                                <span className={`text-sm font-medium ${item.feita ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{item.texto}</span>
-                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                  {item.data && (
-                                    <span className="text-[9px] bg-gray-900 border border-gray-700 text-amber-400 px-1.5 py-0.5 rounded font-bold flex items-center gap-1 shadow-sm">
-                                      <CalendarDays size={10} /> 
-                                      {item.data.split('-').reverse().join('/')} {item.hora && `às ${item.hora}`}
-                                    </span>
-                                  )}
-                                  {item.recorrencia && item.recorrencia !== 'none' && (
-                                    <span className="text-[9px] bg-indigo-900/40 border border-indigo-500/50 text-indigo-300 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
-                                      🔁 {item.recorrencia === 'daily' ? 'Diário' : item.recorrencia === 'weekly' ? 'Semanal' : 'Mensal'}
-                                    </span>
-                                  )}
-                                  {item.responsavel && <span className="text-[9px] text-gray-400 border border-gray-600 px-1.5 py-0.5 rounded shadow-sm">Resp: {item.responsavel}</span>}
-                                  {item.criadoPor && <span className="text-[9px] text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded shadow-sm">Por: {item.criadoPor}</span>}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
-                              {canEditTask && (
-                                <button type="button" onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1 bg-gray-900 rounded"><Edit2 size={14}/></button>
-                              )}
-                              <button type="button" onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 p-1 bg-gray-900 rounded"><Trash2 size={14}/></button>
-                            </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                            {canEditTask && (
+                              <button onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1 bg-gray-900 rounded"><Edit2 size={14}/></button>
+                            )}
+                            <button onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 p-1 bg-gray-900 rounded"><Trash2 size={14}/></button>
                           </div>
-                        )}
-                      </div>
-                    );
-                  });
-                })()}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {(!store.checklists || store.checklists.length === 0) && (
+                  <p className="text-xs text-gray-500 italic p-2 border border-dashed border-gray-700 rounded-lg text-center">Nenhuma tarefa pendente.</p>
+                )}
               </div>
               
-              {/* Formulário Nova Tarefa */}
               <div className="flex flex-col gap-3 bg-gray-800 p-3.5 rounded-xl border border-gray-700 shadow-inner">
                 <div className="flex flex-col md:flex-row gap-2">
                   <input type="text" value={newChecklist} onChange={e => setNewChecklist(e.target.value)} onKeyDown={e => e.key === 'Enter' && addChecklist()} placeholder="O que fazer? Ex: Ajustar Preços..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
@@ -569,10 +547,19 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     <option value="monthly">🔁 Mensal</option>
                   </select>
 
+                  {/* BOTÃO LIMPAR DATAS */}
+                  <button 
+                    onClick={() => {setNewTaskDate(''); setNewTaskTime(''); setNewTaskRecurrence('none');}} 
+                    className="bg-gray-900 border border-gray-600 hover:bg-gray-700 text-gray-400 p-2 rounded-lg transition-colors" 
+                    title="Limpar Datas"
+                  >
+                    <Eraser size={14}/>
+                  </button>
+
                   <button 
                     onClick={addChecklist} 
                     disabled={isAddingTask}
-                    className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-xs shrink-0 shadow-md"
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-xs shrink-0 shadow-md ml-auto"
                   >
                     {isAddingTask ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14}/> Add Tarefa</>}
                   </button>
@@ -580,80 +567,30 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               </div>
             </div>
 
-            {/* 2. HISTÓRICO DE AÇÕES */}
             <div>
-              <div className="flex justify-between items-center mb-3">
-                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Histórico de Ações</h4>
-                <span className="text-[9px] font-bold text-gray-400 bg-gray-800 border border-gray-700 px-2 py-0.5 rounded shadow-sm">
-                  Últimos 7 dias
-                </span>
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Histórico de Ações</h4>
+              <div className="flex gap-2">
+                <textarea value={newLog} onChange={e => setNewLog(e.target.value)} placeholder="Descreva o que você fez hoje nesta conta..." className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-blue-500 min-h-[50px] max-h-[120px] custom-scrollbar" />
+                <button onClick={addLog} className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors shadow-md"><Send size={16}/> <span className="text-[10px] font-bold uppercase tracking-wider">Lançar</span></button>
               </div>
-
-              {/* Caixa de Entrada posicionada no Topo */}
-              <div className="flex gap-2 mb-4 bg-gray-800/40 p-2.5 rounded-xl border border-gray-700/60 shadow-inner">
-                <textarea 
-                  value={newLog} 
-                  onChange={e => setNewLog(e.target.value)} 
-                  placeholder="Descreva o que você fez hoje nesta conta..." 
-                  className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-blue-500 min-h-[44px] max-h-[100px] resize-none custom-scrollbar leading-relaxed" 
-                />
-                <button 
-                  onClick={addLog} 
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors shadow-md shrink-0 group"
-                >
-                  <Send size={14} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" /> 
-                  <span className="text-[9px] font-bold uppercase tracking-wider">Lançar</span>
-                </button>
-              </div>
-
-              {/* Lista Dinâmica com Filtro Temporal de 7 Dias */}
-              <div className="space-y-3 border-l-2 border-gray-700 ml-2 pl-4 max-h-[260px] overflow-y-auto custom-scrollbar pr-1">
-                {(() => {
-                  const sevenDaysAgo = new Date();
-                  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                  sevenDaysAgo.setHours(0, 0, 0, 0);
-
-                  // Filtra apenas registros criados na última semana
-                  const filteredLogs = (store.taskLogs || []).filter(log => {
-                    try {
-                      if (!log.data) return false;
-                      const datePart = log.data.split(',')[0].split(' ')[0]; // Pega a parte do "DD/MM/AAAA"
-                      const [day, month, year] = datePart.split('/').map(Number);
-                      const logDate = new Date(year, month - 1, day);
-                      return logDate >= sevenDaysAgo;
-                    } catch (e) {
-                      return true; // Fallback: Exibe o log caso o formato destoe
-                    }
-                  });
-
-                  if (filteredLogs.length === 0) {
-                    return (
-                      <div className="text-xs text-gray-500 italic p-3 border border-dashed border-gray-800 rounded-lg text-center ml-[-16px]">
-                        Nenhuma ação registrada nos últimos 7 dias.
+              <div className="space-y-4 mb-4 border-l-2 border-gray-700 ml-2 pl-4 mt-4">
+                {store.taskLogs?.slice().reverse().map(log => (
+                  <div key={log.id} className="relative group/log">
+                    <div className="absolute -left-[21px] top-1.5 w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_5px_rgba(59,130,246,0.8)]"></div>
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="text-[10px] text-blue-400 font-bold">
+                        {log.data} <span className="text-gray-500 font-normal ml-1">por {log.author}</span>
                       </div>
-                    );
-                  }
-
-                  // Renderiza em ordem cronológica inversa (mais novos no topo)
-                  return filteredLogs.slice().reverse().map(log => (
-                    <div key={log.id} className="relative group/log animate-in fade-in duration-200">
-                      <div className="absolute -left-[21px] top-1.5 w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_4px_rgba(59,130,246,0.6)]"></div>
-                      <div className="flex justify-between items-center mb-1">
-                        <div className="text-[10px] text-blue-400 font-bold">
-                          {log.data} <span className="text-gray-500 font-normal ml-1">por {log.author}</span>
-                        </div>
-                        {isManager && (
-                          <button onClick={() => deleteLog(log.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity mr-1 p-0.5">
-                            <Trash2 size={12}/>
-                          </button>
-                        )}
-                      </div>
-                      <div className="bg-gray-800/60 p-2.5 rounded-lg border border-gray-700/70 text-sm text-gray-300 shadow-sm leading-relaxed whitespace-pre-wrap">
-                        {log.texto}
-                      </div>
+                      {isManager && (
+                        <button onClick={() => deleteLog(log.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity mr-2 p-1">
+                          <Trash2 size={12}/>
+                        </button>
+                      )}
                     </div>
-                  ));
-                })()}
+                    <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 text-sm text-gray-300 shadow-sm leading-relaxed">{log.texto}</div>
+                  </div>
+                ))}
+                {(!store.taskLogs || store.taskLogs.length === 0) && <div className="text-xs text-gray-500 italic p-2 border border-dashed border-gray-700 rounded-lg text-center mt-2">Nenhum log registrado.</div>}
               </div>
             </div>
           </div>
@@ -669,7 +606,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
           
           <div className="p-5 flex-1 flex flex-col gap-5 overflow-y-auto custom-scrollbar">
             
-            {/* 1. DESEMPENHO DIÁRIO */}
             <div className="bg-gray-900 p-4 rounded-xl border border-blue-500/30 shrink-0 shadow-sm">
               <h4 className="text-xs font-bold text-blue-400 uppercase flex items-center gap-2 mb-3">
                 <TrendingUp size={14} /> Lançamento de Desempenho
@@ -707,7 +643,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               </button>
             </div>
 
-            {/* 2. NOTAS FIXAS */}
             <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 flex-1 flex flex-col min-h-[220px] shadow-sm">
               <div className="flex justify-between items-center mb-3">
                 <h4 className="text-xs font-bold text-emerald-400 uppercase flex items-center gap-2">
@@ -758,7 +693,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               )}
             </div>
 
-            {/* 3. PRÓXIMO ACESSO */}
             <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 shrink-0 shadow-sm">
               <h4 className="text-xs font-bold text-amber-400 uppercase flex items-center gap-2 mb-3">
                 <CalendarDays size={14} /> Próximo Acesso
@@ -769,13 +703,25 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 onChange={(e) => setNextDate(e.target.value)} 
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-amber-500 font-bold"
               />
-              <button 
-                onClick={saveNextDate} 
-                disabled={isScheduling}
-                className="w-full bg-amber-600 hover:bg-amber-500 disabled:bg-amber-900 text-white font-bold py-2 rounded-lg text-xs mt-3 transition-all flex items-center justify-center gap-2 shadow-md"
-              >
-                {isScheduling ? <Loader2 size={14} className="animate-spin" /> : 'Agendar Manualmente'}
-              </button>
+              
+              <div className="flex gap-2 mt-3">
+                <button 
+                  onClick={saveNextDate} 
+                  disabled={isScheduling}
+                  className="flex-1 bg-amber-600 hover:bg-amber-500 disabled:bg-amber-900 text-white font-bold py-2 rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-md"
+                >
+                  {isScheduling ? <Loader2 size={14} className="animate-spin" /> : 'Agendar'}
+                </button>
+                
+                {/* BOTÃO LIMPAR PRÓXIMO ACESSO */}
+                <button 
+                  onClick={clearNextDate} 
+                  className="px-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-lg text-xs transition-all flex items-center justify-center shadow-md"
+                  title="Limpar Data"
+                >
+                  <Eraser size={14} />
+                </button>
+              </div>
             </div>
           </div>
         </div>

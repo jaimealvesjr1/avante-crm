@@ -67,7 +67,7 @@ export default function CreateStoreModal({ isOpen, onClose, onSave, initialClien
               onChange={e => setClient(e.target.value)} 
               placeholder="EX: GRUPO ALFA" 
               required
-              disabled={!!initialClient} // Se veio de dentro de um cliente, trava o nome dele
+              disabled={!!initialClient}
               className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-blue-500 font-bold uppercase transition-colors disabled:opacity-60" 
             />
           </div>
