@@ -113,11 +113,14 @@ export default function AdminPanel({
                     </div>
                     <div className="text-right flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center w-full sm:w-auto">
                       
-                      {/* NOVA TAG CLICÁVEL DE PROMOÇÃO */}
                       <button 
                         onClick={() => handleToggleRole(member.email, displayRole)}
                         title="Clique para alternar o nível de acesso"
-                        className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider cursor-pointer hover:opacity-80 transition-opacity ${displayRole === 'Admin' ? 'bg-amber-900/30 text-amber-400 border border-amber-800/50' : 'bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600'}`}
+                        className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider cursor-pointer hover:opacity-80 transition-opacity ${
+                          displayRole === 'Admin' ? 'bg-amber-900/30 text-amber-400 border border-amber-800/50' : 
+                          displayRole === 'Supervisor' ? 'bg-blue-900/30 text-blue-400 border border-blue-800/50' : 
+                          'bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600'
+                        }`}
                       >
                         {displayRole}
                       </button>

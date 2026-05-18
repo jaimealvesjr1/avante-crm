@@ -8,7 +8,7 @@ export default function OperationalTable({
   saveClientEdit, startEditingClient, addNewStoreToClient, deleteClient,
   editingStoreId, storeEditData, setStoreEditData,
   openHistoryModal,
-  formatCurrency, generateStoreWhatsAppLink, startEditingStore, saveStoreEdit, deleteStore, setEditingStoreId, generateClientWhatsAppLink, handleStoreChange, openClientFile
+  formatCurrency, generateStoreWhatsAppLink, startEditingStore, saveStoreEdit, deleteStore, setEditingStoreId, generateClientWhatsAppLink, handleStoreChange, openClientFile, canUseBatchEntry
 }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
@@ -106,7 +106,17 @@ export default function OperationalTable({
             <button onClick={addNewStore} className="h-10 bg-green-600 hover:bg-green-500 text-white px-4 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shadow-sm">
               <Plus size={18} /> Add Conta
             </button>
-          )}          
+          )}
+          
+          {/* Lançamento em Massa liberado para Gestores e Supervisores */}
+          {canUseBatchEntry && (
+            <button 
+              onClick={() => setBatchEntryOpen(true)}
+              className="bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 px-4 rounded-lg shadow flex items-center gap-2"
+            >
+              <Zap size={16} /> Lançamento em Massa
+            </button>
+          )} 
         </div>
       </div>
 

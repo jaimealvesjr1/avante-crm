@@ -88,6 +88,9 @@ export default function App() {
   const [currentUserData, setCurrentUserData] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  const isManager = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager';
+  const canUseBatchEntry = isManager || currentUserData?.role === 'Supervisor';
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -227,18 +230,36 @@ export default function App() {
     }
   };
 
-  const handleToggleRole = async (emailToUpdate, currentRole) => {
-    if (!canEdit) return;
-    const newRole = currentRole === 'Admin' ? 'Operacional' : 'Admin';
-    if(window.confirm(`Deseja alterar o nível de acesso de ${emailToUpdate} para ${newRole.toUpperCase()}?`)) {
-      try {
-        await setDoc(doc(db, "equipe", emailToUpdate.toLowerCase()), {
-          role: newRole
-        }, { merge: true });
-        toast.success(`Acesso atualizado para ${newRole}!`);
-      } catch (error) {
-        toast.error('Erro ao atualizar nível de acesso.');
+  const handleToggleRole = async (email, currentRole) => {
+    // Ciclo de cargos: Operacional -> Supervisor -> Admin -> Operacional...
+    let newRole = 'Operacional';
+    if (currentRole === 'Operacional' || currentRole === 'Visualizador') newRole = 'Supervisor';
+    else if (currentRole === 'Supervisor') newRole = 'Admin';
+    else if (currentRole === 'Admin') newRole = 'Operacional';
+
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', email));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const userDoc = querySnapshot.docs[0];
+        await updateDoc(userDoc.ref, { role: newRole });
+        
+        // Atualiza a lista na tela instantaneamente sem precisar recarregar o banco
+        setTeamMembers(prevMembers => 
+          prevMembers.map(member => 
+            member.email === email ? { ...member, role: newRole } : member
+          )
+        );
+        
+        toast.success(`Cargo atualizado para ${newRole}!`);
+      } else {
+        toast.error("Erro: Usuário não encontrado no banco de dados.");
       }
+    } catch (error) {
+      console.error("Erro ao atualizar cargo:", error);
+      toast.error("Erro ao atualizar cargo.");
     }
   };
 
@@ -731,6 +752,7 @@ export default function App() {
             generateStoreWhatsAppLink={generateStoreWhatsAppLink}
             generateClientWhatsAppLink={generateClientWhatsAppLink}
             openClientFile={openClientFile}
+            canUseBatchEntry={canUseBatchEntry}
           />
         )}
 
