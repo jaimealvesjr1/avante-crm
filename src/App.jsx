@@ -37,9 +37,9 @@ export default function App() {
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [currentDay, setCurrentDay] = useState(new Date().getDate());
   
-  // === NOVOS ESTADOS DO FILTRO GLOBAL ===
+  // === ESTADOS DO FILTRO GLOBAL (A-Z como padrão) ===
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('gmv');
+  const [sortBy, setSortBy] = useState('name'); // <-- Inicializa por Nome A-Z
   const [statusFilter, setStatusFilter] = useState('all');
   const [mktFilter, setMktFilter] = useState('all');
   const [respFilter, setRespFilter] = useState('all');
@@ -108,18 +108,14 @@ export default function App() {
     return stores.flatMap(s => s.checklists || []).filter(c => {
       if (c.feita) return false;
       const isAssignedToMe = c.responsavel === myName;
-      
       if (!isAssignedToMe) return false; 
-      
       if (!c.data) return true;
       if (c.data < localToday) return true; 
       if (c.data === localToday) return !c.hora || c.hora <= currentTimeStr;
-
       return false;
     }).length;
   }, [stores, currentUserData, localToday, currentTimeStr]);
 
-  // Captura os Canais e Equipe Globais para os Dropdowns
   const uniqueResps = useMemo(() => [...new Set(stores.map(s => s.responsavel))].filter(Boolean).sort(), [stores]);
   const uniqueMkts = useMemo(() => [...new Set(stores.map(s => s.marketplace?.toUpperCase()))].filter(Boolean).sort(), [stores]);
 
@@ -174,9 +170,8 @@ export default function App() {
   const updateGlobalSettings = async (field, value) => {
     if (!canEdit) return;
     const newVal = Number(value);
-    if (field === 'day') {
-      setCurrentDay(newVal);
-    } else {
+    if (field === 'day') setCurrentDay(newVal);
+    else {
       setGlobalGrowth(newVal);
       await setDoc(doc(db, "settings", "global"), { globalGrowth: newVal }, { merge: true });
     }
@@ -184,10 +179,7 @@ export default function App() {
 
   const openClientFile = (clientName) => {
     const group = dashboardData.groupedClients.find(g => g.client === clientName);
-    if (group) {
-      setActiveClientGroup(group);
-      setClientFileOpen(true);
-    }
+    if (group) { setActiveClientGroup(group); setClientFileOpen(true); }
   };
 
   const handleLogin = async (e) => { 
@@ -202,10 +194,7 @@ export default function App() {
     } 
   };
   
-  const handleLogout = () => {
-    signOut(auth);
-    toast.success('Você saiu do sistema.');
-  };
+  const handleLogout = () => { signOut(auth); toast.success('Você saiu do sistema.'); };
 
   const handleChangeOwnPassword = async (e) => {
     e.preventDefault();
@@ -213,14 +202,10 @@ export default function App() {
     try {
       await updatePassword(auth.currentUser, newOwnPassword);
       toast.success("Senha atualizada com sucesso!");
-      setPasswordModalOpen(false);
-      setNewOwnPassword('');
+      setPasswordModalOpen(false); setNewOwnPassword('');
     } catch (error) {
-      if (error.code === 'auth/requires-recent-login') {
-        toast.error("Sua sessão expirou. Por favor, saia do sistema (Logout), entre novamente e tente alterar a senha.");
-      } else {
-        toast.error("Erro ao alterar a senha.");
-      }
+      if (error.code === 'auth/requires-recent-login') toast.error("Sua sessão expirou. Por favor, saia do sistema (Logout), entre novamente e tente alterar a senha.");
+      else toast.error("Erro ao alterar a senha.");
     }
   };
 
@@ -228,47 +213,28 @@ export default function App() {
     e.preventDefault();
     try {
       await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPassword);
-      
       const nomeCompleto = newUserName.trim();
       const primeiroNome = nomeCompleto.split(' ')[0];
 
       await setDoc(doc(db, "equipe", newUserEmail.toLowerCase()), {
-        email: newUserEmail.toLowerCase(),
-        nome: primeiroNome,
-        nomeCompleto: nomeCompleto,
-        role: 'Operacional',
-        createdAt: new Date().toLocaleDateString('pt-BR')
+        email: newUserEmail.toLowerCase(), nome: primeiroNome, nomeCompleto: nomeCompleto, role: 'Operacional', createdAt: new Date().toLocaleDateString('pt-BR')
       });
       await signOut(secondaryAuth); 
       toast.success('✅ Acesso criado com sucesso!');
-      setNewUserEmail(''); setNewUserPassword('');
-      setNewUserName('');
-    } catch (error) {
-      toast.error('❌ Erro ao criar acesso. Verifique a senha ou se o e-mail já existe.');
-    }
+      setNewUserEmail(''); setNewUserPassword(''); setNewUserName('');
+    } catch (error) { toast.error('❌ Erro ao criar acesso. Verifique a senha ou se o e-mail já existe.'); }
   };
 
   const handleUpdateUser = async (emailToUpdate, newNameCompleto, newColor) => {
     if (!canEdit) return;
     try {
-      const usersRef = collection(db, "equipe");
       const userDocRef = doc(db, "equipe", emailToUpdate.toLowerCase());
-      
       const primeiroNome = newNameCompleto.trim().split(' ')[0];
-      const updateData = {
-        nome: primeiroNome,
-        nomeCompleto: newNameCompleto.trim()
-      };
-      
-      if (newColor) {
-        updateData.avatarColor = newColor;
-      }
-
+      const updateData = { nome: primeiroNome, nomeCompleto: newNameCompleto.trim() };
+      if (newColor) updateData.avatarColor = newColor;
       await setDoc(userDocRef, updateData, { merge: true });
       toast.success('Usuário atualizado com sucesso!');
-    } catch (error) {
-      toast.error('Erro ao atualizar usuário.');
-    }
+    } catch (error) { toast.error('Erro ao atualizar usuário.'); }
   };
 
   const handleToggleRole = async (email, currentRole) => {
@@ -282,10 +248,7 @@ export default function App() {
       await setDoc(userDocRef, { role: newRole }, { merge: true });
       setTeamMembers(prevMembers => prevMembers.map(member => member.email === email ? { ...member, role: newRole } : member));
       toast.success(`Cargo atualizado para ${newRole}!`);
-    } catch (error) {
-      console.error("Erro ao atualizar cargo:", error);
-      toast.error("Erro ao atualizar cargo. Verifique o console.");
-    }
+    } catch (error) { toast.error("Erro ao atualizar cargo. Verifique o console."); }
   };
 
   const handleStoreChange = (id, field, value) => {
@@ -305,15 +268,8 @@ export default function App() {
     setStores(updatedStores);
   };
 
-  const addNewStore = () => {
-    setCreateModalClient('');
-    setCreateModalOpen(true);
-  };
-
-  const addNewStoreToClient = (clientName) => {
-    setCreateModalClient(clientName);
-    setCreateModalOpen(true);
-  };
+  const addNewStore = () => { setCreateModalClient(''); setCreateModalOpen(true); };
+  const addNewStoreToClient = (clientName) => { setCreateModalClient(clientName); setCreateModalOpen(true); };
 
   const handleSaveNewStore = (data) => {
     const { client, store, marketplace } = data;
@@ -359,20 +315,84 @@ export default function App() {
     toast.success(`Tarefa replicada em ${storeIds.length} loja(s)!`);
   };
 
-  const handleSaveBatch = async (updatedStores, batchDay) => {
+  // === NOVO SISTEMA DE LANÇAMENTO EM MASSA BLINDADO (Resolve o bug do "1.000") ===
+  const handleSaveBatch = async (batchDay, formData) => {
     const batch = writeBatch(db);
-    updatedStores.forEach(s => {
+    let localStores = [...stores];
+
+    Object.keys(formData).forEach(storeIdStr => {
+      const storeId = Number(storeIdStr);
+      const data = formData[storeId];
+      if (!data || (!data.currentRevenue && !data.adsInvestment && !data.orders && !data.units)) return;
+
+      const parseSafeNumber = (val) => {
+        if (typeof val === 'number') return val;
+        if (!val) return 0;
+        let str = String(val).trim();
+        if (str.includes(',')) str = str.replace(/\./g, '').replace(',', '.');
+        return Number(str) || 0;
+      };
+
+      const parseSafeInt = (val) => {
+         if (!val) return 0;
+         const cleanStr = String(val).replace(/\./g, '');
+         return parseInt(cleanStr, 10) || 0;
+      };
+
+      const storeIndex = localStores.findIndex(s => s.id === storeId);
+      if (storeIndex === -1) return;
+      const s = localStores[storeIndex];
+
+      const cumRev = parseSafeNumber(data.currentRevenue);
+      const cumAds = parseSafeNumber(data.adsInvestment);
+      const cumOrd = parseSafeInt(data.orders);
+      const cumUni = parseSafeInt(data.units);
+
       let newHistory = [...(s.history || [])];
       const existingIndex = newHistory.findIndex(h => h.day === batchDay);
-      
-      if (s.currentRevenue > 0 || s.adsInvestment > 0 || s.orders > 0 || s.units > 0) {
-        const histEntry = { id: existingIndex >= 0 ? newHistory[existingIndex].id : Date.now() + Math.random(), day: batchDay, revenue: s.currentRevenue, ads: s.adsInvestment, orders: s.orders, units: s.units, date: new Date().toLocaleDateString('pt-BR') };
-        if (existingIndex >= 0) newHistory[existingIndex] = histEntry; else newHistory.push(histEntry);
+
+      let prevRev = 0, prevAds = 0;
+      const pastEntries = newHistory.filter(h => h.day < batchDay).sort((a,b) => b.day - a.day);
+      if(pastEntries.length > 0) {
+        prevRev = pastEntries[0].revenue || 0;
+        prevAds = pastEntries[0].ads || 0;
       }
-      const finalStore = { ...s, history: newHistory.sort((a, b) => a.day - b.day) };
-      batch.set(doc(db, "stores", finalStore.id.toString()), finalStore);
+
+      const dailyRev = cumRev - prevRev;
+
+      const histEntry = {
+        id: existingIndex >= 0 ? newHistory[existingIndex].id : Date.now() + storeId + Math.random(),
+        day: batchDay,
+        dailyRevenue: dailyRev > 0 ? dailyRev : 0,
+        revenue: cumRev,
+        ads: cumAds,
+        orders: cumOrd,
+        units: cumUni,
+        date: new Date().toLocaleDateString('pt-BR')
+      };
+
+      if (existingIndex >= 0) newHistory[existingIndex] = histEntry;
+      else newHistory.push(histEntry);
+
+      const finalStore = { 
+        ...s, 
+        history: newHistory.sort((a, b) => a.day - b.day) 
+      };
+      
+      const maxDay = Math.max(...finalStore.history.map(h => h.day));
+      if (batchDay === maxDay) {
+          finalStore.currentRevenue = cumRev;
+          finalStore.adsInvestment = cumAds;
+          finalStore.orders = cumOrd;
+          finalStore.units = cumUni;
+      }
+
+      localStores[storeIndex] = finalStore;
+      batch.set(doc(db, "stores", storeId.toString()), finalStore);
     });
+    
     await batch.commit();
+    setStores(localStores);
     toast.success(`Apuração do dia ${batchDay} salva na nuvem!`);
   };
 
@@ -401,29 +421,77 @@ export default function App() {
     }
   };
 
+  // === NOVO SISTEMA DE EXPORTAÇÃO COMPLETA ===
   const exportBackup = () => {
-    const dataStr = JSON.stringify(stores, null, 2);
+    const backupData = {
+      version: "2.0",
+      exportDate: new Date().toISOString(),
+      stores: stores,
+      teamMembers: teamMembers,
+      settings: { globalGrowth: globalGrowth }
+    };
+    
+    const dataStr = JSON.stringify(backupData, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `avante_crm_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.href = url; a.download = `avante_crm_completo_${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-    toast.success('Backup exportado com sucesso!');
+    toast.success('Backup completo (Lojas e Equipe) exportado com sucesso!');
   };
 
+  // === NOVO SISTEMA DE IMPORTAÇÃO UNIVERSAL ===
   const importBackup = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const fileReader = new FileReader();
-    fileReader.onload = (ev) => {
+    fileReader.onload = async (ev) => {
       try {
         const imported = JSON.parse(ev.target.result);
+        let storesToImport = [];
+        let teamToImport = [];
+        let settingsToImport = {};
+
+        // Identifica se é o formato antigo (Array de Lojas) ou o novo Formato Completo (Objeto)
         if (Array.isArray(imported)) {
-          imported.forEach(s => updateStoreInCloud(s));
-          setStores(imported);
-          toast.success("✅ Dados restaurados na nuvem com sucesso!");
-        } else toast.error("Formato inválido.");
-      } catch (err) { toast.error("Erro ao ler o arquivo JSON."); } finally { e.target.value = null; }
+          storesToImport = imported;
+        } else if (imported.stores) {
+          storesToImport = imported.stores;
+          teamToImport = imported.teamMembers || [];
+          settingsToImport = imported.settings || {};
+        } else {
+          return toast.error("O arquivo não possui um formato reconhecido.");
+        }
+
+        const batch = writeBatch(db);
+        
+        storesToImport.forEach(s => {
+          batch.set(doc(db, "stores", s.id.toString()), s);
+        });
+
+        teamToImport.forEach(member => {
+          if (member.email) {
+            batch.set(doc(db, "equipe", member.email.toLowerCase()), member);
+          }
+        });
+
+        if (settingsToImport.globalGrowth !== undefined) {
+          batch.set(doc(db, "settings", "global"), settingsToImport, { merge: true });
+        }
+
+        await batch.commit();
+        toast.success("✅ Banco de dados restaurado e atualizado com sucesso!");
+        
+        // Dá um "refresh" local para quem importou ver na hora
+        if (storesToImport.length > 0) setStores(storesToImport);
+        if (teamToImport.length > 0) setTeamMembers(teamToImport);
+
+      } catch (err) { 
+        toast.error("Erro ao ler o arquivo JSON."); 
+        console.error(err);
+      } finally { 
+        e.target.value = null; 
+      }
     };
     fileReader.readAsText(file, "UTF-8");
   };
@@ -498,15 +566,11 @@ export default function App() {
     setHistoryModalOpen(true); 
   };
 
-  // ==========================================
-  // O NOVO FILTRO GLOBAL É APLICADO AQUI 
-  // ==========================================
   const dashboardData = useMemo(() => {
     let totalTarget = 0, totalProjected = 0, totalGlobalAds = 0;
     let totalOrders = 0, totalUnits = 0, totalCurrentRevenue = 0;
     let totalAgencyRevenue = 0, totalAgencyRevenueActual = 0, agencyTarget = 0; 
 
-    // 1. Calcula os dados de cada loja
     const processedStores = stores.map(store => {
       const growthRate = store.customGrowth !== undefined ? Number(store.customGrowth) : globalGrowth;
       const gmvTarget = (Number(store.gmvBase) || 0) * (1 + (growthRate / 100));
@@ -523,7 +587,6 @@ export default function App() {
       };
     });
 
-    // 2. Filtra AS LOJAS globalmente antes de fazer o somatório do Dashboard!
     const filteredStores = processedStores.filter(store => {
       const matchSearch = !searchTerm || store.client.toLowerCase().includes(searchTerm.toLowerCase()) || store.store.toLowerCase().includes(searchTerm.toLowerCase());
       const matchStatus = statusFilter === 'all' || store.status === statusFilter;
@@ -587,7 +650,7 @@ export default function App() {
 
     return { 
       groupedClients, 
-      flatFilteredStores: filteredStores, // <-- Exportamos as lojas limpas e filtradas
+      flatFilteredStores: filteredStores, 
       totalTarget, totalProjected, totalCurrentRevenue, 
       totalAgencyRevenue, totalAgencyRevenueActual, agencyTarget, 
       totalGlobalAds, totalOrders, totalUnits,
@@ -693,13 +756,13 @@ export default function App() {
       </header>
 
       {/* ÁREA DE CONTEÚDO PRINCIPAL */}
-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 pt-6">
+      <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 pt-6 relative">
         
         {/* ========================================================
-            🌟 BARRA DE FILTROS GLOBAL (APARECE NAS 3 ABAS) 🌟
+            🌟 BARRA DE FILTROS GLOBAL (FIXA E "PRESA") 🌟
         ======================================================== */}
         {['dashboard', 'operacional', 'rotinas'].includes(activeView) && (
-          <div className="bg-white/[0.02] backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 animate-in fade-in duration-300">
+          <div className="sticky top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 animate-in fade-in duration-300">
             <div className="flex flex-col md:flex-row items-center gap-4 justify-between">
               
               <div className="flex flex-wrap items-center gap-3 w-full md:w-auto flex-1">
@@ -715,9 +778,9 @@ export default function App() {
                 </div>
           
                 <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-black/20 border border-white/10 text-gray-300 rounded-xl py-2.5 px-4 text-sm font-medium outline-none cursor-pointer hover:bg-white/5 transition-all shadow-inner">
+                  <option value="name" className="bg-gray-900 text-white">Por Nome (A-Z)</option>
                   <option value="gmv" className="bg-gray-900 text-white">Maior Faturamento</option>
                   <option value="status" className="bg-gray-900 text-white">Por Status</option>
-                  <option value="name" className="bg-gray-900 text-white">Por Nome (A-Z)</option>
                 </select>
               </div>
 
@@ -752,14 +815,8 @@ export default function App() {
           </div>
         )}
 
-        {/* ========================================================
-            TELA 1: DASHBOARD
-        ======================================================== */}
         {activeView === 'dashboard' && <ExecutiveDashboard dashboardData={dashboardData} formatCurrency={formatCurrency} pieData={pieData} roasData={roasData} COLORS={COLORS} currentDay={currentDay} daysInMonth={daysInMonth} />}
         
-        {/* ========================================================
-            TELA 2: EQUIPE ADMIN
-        ======================================================== */}
         {activeView === 'admin' && canEdit && (
           <AdminPanel 
             handleCreateUser={handleCreateUser} 
@@ -772,9 +829,6 @@ export default function App() {
           />
         )}
 
-        {/* ========================================================
-            TELA 3: PORTFÓLIO (Agora super limpo!)
-        ======================================================== */}
         {activeView === 'operacional' && (
           <OperationalTable 
             canEdit={canEdit} 
@@ -808,9 +862,6 @@ export default function App() {
           />
         )}
 
-        {/* ========================================================
-            TELA 4: WORKFLOW (Recebe as lojas pré-filtradas!)
-        ======================================================== */}
         {activeView === 'rotinas' && (
           <TaskView 
             stores={dashboardData.flatFilteredStores} 
@@ -947,6 +998,12 @@ export default function App() {
                           return Number(str) || 0;
                         };
 
+                        const parseSafeInt = (val) => {
+                           if (!val) return 0;
+                           const cleanStr = String(val).replace(/\./g, '');
+                           return parseInt(cleanStr, 10) || 0;
+                        };
+
                         let prevRev = 0, prevAds = 0, prevOrd = 0, prevUni = 0;
                         const pastEntries = [...(activeStore.history || [])].filter(h => h.day < entryDay).sort((a,b) => b.day - a.day);
                         if(pastEntries.length > 0) {
@@ -958,8 +1015,8 @@ export default function App() {
 
                         const cumRev = prevRev + parseSafeNumber(newHistoryRevenue);
                         const cumAds = prevAds + parseSafeNumber(newHistoryAds);
-                        const cumOrd = prevOrd + parseSafeNumber(newHistoryOrders);
-                        const cumUni = prevUni + parseSafeNumber(newHistoryUnits);
+                        const cumOrd = prevOrd + parseSafeInt(newHistoryOrders);
+                        const cumUni = prevUni + parseSafeInt(newHistoryUnits);
 
                         const entry = {
                           id: Date.now() + Math.random(),

@@ -97,7 +97,13 @@ export default function ClientFileModal({
     if (!batchDay || batchDay < 1 || batchDay > 31) return toast.error("Dia inválido.");
 
     const dayVal = Number(batchDay);
+    
     const parseSafeNumber = (val) => Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
+    const parseSafeInt = (val) => {
+       if (!val) return 0;
+       const cleanStr = String(val).replace(/\./g, '');
+       return parseInt(cleanStr, 10) || 0;
+    };
     
     let updatedStoresGlobal = [...stores];
 
@@ -107,8 +113,8 @@ export default function ClientFileModal({
 
       const cumRev = parseSafeNumber(data.currentRevenue);
       const cumAds = parseSafeNumber(data.adsInvestment);
-      const cumOrd = parseInt(data.orders, 10) || 0;
-      const cumUni = parseInt(data.units, 10) || 0;
+      const cumOrd = parseSafeInt(data.orders);
+      const cumUni = parseSafeInt(data.units);
 
       let prevRev = 0, prevAds = 0;
       const pastEntries = [...(s.history || [])].filter(h => h.day < dayVal).sort((a, b) => b.day - a.day);
@@ -132,10 +138,27 @@ export default function ClientFileModal({
 
       let newHistory = [...(s.history || [])];
       const existingIndex = newHistory.findIndex(h => h.day === dayVal);
-      if (existingIndex >= 0) newHistory[existingIndex] = histEntry;
-      else newHistory.push(histEntry);
+      if (existingIndex >= 0) {
+        histEntry.id = newHistory[existingIndex].id;
+        newHistory[existingIndex] = histEntry;
+      } else {
+        newHistory.push(histEntry);
+      }
 
-      const finalStore = { ...s, currentRevenue: cumRev, adsInvestment: cumAds, orders: cumOrd, units: cumUni, history: newHistory.sort((a, b) => a.day - a.day) };
+      const finalStore = { 
+        ...s, 
+        history: newHistory.sort((a, b) => a.day - b.day) // Ordenação matemática corrigida
+      };
+
+      // Só atualiza os valores gerais da loja se for o último dia lançado
+      const maxDay = Math.max(...finalStore.history.map(h => h.day));
+      if (dayVal === maxDay) {
+          finalStore.currentRevenue = cumRev;
+          finalStore.adsInvestment = cumAds;
+          finalStore.orders = cumOrd;
+          finalStore.units = cumUni;
+      }
+
       updateStoreInCloud(finalStore);
       updatedStoresGlobal = updatedStoresGlobal.map(gs => gs.id === s.id ? finalStore : gs);
     });
@@ -316,10 +339,10 @@ export default function ClientFileModal({
                           <input type="text" value={formData[store.id]?.adsInvestment || ''} onChange={(e) => handleFormChange(store.id, 'adsInvestment', e.target.value)} className="w-full bg-black/40 border border-white/10 text-amber-300 rounded-xl p-2 focus:border-indigo-500 outline-none text-sm font-bold shadow-inner" placeholder="0,00" />
                         </td>
                         <td className="p-4">
-                          <input type="number" value={formData[store.id]?.orders || ''} onChange={(e) => handleFormChange(store.id, 'orders', e.target.value)} className="w-full bg-black/40 border border-white/10 text-emerald-300 rounded-xl p-2 focus:border-indigo-500 outline-none text-sm font-bold shadow-inner" placeholder="0" />
+                          <input type="text" value={formData[store.id]?.orders || ''} onChange={(e) => handleFormChange(store.id, 'orders', e.target.value)} className="w-full bg-black/40 border border-white/10 text-emerald-300 rounded-xl p-2 focus:border-indigo-500 outline-none text-sm font-bold shadow-inner" placeholder="0" />
                         </td>
                         <td className="p-4">
-                          <input type="number" value={formData[store.id]?.units || ''} onChange={(e) => handleFormChange(store.id, 'units', e.target.value)} className="w-full bg-black/40 border border-white/10 text-purple-300 rounded-xl p-2 focus:border-indigo-500 outline-none text-sm font-bold shadow-inner" placeholder="0" />
+                          <input type="text" value={formData[store.id]?.units || ''} onChange={(e) => handleFormChange(store.id, 'units', e.target.value)} className="w-full bg-black/40 border border-white/10 text-purple-300 rounded-xl p-2 focus:border-indigo-500 outline-none text-sm font-bold shadow-inner" placeholder="0" />
                         </td>
                       </tr>
                     ))}
