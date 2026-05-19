@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut, Key, Briefcase } from 'lucide-react';
+import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
@@ -36,8 +36,14 @@ export default function App() {
   const [globalGrowth, setGlobalGrowth] = useState(10);
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [currentDay, setCurrentDay] = useState(new Date().getDate());
+  
+  // === NOVOS ESTADOS DO FILTRO GLOBAL ===
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('gmv');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [mktFilter, setMktFilter] = useState('all');
+  const [respFilter, setRespFilter] = useState('all');
+
   const [expandedClients, setExpandedClients] = useState([]);
   const [bulkTaskModalOpen, setBulkTaskModalOpen] = useState(false);
 
@@ -106,12 +112,16 @@ export default function App() {
       if (!isAssignedToMe) return false; 
       
       if (!c.data) return true;
-      if (c.data < localToday) return true; // Atrasada
+      if (c.data < localToday) return true; 
       if (c.data === localToday) return !c.hora || c.hora <= currentTimeStr;
 
       return false;
     }).length;
   }, [stores, currentUserData, localToday, currentTimeStr]);
+
+  // Captura os Canais e Equipe Globais para os Dropdowns
+  const uniqueResps = useMemo(() => [...new Set(stores.map(s => s.responsavel))].filter(Boolean).sort(), [stores]);
+  const uniqueMkts = useMemo(() => [...new Set(stores.map(s => s.marketplace?.toUpperCase()))].filter(Boolean).sort(), [stores]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -238,57 +248,39 @@ export default function App() {
     }
   };
 
-  const handleUpdateUser = async (email, newName, newColor) => {
+  const handleUpdateUser = async (emailToUpdate, newNameCompleto, newColor) => {
+    if (!canEdit) return;
     try {
-      const usersRef = collection(db, "users");
-      const q = query(usersRef, where("email", "==", email));
-      const querySnapshot = await getDocs(q);
-
-      if (!querySnapshot.empty) {
-        const userDoc = querySnapshot.docs[0];
-        
-        // Criamos o objeto de atualização
-        const updateData = { nomeCompleto: newName.trim() };
-        
-        // Se a cor foi enviada, adicionamos ao objeto
-        if (newColor) {
-          updateData.avatarColor = newColor;
-        }
-
-        await updateDoc(doc(db, "users", userDoc.id), updateData);
-        
-        toast.success("Usuário atualizado com sucesso!");
-        fetchTeamMembers(); // Recarrega a lista para mostrar a nova cor
-      } else {
-        toast.error("Usuário não encontrado no banco de dados.");
+      const usersRef = collection(db, "equipe");
+      const userDocRef = doc(db, "equipe", emailToUpdate.toLowerCase());
+      
+      const primeiroNome = newNameCompleto.trim().split(' ')[0];
+      const updateData = {
+        nome: primeiroNome,
+        nomeCompleto: newNameCompleto.trim()
+      };
+      
+      if (newColor) {
+        updateData.avatarColor = newColor;
       }
+
+      await setDoc(userDocRef, updateData, { merge: true });
+      toast.success('Usuário atualizado com sucesso!');
     } catch (error) {
-      console.error("Erro ao atualizar usuário:", error);
-      toast.error("Erro ao atualizar dados.");
+      toast.error('Erro ao atualizar usuário.');
     }
   };
 
   const handleToggleRole = async (email, currentRole) => {
-    // Ciclo de cargos: Operacional -> Supervisor -> Admin -> Operacional...
     let newRole = 'Operacional';
     if (currentRole === 'Operacional' || currentRole === 'Visualizador') newRole = 'Supervisor';
     else if (currentRole === 'Supervisor') newRole = 'Admin';
     else if (currentRole === 'Admin') newRole = 'Operacional';
 
     try {
-      // 1. Aponta diretamente para o documento do usuário na coleção CORRETA ("equipe")
       const userDocRef = doc(db, "equipe", email.toLowerCase());
-      
-      // 2. Atualiza apenas o campo 'role', mantendo o resto intacto (usando setDoc com merge)
       await setDoc(userDocRef, { role: newRole }, { merge: true });
-      
-      // 3. Atualiza a tela instantaneamente
-      setTeamMembers(prevMembers => 
-        prevMembers.map(member => 
-          member.email === email ? { ...member, role: newRole } : member
-        )
-      );
-      
+      setTeamMembers(prevMembers => prevMembers.map(member => member.email === email ? { ...member, role: newRole } : member));
       toast.success(`Cargo atualizado para ${newRole}!`);
     } catch (error) {
       console.error("Erro ao atualizar cargo:", error);
@@ -325,83 +317,38 @@ export default function App() {
 
   const handleSaveNewStore = (data) => {
     const { client, store, marketplace } = data;
-    
-    // Se estiver adicionando loja a cliente existente, herda as taxas. Se não, usa as padrões.
     const existingStore = stores.find(s => s.client === client);
     const feeType = existingStore?.feeType || 'percent';
     const feePercent = existingStore?.feePercent || 1.5;
     const fixedFee = existingStore?.fixedFee || 0;
 
     const newStore = { 
-      id: Date.now(), 
-      client: client, 
-      store: store, 
-      marketplace: marketplace, 
-      gmvBase: 0, 
-      feeType, 
-      feePercent, 
-      fixedFee, 
-      currentRevenue: 0, 
-      adsInvestment: 0, 
-      orders: 0, 
-      units: 0, 
-      history: [], 
-      taskLogs: [], 
-      checklists: [], 
-      monthlyHistory: [] 
+      id: Date.now(), client, store, marketplace, gmvBase: 0, feeType, feePercent, fixedFee, 
+      currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [], taskLogs: [], checklists: [], monthlyHistory: [] 
     };
     
     updateStoreInCloud(newStore);
     setStores(prev => [newStore, ...prev]);
     
-    if (existingStore && !expandedClients.includes(client)) {
-      toggleClientExpansion(client);
-    }
-    
+    if (existingStore && !expandedClients.includes(client)) toggleClientExpansion(client);
     toast.success(`Cadastro de ${store} realizado com sucesso!`);
   };
 
   const handleSaveBulkTasks = (storeIds, taskData) => {
-    // Agora recebemos um objeto com todas as configurações da tarefa
     const { text, resp, data, hora, recorrencia } = taskData;
     const creatorName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
 
     const batchStores = stores.map(store => {
       if (storeIds.includes(store.id)) {
-        const newTask = {
-          id: Date.now() + Math.random(),
-          texto: text,
-          feita: false,
-          responsavel: resp.trim(),
-          criadoPor: creatorName,
-          dataCriacao: new Date().toLocaleDateString('pt-BR'),
-          data: data || '',
-          hora: hora || '',
-          recorrencia: recorrencia || 'none'
-        };
-        
+        const newTask = { id: Date.now() + Math.random(), texto: text, feita: false, responsavel: resp.trim(), criadoPor: creatorName, dataCriacao: new Date().toLocaleDateString('pt-BR'), data: data || '', hora: hora || '', recorrencia: recorrencia || 'none' };
         const updatedChecklists = [...(store.checklists || []), newTask];
-        
-        // Auto-Agendamento: Se a tarefa em massa tem data, atualiza o próximo acesso da loja
         let nextAccessStr = store.dataProximoAcesso || '';
         const pendingWithDate = updatedChecklists.filter(t => !t.feita && t.data);
         if (pendingWithDate.length > 0) {
-          pendingWithDate.sort((a, b) => {
-            const dateA = new Date(`${a.data}T${a.hora || '00:00'}:00`);
-            const dateB = new Date(`${b.data}T${b.hora || '00:00'}:00`);
-            return dateA - dateB;
-          });
-          const earliest = pendingWithDate[0];
-          nextAccessStr = `${earliest.data}T${earliest.hora || '00:00'}`;
+          pendingWithDate.sort((a, b) => new Date(`${a.data}T${a.hora || '00:00'}:00`) - new Date(`${b.data}T${b.hora || '00:00'}:00`));
+          nextAccessStr = `${pendingWithDate[0].data}T${pendingWithDate[0].hora || '00:00'}`;
         }
-
-        const updatedStore = {
-          ...store,
-          checklists: updatedChecklists,
-          dataProximoAcesso: nextAccessStr,
-          dataUltimoAcesso: new Date().toISOString()
-        };
-        
+        const updatedStore = { ...store, checklists: updatedChecklists, dataProximoAcesso: nextAccessStr, dataUltimoAcesso: new Date().toISOString() };
         updateStoreInCloud(updatedStore);
         return updatedStore;
       }
@@ -419,15 +366,7 @@ export default function App() {
       const existingIndex = newHistory.findIndex(h => h.day === batchDay);
       
       if (s.currentRevenue > 0 || s.adsInvestment > 0 || s.orders > 0 || s.units > 0) {
-        const histEntry = {
-          id: existingIndex >= 0 ? newHistory[existingIndex].id : Date.now() + Math.random(),
-          day: batchDay,
-          revenue: s.currentRevenue, 
-          ads: s.adsInvestment, 
-          orders: s.orders, 
-          units: s.units, 
-          date: new Date().toLocaleDateString('pt-BR')
-        };
+        const histEntry = { id: existingIndex >= 0 ? newHistory[existingIndex].id : Date.now() + Math.random(), day: batchDay, revenue: s.currentRevenue, ads: s.adsInvestment, orders: s.orders, units: s.units, date: new Date().toLocaleDateString('pt-BR') };
         if (existingIndex >= 0) newHistory[existingIndex] = histEntry; else newHistory.push(histEntry);
       }
       const finalStore = { ...s, history: newHistory.sort((a, b) => a.day - b.day) };
@@ -440,11 +379,7 @@ export default function App() {
   const deleteClient = async (clientName) => { 
     if(window.confirm(`🚨 Apagar o cliente ${clientName} e TODAS as suas lojas?`)){ 
       const batch = writeBatch(db);
-      stores.forEach(s => { 
-        if(s.client === clientName) {
-          batch.delete(doc(db, "stores", s.id.toString()));
-        }
-      }); 
+      stores.forEach(s => { if(s.client === clientName) batch.delete(doc(db, "stores", s.id.toString())); }); 
       await batch.commit(); 
       toast.success(`Cliente ${clientName} apagado com sucesso.`);
     } 
@@ -456,16 +391,7 @@ export default function App() {
     if(window.confirm(`Isso salvará o histórico mensal e zerará os lançamentos do painel para o próximo mês.\nDeseja continuar?`)) {
       const updatedStores = stores.map(s => {
         const finalRevenue = s.currentRevenue || 0;
-        const newStore = { 
-          ...s, 
-          monthlyHistory: [...(s.monthlyHistory || []), { month: monthName, gmv: finalRevenue }], 
-          gmvBase: finalRevenue > 0 ? finalRevenue : s.gmvBase, 
-          currentRevenue: 0, 
-          adsInvestment: 0, 
-          orders: 0,
-          units: 0,
-          history: [] 
-        };
+        const newStore = { ...s, monthlyHistory: [...(s.monthlyHistory || []), { month: monthName, gmv: finalRevenue }], gmvBase: finalRevenue > 0 ? finalRevenue : s.gmvBase, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [] };
         updateStoreInCloud(newStore);
         return newStore;
       });
@@ -507,33 +433,20 @@ export default function App() {
   const startEditingClient = (group) => { 
     setEditingClient(group.client); 
     const sample = group.stores[0] || {};
-    setClientEditData({ 
-      name: group.client, 
-      feeType: sample.feeType || 'percent', 
-      feePercent: sample.feePercent || 0, 
-      fixedFee: sample.fixedFee || 0 
-    }); 
+    setClientEditData({ name: group.client, feeType: sample.feeType || 'percent', feePercent: sample.feePercent || 0, fixedFee: sample.fixedFee || 0 }); 
   };
   
   const saveClientEdit = async (oldName) => {
     const upperNewName = clientEditData.name.toUpperCase();
     const batch = writeBatch(db);
-    
     const updatedStores = stores.map(s => {
       if(s.client === oldName) {
-         const updatedStore = {
-           ...s, 
-           client: upperNewName,
-           feeType: clientEditData.feeType,
-           feePercent: Number(clientEditData.feePercent),
-           fixedFee: Number(clientEditData.fixedFee)
-         };
+         const updatedStore = { ...s, client: upperNewName, feeType: clientEditData.feeType, feePercent: Number(clientEditData.feePercent), fixedFee: Number(clientEditData.fixedFee) };
          batch.set(doc(db, "stores", s.id.toString()), updatedStore);
          return updatedStore;
       }
       return s;
     });
-    
     await batch.commit().catch(e => { console.error(e); toast.error('Erro ao atualizar cliente.'); });
     setStores(updatedStores);
     setEditingClient(null);
@@ -565,9 +478,7 @@ export default function App() {
   const generateClientWhatsAppLink = (group) => {
     let text = `Olá, equipe da *${group.client}*! Aqui é a Equipe Avante - B2X.\n\nSegue o resumo do nosso desempenho até o dia ${currentDay}:\n\n`;
     group.stores.forEach(store => {
-      text += `🏪 *${store.store}*\n`;
-      text += `Faturado: ${formatCurrency(store.currentRevenue)}\n`;
-      text += `Projeção: ${formatCurrency(store.projectedGmv)} (Meta: ${formatCurrency(store.gmvTarget)})\n\n`;
+      text += `🏪 *${store.store}*\nFaturado: ${formatCurrency(store.currentRevenue)}\nProjeção: ${formatCurrency(store.projectedGmv)} (Meta: ${formatCurrency(store.gmvTarget)})\n\n`;
     });
     text += `📊 *RESUMO GERAL*\nFaturado Total: *${formatCurrency(group.totalCurrentRevenue)}*\nProjeção Total: *${formatCurrency(group.totalProjectedGmv)}*\nMeta Global: *${formatCurrency(group.totalGmvTarget)}*\n\n`;
     if (group.status === 'danger') text += `🚨 Como estamos abaixo da meta agrupada, precisamos alinhar urgentemente ações conjuntas.`;
@@ -579,7 +490,7 @@ export default function App() {
   const openHistoryModal = (store) => { 
     setActiveStoreId(store.id); 
     setNewHistoryDay(currentDay); 
-    setNewHistoryRevenue(''); // Agora o modal abre limpo para inserção diária
+    setNewHistoryRevenue(''); 
     setNewHistoryAds('');
     setNewHistoryOrders('');
     setNewHistoryUnits('');
@@ -587,32 +498,21 @@ export default function App() {
     setHistoryModalOpen(true); 
   };
 
+  // ==========================================
+  // O NOVO FILTRO GLOBAL É APLICADO AQUI 
+  // ==========================================
   const dashboardData = useMemo(() => {
     let totalTarget = 0, totalProjected = 0, totalGlobalAds = 0;
     let totalOrders = 0, totalUnits = 0, totalCurrentRevenue = 0;
-    let totalAgencyRevenue = 0;       
-    let totalAgencyRevenueActual = 0; 
-    let agencyTarget = 0; 
+    let totalAgencyRevenue = 0, totalAgencyRevenueActual = 0, agencyTarget = 0; 
 
-    const filteredRows = stores.filter(row => 
-      !searchTerm || 
-      row.client.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      row.store.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-    const processedStores = filteredRows.map(store => {
+    // 1. Calcula os dados de cada loja
+    const processedStores = stores.map(store => {
       const growthRate = store.customGrowth !== undefined ? Number(store.customGrowth) : globalGrowth;
       const gmvTarget = (Number(store.gmvBase) || 0) * (1 + (growthRate / 100));
       const projectedGmv = currentDay > 0 ? ((Number(store.currentRevenue) || 0) / currentDay) * daysInMonth : 0;
       const percentReached = gmvTarget > 0 ? (projectedGmv / gmvTarget) * 100 : 0;
       
-      totalTarget += gmvTarget; 
-      totalProjected += projectedGmv; 
-      totalCurrentRevenue += (Number(store.currentRevenue) || 0); 
-      totalGlobalAds += (store.adsInvestment || 0);
-      totalOrders += (store.orders || 0);
-      totalUnits += (store.units || 0);
-
       return { 
         ...store, 
         gmvTarget, 
@@ -623,8 +523,24 @@ export default function App() {
       };
     });
 
+    // 2. Filtra AS LOJAS globalmente antes de fazer o somatório do Dashboard!
+    const filteredStores = processedStores.filter(store => {
+      const matchSearch = !searchTerm || store.client.toLowerCase().includes(searchTerm.toLowerCase()) || store.store.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchStatus = statusFilter === 'all' || store.status === statusFilter;
+      const matchMkt = mktFilter === 'all' || (store.marketplace && store.marketplace.toUpperCase() === mktFilter);
+      const matchResp = respFilter === 'all' || store.responsavel === respFilter;
+      return matchSearch && matchStatus && matchMkt && matchResp;
+    });
+
     const groups = {};
-    processedStores.forEach(s => {
+    filteredStores.forEach(s => {
+      totalTarget += s.gmvTarget; 
+      totalProjected += s.projectedGmv; 
+      totalCurrentRevenue += (Number(s.currentRevenue) || 0); 
+      totalGlobalAds += (s.adsInvestment || 0);
+      totalOrders += (s.orders || 0);
+      totalUnits += (s.units || 0);
+
       if (!groups[s.client]) groups[s.client] = { client: s.client, stores: [], totalGmvBase: 0, totalGmvTarget: 0, totalCurrentRevenue: 0, totalProjectedGmv: 0, totalAds: 0, totalOrders: 0, totalUnits: 0 };
       groups[s.client].stores.push(s);
       groups[s.client].totalGmvBase += s.gmvBase || 0; 
@@ -639,16 +555,13 @@ export default function App() {
     const groupedClients = Object.values(groups).map(g => {
       const p = g.totalGmvTarget > 0 ? (g.totalProjectedGmv / g.totalGmvTarget) * 100 : 0;
       const sampleStore = g.stores[0];
-      
       const feeType = sampleStore?.feeType || 'percent';
       const feePercent = sampleStore?.feePercent || 0;
       const fixedFee = sampleStore?.fixedFee || 0;
-
       const isFixed = feeType === 'fixed' || fixedFee > 0;
       
       const groupAgencyTarget = isFixed ? Number(fixedFee) : g.totalGmvTarget * (Number(feePercent) / 100);
       agencyTarget += groupAgencyTarget;
-
       const actualAgency = isFixed ? Number(fixedFee) : g.totalCurrentRevenue * (Number(feePercent) / 100);
       const projectedAgency = isFixed ? Number(fixedFee) : g.totalProjectedGmv * (Number(feePercent) / 100);
       
@@ -673,12 +586,14 @@ export default function App() {
     });
 
     return { 
-      groupedClients, totalTarget, totalProjected, totalCurrentRevenue, 
+      groupedClients, 
+      flatFilteredStores: filteredStores, // <-- Exportamos as lojas limpas e filtradas
+      totalTarget, totalProjected, totalCurrentRevenue, 
       totalAgencyRevenue, totalAgencyRevenueActual, agencyTarget, 
       totalGlobalAds, totalOrders, totalUnits,
       globalRoas: totalGlobalAds > 0 ? (totalCurrentRevenue / totalGlobalAds).toFixed(1) : 0 
     };
-  }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy]);
+  }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, respFilter]);
 
   const pieData = useMemo(() => dashboardData.groupedClients.map(g => ({ name: g.client, value: g.totalProjectedGmv })).filter(g => g.value > 0), [dashboardData]);
   const roasData = useMemo(() => dashboardData.groupedClients.filter(g => g.totalAds > 0).map(g => ({ name: g.client, roas: Number(g.roas) })).sort((a, b) => b.roas - a.roas), [dashboardData]);
@@ -706,18 +621,14 @@ export default function App() {
     <div className="min-h-screen bg-[#0B0F19] font-sans text-gray-200 flex flex-col">
       <Toaster position="top-right" />
       
+      {/* 🌟 NAVEGAÇÃO PRINCIPAL (HEADER) */}
       <header className="sticky top-0 z-40 bg-[#0B0F19]/50 backdrop-blur-xl border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.3)]">
         <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
-          
-          {/* Lado Esquerdo: Logo e Ações Rápidas */}
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-lg border border-white/20">
-                <TrendingUp size={18} className="text-white" />
-              </div>
-              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-blue-700">CRM</span></span>
+            <div className="flex items-center gap-3">
+              <img src="/logo.jpg" alt="Avante CRM" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
+              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-indigo-400">CRM</span></span>
             </div>
-            
             <div className="hidden md:flex items-center gap-2 border-l border-white/10 pl-6">
               <button onClick={() => setIsBatchMode(true)} className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-inner" title="Apuração Rápida em Massa">
                 <Zap size={14} /> Apuração
@@ -729,8 +640,6 @@ export default function App() {
               )}
             </div>
           </div>
-
-          {/* Centro: Menu de Navegação (Pill Glass) */}
           <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
             <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'dashboard' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <PieChartIcon size={16} /> <span className="hidden md:inline">Dashboard</span>
@@ -752,8 +661,6 @@ export default function App() {
               </button>
             )}
           </nav>
-
-          {/* Lado Direito: Perfil e Opções */}
           <div className="flex items-center gap-4">
             {canEdit && (
               <div className="hidden lg:flex gap-1">
@@ -762,9 +669,7 @@ export default function App() {
                 <button onClick={() => fileInputRef.current.click()} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/5 transition-all" title="Importar Backup"><Download size={16} /></button>
               </div>
             )}
-            
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              {/* Avatar Glass */}
               <div className="hidden sm:flex items-center gap-2 bg-white/5 py-1 pl-1 pr-4 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
                 <div className="w-7 h-7 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/20">
                   {(currentUserData?.nomeCompleto || currentUserData?.nome || user?.email || 'U').charAt(0).toUpperCase()}
@@ -774,11 +679,10 @@ export default function App() {
                     {currentUserData?.nomeCompleto?.split(' ')[0] || currentUserData?.nome || user?.email?.split('@')[0]}
                   </p>
                   <p className="text-[9px] text-indigo-300 uppercase tracking-widest leading-tight">
-                    {canEdit ? 'Admin' : 'Estrategista'}
+                    {canEdit ? 'Gestor' : 'Estrategista'}
                   </p>
                 </div>
               </div>
-              
               <div className="flex items-center gap-1">
                 <button onClick={() => setPasswordModalOpen(true)} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-full text-gray-400 hover:text-white transition-all shadow-sm" title="Mudar Senha"><Key size={16} /></button>
                 <button onClick={handleLogout} className="p-2 bg-white/5 hover:bg-red-500/20 border border-transparent hover:border-red-500/30 rounded-full text-gray-400 hover:text-red-400 transition-all shadow-sm" title="Sair"><LogOut size={16} /></button>
@@ -788,10 +692,74 @@ export default function App() {
         </div>
       </header>
 
-      {/* ÁREA DE CONTEÚDO PRINCIPAL (Com mais respiro) */}
+      {/* ÁREA DE CONTEÚDO PRINCIPAL */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 pt-6">
+        
+        {/* ========================================================
+            🌟 BARRA DE FILTROS GLOBAL (APARECE NAS 3 ABAS) 🌟
+        ======================================================== */}
+        {['dashboard', 'operacional', 'rotinas'].includes(activeView) && (
+          <div className="bg-white/[0.02] backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 animate-in fade-in duration-300">
+            <div className="flex flex-col md:flex-row items-center gap-4 justify-between">
+              
+              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto flex-1">
+                <div className="relative flex-1 min-w-[250px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input 
+                    type="text" 
+                    placeholder="Buscar por conta ou loja..." 
+                    value={searchTerm} 
+                    onChange={(e) => setSearchTerm(e.target.value)} 
+                    className="w-full bg-black/20 border border-white/10 text-white rounded-xl py-2.5 pl-10 pr-4 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 text-sm transition-all shadow-inner" 
+                  />
+                </div>
+          
+                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-black/20 border border-white/10 text-gray-300 rounded-xl py-2.5 px-4 text-sm font-medium outline-none cursor-pointer hover:bg-white/5 transition-all shadow-inner">
+                  <option value="gmv" className="bg-gray-900 text-white">Maior Faturamento</option>
+                  <option value="status" className="bg-gray-900 text-white">Por Status</option>
+                  <option value="name" className="bg-gray-900 text-white">Por Nome (A-Z)</option>
+                </select>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 bg-black/20 p-1.5 rounded-xl border border-white/10 shadow-inner w-full md:w-auto">
+                <div className="flex gap-1 border-r border-white/10 pr-2">
+                    {['all', 'danger', 'warning', 'success'].map(f => (
+                      <button key={f} onClick={() => setStatusFilter(f)} className={`p-1.5 rounded-lg transition-all ${statusFilter === f ? 'bg-white/10 text-white shadow-md' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
+                        {f === 'all' ? <Filter size={16}/> : f === 'danger' ? <AlertTriangle size={16}/> : f === 'warning' ? <Clock size={16}/> : <CheckCircle size={16}/>}
+                      </button>
+                    ))}
+                </div>
+
+                <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors border-r border-white/10">
+                  <option value="all" className="bg-gray-900 text-white">🛍️ CANAIS</option>
+                  {uniqueMkts.map(m => <option key={m} value={m} className="bg-gray-900 text-white">{m}</option>)}
+                </select>
+                 
+                <select value={respFilter} onChange={e => setRespFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors">
+                  <option value="all" className="bg-gray-900 text-white">👤 EQUIPE</option>
+                  {uniqueResps.map(r => <option key={r} value={r} className="bg-gray-900 text-white">{r}</option>)}
+                </select>
+              </div>
+              
+              <div className="flex w-full md:w-auto">
+                {canEdit && (
+                  <button onClick={addNewStore} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 px-6 rounded-xl text-sm font-bold flex justify-center items-center gap-2 transition-all shadow-md">
+                    <Plus size={16} /> Nova Conta
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================
+            TELA 1: DASHBOARD
+        ======================================================== */}
         {activeView === 'dashboard' && <ExecutiveDashboard dashboardData={dashboardData} formatCurrency={formatCurrency} pieData={pieData} roasData={roasData} COLORS={COLORS} currentDay={currentDay} daysInMonth={daysInMonth} />}
         
+        {/* ========================================================
+            TELA 2: EQUIPE ADMIN
+        ======================================================== */}
         {activeView === 'admin' && canEdit && (
           <AdminPanel 
             handleCreateUser={handleCreateUser} 
@@ -804,11 +772,12 @@ export default function App() {
           />
         )}
 
+        {/* ========================================================
+            TELA 3: PORTFÓLIO (Agora super limpo!)
+        ======================================================== */}
         {activeView === 'operacional' && (
           <OperationalTable 
             canEdit={canEdit} 
-            searchTerm={searchTerm} 
-            setSearchTerm={setSearchTerm} 
             dashboardData={dashboardData} 
             expandedClients={expandedClients} 
             toggleClientExpansion={toggleClientExpansion}
@@ -816,13 +785,12 @@ export default function App() {
             currentDay={currentDay} 
             globalGrowth={globalGrowth} 
             updateGlobalSettings={updateGlobalSettings}
-            addNewStore={addNewStore} 
             addNewStoreToClient={addNewStoreToClient} 
             deleteStore={deleteStore} 
             deleteClient={deleteClient}
             startEditingClient={startEditingClient} 
             editingClient={editingClient} 
-            setEditingClient={setEditingClient}
+            setEditingClient={setEditingClient} 
             clientEditData={clientEditData} 
             setClientEditData={setClientEditData} 
             saveClientEdit={saveClientEdit}
@@ -832,8 +800,6 @@ export default function App() {
             storeEditData={storeEditData} 
             setStoreEditData={setStoreEditData} 
             saveStoreEdit={saveStoreEdit}
-            sortBy={sortBy} 
-            setSortBy={setSortBy}
             handleStoreChange={handleStoreChange}
             openHistoryModal={openHistoryModal}
             generateStoreWhatsAppLink={generateStoreWhatsAppLink}
@@ -842,9 +808,12 @@ export default function App() {
           />
         )}
 
+        {/* ========================================================
+            TELA 4: WORKFLOW (Recebe as lojas pré-filtradas!)
+        ======================================================== */}
         {activeView === 'rotinas' && (
           <TaskView 
-            stores={stores} 
+            stores={dashboardData.flatFilteredStores} 
             openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
             openBulkTaskModal={() => setBulkTaskModalOpen(true)}
             currentUserData={currentUserData}
@@ -856,9 +825,11 @@ export default function App() {
         )}
       </main>
 
+      {/* --- MODAIS COMPLEMENTARES --- */}
+
       {passwordModalOpen && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4">
-          <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm shadow-2xl">
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+          <div className="bg-gray-900 p-6 rounded-2xl border border-gray-700 w-full max-w-sm shadow-2xl">
             <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
               <Key size={18} className="text-indigo-400" /> Mudar Minha Senha
             </h3>
@@ -871,11 +842,11 @@ export default function App() {
                 placeholder="Nova senha (mín. 6 caracteres)" 
                 required 
                 minLength="6"
-                className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2.5 text-white outline-none focus:border-indigo-500 mb-4 transition-colors" 
+                className="w-full bg-gray-950 border border-gray-700 rounded-lg p-3 text-white outline-none focus:border-indigo-500 mb-4 transition-colors" 
               />
               <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => setPasswordModalOpen(false)} className="text-gray-400 hover:text-white px-4 py-2 font-medium">Cancelar</button>
-                <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-bold shadow-md transition-colors">Salvar Senha</button>
+                <button type="button" onClick={() => setPasswordModalOpen(false)} className="text-gray-400 hover:text-white px-4 py-2 text-sm font-medium">Cancelar</button>
+                <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg font-bold shadow-md transition-colors text-sm">Salvar Senha</button>
               </div>
             </form>
           </div>

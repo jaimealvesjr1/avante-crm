@@ -1,22 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Filter, Bell, CopyPlus, Check, CalendarClock } from 'lucide-react';
+import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Bell, CopyPlus, Check, CalendarClock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores, openClientFile }) {
-  const [clientFilter, setClientFilter] = useState('');
-  const [storeRespFilter, setStoreRespFilter] = useState('');
-  const [taskRespFilter, setTaskRespFilter] = useState('');
-  const [mktFilter, setMktFilter] = useState('');
-
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || '';
-
-  const clients = [...new Set(stores.map(s => s.client))].filter(Boolean).sort();
-  const storeResps = [...new Set(stores.map(s => s.responsavel))].filter(Boolean).sort();
-  const taskResps = [...new Set(stores.flatMap(s => (s.checklists || []).map(c => c.responsavel)))].filter(Boolean).sort();
-  const mkts = [...new Set(stores.map(s => s.marketplace))].filter(Boolean).sort();
   const [menuOpenId, setMenuOpenId] = useState(null);
 
-  // --- FUNÇÕES DE AVATAR ---
   const getInitials = (name) => {
     if (!name) return '?';
     const parts = name.trim().split(' ');
@@ -26,13 +15,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
 
   const getAvatarColor = (name) => {
     if (!name) return 'from-gray-600 to-gray-700';
-    const colors = [
-      'from-blue-500 to-cyan-600',
-      'from-emerald-500 to-teal-600',
-      'from-rose-500 to-orange-600',
-      'from-pink-500 to-rose-600',
-      'from-amber-500 to-orange-500'
-    ];
+    const colors = ['from-indigo-500 to-purple-600', 'from-blue-500 to-cyan-600', 'from-emerald-500 to-teal-600', 'from-rose-500 to-orange-600', 'from-pink-500 to-rose-600', 'from-amber-500 to-orange-500'];
     let hash = 0;
     for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return colors[Math.abs(hash) % colors.length];
@@ -41,16 +24,13 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
   const Avatar = ({ name, size = 'md' }) => {
     const sizeClasses = size === 'sm' ? 'w-5 h-5 text-[9px]' : size === 'lg' ? 'w-8 h-8 text-xs' : 'w-6 h-6 text-[10px]';
     return (
-      <div 
-        className={`${sizeClasses} rounded-full bg-gradient-to-br ${getAvatarColor(name)} flex items-center justify-center font-bold text-white shadow-sm border border-white/20 shrink-0 cursor-default`}
-        title={name || 'Sem Responsável'}
-      >
+      <div className={`${sizeClasses} rounded-full bg-gradient-to-br ${getAvatarColor(name)} flex items-center justify-center font-bold text-white shadow-sm border border-white/20 shrink-0 cursor-default`} title={name || 'Sem Responsável'}>
         {getInitials(name)}
       </div>
     );
   };
 
-  // --- CAIXA DE ENTRADA (NOTIFICAÇÕES) ---
+  // INBOX: Notificações Inteligentes
   const groupedInbox = useMemo(() => {
     if (!myName) return [];
     const groups = {};
@@ -65,14 +45,10 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         if (c.feita) return false;
         const isAssignedToMe = c.responsavel === myName;
         const isOrphanAndIAmManager = (!c.responsavel || c.responsavel.trim() === '') && store.responsavel === myName;
-
         if (!isAssignedToMe && !isOrphanAndIAmManager) return false;
         if (!c.data) return true;
         if (c.data < todayStr) return true;
-        if (c.data === todayStr) {
-          if (!c.hora) return true;
-          return c.hora <= currentTimeStr;
-        }
+        if (c.data === todayStr) return !c.hora || c.hora <= currentTimeStr;
         return false;
       }).length || 0;
 
@@ -91,21 +67,15 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         if (currentStoreAccess < groupOldestAccess) groups[store.client].lastAccess = store.dataUltimoAcesso;
       }
     });
-
     return Object.values(groups).sort((a, b) => new Date(a.lastAccess || 0) - new Date(b.lastAccess || 0));
   }, [stores, myName]);
 
-  // --- AGRUPAMENTO DAS TAREFAS (COLUNAS) ---
+  // COLUNAS KANBAN (Usa diretamente as 'stores' que já vêm filtradas do App.jsx)
   const groupedTasks = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
     const groups = { atrasadas: [], hoje: [], semData: [], futuro: [] };
 
     stores.forEach(store => {
-      if (clientFilter && store.client !== clientFilter) return;
-      if (storeRespFilter && store.responsavel !== storeRespFilter) return;
-      if (mktFilter && (!store.marketplace || store.marketplace.toUpperCase() !== mktFilter.toUpperCase())) return;
-      if (taskRespFilter && !store.checklists?.some(c => c.responsavel === taskRespFilter)) return;
-
       if (!store.dataProximoAcesso) {
         groups.semData.push(store);
       } else {
@@ -121,7 +91,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     groups.futuro.sort((a, b) => new Date(a.dataProximoAcesso) - new Date(b.dataProximoAcesso));
 
     return groups;
-  }, [stores, clientFilter, storeRespFilter, taskRespFilter, mktFilter]);
+  }, [stores]);
 
   const handleQuickAction = (e, store, action) => {
     e.stopPropagation();
@@ -144,69 +114,38 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     setStores(prev => prev.map(s => s.id === store.id ? updatedStore : s));
   };
 
-  // --- COMPONENTE DO CARTÃO (GLASSMORPHISM) ---
   const TaskCard = ({ store, isHighlighted = false, highlightMessages = [] }) => {
     const tasksDone = store.checklists?.filter(c => c.feita).length || 0;
     const tasksTotal = store.checklists?.length || 0;
     const progress = tasksTotal === 0 ? 0 : (tasksDone / tasksTotal) * 100;
 
     return (
-      <div 
-        onClick={() => openTaskModal(store)}
-        className={`p-4 rounded-2xl shadow-sm cursor-pointer transition-all duration-300 group relative backdrop-blur-md ${
-          isHighlighted 
-          ? 'bg-indigo-500/10 border border-indigo-500/30 hover:bg-indigo-500/20 hover:border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.1)]' 
-          : 'bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-white/10'
-        }`}
-      >
+      <div onClick={() => openTaskModal(store)} className={`p-4 rounded-2xl shadow-sm cursor-pointer transition-all duration-300 group relative backdrop-blur-md ${isHighlighted ? 'bg-indigo-500/10 border border-indigo-500/30 hover:bg-indigo-500/20 hover:border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-white/10'}`}>
         <div className="flex justify-between items-start mb-2">
           <div className="flex-1">
-            <h4 className={`font-bold text-sm ${isHighlighted ? 'text-indigo-100' : 'text-gray-200'} flex items-center gap-2 truncate`}>
-              {store.store}
-            </h4>
-            <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mt-0.5 truncate">
-              {store.client} {store.marketplace && `• ${store.marketplace}`}
-            </p>
+            <h4 className={`font-bold text-sm ${isHighlighted ? 'text-indigo-100' : 'text-gray-200'} flex items-center gap-2 truncate`}>{store.store}</h4>
+            <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mt-0.5 truncate">{store.client} {store.marketplace && `• ${store.marketplace}`}</p>
           </div>
-
           <div className="relative ml-2 shrink-0 flex items-center gap-2">
             {store.responsavel && <Avatar name={store.responsavel} size="sm" />}
-            
-            <button 
-              onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === store.id ? null : store.id); }}
-              className="p-1 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors"
-            >
-              <MoreHorizontal size={16} />
-            </button>
-
+            <button onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === store.id ? null : store.id); }} className="p-1 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors"><MoreHorizontal size={16} /></button>
             {menuOpenId === store.id && (
               <div className="absolute right-0 top-6 mt-1 w-44 bg-gray-900 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in zoom-in-95 duration-100">
-                <button onClick={(e) => handleQuickAction(e, store, 'accessed')} className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 flex items-center gap-2 transition-colors">
-                  <Check size={14} className="text-emerald-500" /> Marcar Acesso
-                </button>
-                <button onClick={(e) => handleQuickAction(e, store, 'delay')} className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 flex items-center gap-2 transition-colors border-t border-white/5">
-                  <CalendarClock size={14} className="text-amber-500" /> Adiar P/ Amanhã
-                </button>
+                <button onClick={(e) => handleQuickAction(e, store, 'accessed')} className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 flex items-center gap-2 transition-colors"><Check size={14} className="text-emerald-500" /> Marcar Acesso</button>
+                <button onClick={(e) => handleQuickAction(e, store, 'delay')} className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 flex items-center gap-2 transition-colors border-t border-white/5"><CalendarClock size={14} className="text-amber-500" /> Adiar P/ Amanhã</button>
               </div>
             )}
           </div>
         </div>
-        
         {isHighlighted && highlightMessages.length > 0 && (
           <div className="flex flex-col gap-1.5 mb-3">
             {highlightMessages.map((msg, index) => (
-              <div key={index} className="bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded-md text-[10px] font-bold flex items-center gap-1.5 border border-indigo-500/30">
-                <Bell size={10} className={index === 0 ? "animate-pulse" : ""} /> {msg}
-              </div>
+              <div key={index} className="bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded-md text-[10px] font-bold flex items-center gap-1.5 border border-indigo-500/30"><Bell size={10} className={index === 0 ? "animate-pulse" : ""} /> {msg}</div>
             ))}
           </div>
         )}
-
         <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-gray-500">
-          <div className="flex items-center gap-1.5 group/progress relative">
-            <CheckCircle2 size={12} className={progress === 100 ? "text-emerald-500" : "text-gray-500"} /> 
-            <span>{tasksDone}/{tasksTotal} Tarefas</span>
-          </div>
+          <div className="flex items-center gap-1.5 group/progress relative"><CheckCircle2 size={12} className={progress === 100 ? "text-emerald-500" : "text-gray-500"} /> <span>{tasksDone}/{tasksTotal} Tarefas</span></div>
           <span>Últ. Acesso: {store.dataUltimoAcesso ? new Date(store.dataUltimoAcesso).toLocaleDateString('pt-BR') : 'Nunca'}</span>
         </div>
       </div>
@@ -216,8 +155,8 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
   return (
     <div className="animate-in fade-in duration-300" onClick={() => setMenuOpenId(null)}>
       
-      {/* 🌟 CABEÇALHO (GLASS) */}
-      <div className="bg-white/[0.02] backdrop-blur-xl p-4 md:p-5 rounded-2xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* 🌟 CABEÇALHO DO WORKFLOW (LIMPO, SEM FILTROS DE CAIXA) */}
+      <div className="bg-white/[0.02] backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center border border-indigo-500/30">
             <CalendarDays className="text-indigo-400" size={20} />
@@ -229,30 +168,12 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
-          {/* Menu de Filtros Condensado */}
-          <div className="flex items-center bg-black/20 rounded-xl border border-white/10 p-1">
-            <div className="px-3 border-r border-white/10 text-gray-500"><Filter size={14}/></div>
-            <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="bg-transparent text-gray-300 text-xs px-2 py-1.5 outline-none cursor-pointer border-r border-white/10 hover:bg-white/5">
-              <option value="">🏢 Clientes</option>
-              {clients.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="bg-transparent text-gray-300 text-xs px-2 py-1.5 outline-none cursor-pointer border-r border-white/10 hover:bg-white/5">
-              <option value="">🛍️ Canais</option>
-              {mkts.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <select value={storeRespFilter} onChange={e => setStoreRespFilter(e.target.value)} className="bg-transparent text-gray-300 text-xs px-2 py-1.5 outline-none cursor-pointer hover:bg-white/5">
-              <option value="">👤 Equipe</option>
-              {storeResps.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </div>
-
-          <button onClick={openBulkTaskModal} className="bg-white/10 hover:bg-white/20 text-white border border-white/10 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm">
-            <CopyPlus size={16} /> Massa
+          <button onClick={openBulkTaskModal} className="bg-white/10 hover:bg-white/20 text-white border border-white/10 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-sm">
+            <CopyPlus size={18} /> Tarefa em Massa
           </button>
         </div>
       </div>
 
-      {/* 🌟 CAIXA DE ENTRADA (NOTIFICAÇÕES GLASS) */}
       {groupedInbox.length > 0 && (
         <div className="mb-6 bg-indigo-500/5 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
@@ -260,17 +181,12 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
             <Bell className="text-indigo-400 animate-pulse" size={18} />
             <h3 className="text-base font-bold text-white tracking-wide">Radar de Atenção ({groupedInbox.length} Clientes)</h3>
           </div>
-          
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {groupedInbox.map(group => (
               <div key={group.clientName} className="bg-white/[0.02] border border-white/5 hover:border-indigo-500/30 rounded-2xl p-4 flex flex-col shadow-sm transition-all">
                 <div className="flex justify-between items-center mb-3">
-                  <h4 onClick={() => openClientFile(group.clientName)} className="font-bold text-white text-sm cursor-pointer hover:text-indigo-300 transition-colors truncate">
-                    {group.clientName}
-                  </h4>
-                  <span className="bg-indigo-500/20 text-indigo-300 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase border border-indigo-500/30">
-                    {group.stores.length} Lojas
-                  </span>
+                  <h4 onClick={() => openClientFile(group.clientName)} className="font-bold text-white text-sm cursor-pointer hover:text-indigo-300 transition-colors truncate">{group.clientName}</h4>
+                  <span className="bg-indigo-500/20 text-indigo-300 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase border border-indigo-500/30">{group.stores.length} Lojas</span>
                 </div>
                 <div className="flex flex-col gap-2">
                   {group.stores.map(store => <TaskCard key={`inbox-${store.id}`} store={store} isHighlighted={true} highlightMessages={store.highlightMessages} />)}
@@ -281,10 +197,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         </div>
       )}
 
-      {/* 🌟 COLUNAS KANBAN (GLASS) */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
-        
-        {/* ATRASADAS */}
         <div className="bg-red-500/5 backdrop-blur-sm p-4 rounded-2xl border border-red-500/10 flex flex-col gap-3 min-h-[400px]">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5"><AlertCircle size={14} /> Atrasadas</h3>
@@ -292,8 +205,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
           </div>
           {groupedTasks.atrasadas.map(s => <TaskCard key={s.id} store={s} />)}
         </div>
-
-        {/* HOJE */}
         <div className="bg-blue-500/5 backdrop-blur-sm p-4 rounded-2xl border border-blue-500/10 flex flex-col gap-3 min-h-[400px]">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5"><Clock size={14} /> Para Hoje</h3>
@@ -301,8 +212,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
           </div>
           {groupedTasks.hoje.map(s => <TaskCard key={s.id} store={s} />)}
         </div>
-
-        {/* AGENDADAS */}
         <div className="bg-white/[0.02] backdrop-blur-sm p-4 rounded-2xl border border-white/5 flex flex-col gap-3 min-h-[400px]">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5"><CalendarDays size={14} /> Agendadas</h3>
@@ -310,8 +219,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
           </div>
           {groupedTasks.futuro.map(s => <TaskCard key={s.id} store={s} />)}
         </div>
-
-        {/* SEM DATA */}
         <div className="bg-white/[0.01] backdrop-blur-sm p-4 rounded-2xl border border-white/[0.03] flex flex-col gap-3 min-h-[400px]">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5" title="Sem agendamento futuro"><CalendarClock size={14} /> Ociosas</h3>
@@ -319,7 +226,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
           </div>
           {groupedTasks.semData.map(s => <TaskCard key={s.id} store={s} />)}
         </div>
-
       </div>
     </div>
   );

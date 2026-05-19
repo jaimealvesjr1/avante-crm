@@ -23,11 +23,13 @@ export default function AuthScreen({ handleLogin, email, setEmail, password, set
         
         {/* LOGO */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl flex items-center justify-center shadow-lg border border-white/20 mb-3">
-            <TrendingUp size={24} className="text-white" />
-          </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Avante<span className="text-blue-700">CRM</span></h2>
-          <p className="text-xs text-gray-400 mt-1 uppercase tracking-widest font-semibold">Central de Inteligência Estratégica</p>
+          <img 
+            src="/logo.jpg" 
+            alt="Avante CRM" 
+            className="h-20 w-auto object-contain mb-4 rounded-2xl shadow-lg border border-white/10" 
+          />
+          <h2 className="text-2xl font-bold text-white tracking-tight">Avante<span className="text-indigo-400">CRM</span></h2>
+          <p className="text-xs text-gray-400 mt-1 uppercase tracking-widest font-semibold text-center">Central de Inteligência Estratégica</p>
         </div>
 
         {/* MENSAGEM DE ERRO (CASO EXISTA) */}
