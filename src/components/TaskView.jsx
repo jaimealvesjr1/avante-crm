@@ -44,8 +44,8 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
       const delegatedTasksCount = store.checklists?.filter(c => {
         if (c.feita) return false;
         const isAssignedToMe = c.responsavel === myName;
-        const isOrphanAndIAmManager = (!c.responsavel || c.responsavel.trim() === '') && store.responsavel === myName;
-        if (!isAssignedToMe && !isOrphanAndIAmManager) return false;
+        if (!isAssignedToMe) return false;
+        
         if (!c.data) return true;
         if (c.data < todayStr) return true;
         if (c.data === todayStr) return !c.hora || c.hora <= currentTimeStr;
@@ -53,11 +53,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
       }).length || 0;
 
       if (delegatedTasksCount > 0) notificationReasons.push(`${delegatedTasksCount} tarefa(s) pendente(s)`);
-
-      if (store.responsavel === myName && store.taskLogs && store.taskLogs.length > 0) {
-        const lastLog = store.taskLogs[store.taskLogs.length - 1];
-        if (lastLog.author !== myName) notificationReasons.push(`Ação de ${lastLog.author}`);
-      }
 
       if (notificationReasons.length > 0) {
         if (!groups[store.client]) groups[store.client] = { clientName: store.client, stores: [], lastAccess: store.dataUltimoAcesso || 0 };
@@ -127,7 +122,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
             <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mt-0.5 truncate">{store.client} {store.marketplace && `• ${store.marketplace}`}</p>
           </div>
           <div className="relative ml-2 shrink-0 flex items-center gap-2">
-            {store.responsavel && <Avatar name={store.responsavel} size="sm" />}
             <button onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === store.id ? null : store.id); }} className="p-1 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors"><MoreHorizontal size={16} /></button>
             {menuOpenId === store.id && (
               <div className="absolute right-0 top-6 mt-1 w-44 bg-gray-900 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in zoom-in-95 duration-100">

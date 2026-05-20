@@ -41,7 +41,6 @@ export default function App() {
   const [sortBy, setSortBy] = useState('name');
   const [statusFilter, setStatusFilter] = useState('all');
   const [mktFilter, setMktFilter] = useState('all');
-  const [respFilter, setRespFilter] = useState('all');
 
   const [expandedClients, setExpandedClients] = useState([]);
   const [bulkTaskModalOpen, setBulkTaskModalOpen] = useState(false);
@@ -115,7 +114,6 @@ export default function App() {
     }).length;
   }, [stores, currentUserData, localToday, currentTimeStr]);
 
-  const uniqueResps = useMemo(() => [...new Set(stores.map(s => s.responsavel))].filter(Boolean).sort(), [stores]);
   const uniqueMkts = useMemo(() => [...new Set(stores.map(s => s.marketplace?.toUpperCase()))].filter(Boolean).sort(), [stores]);
 
   useEffect(() => {
@@ -160,6 +158,52 @@ export default function App() {
 
     return () => { unsubStores(); unsubSettings(); unsubEquipe(); };
   }, [user]);
+
+useEffect(() => {
+    if (stores.length === 0 || !canEdit) return;
+
+    const cleanOldTasks = async () => {
+      const now = new Date();
+      // Calcula a data de há exatos 7 dias atrás
+      const sevenDaysAgo = new Date(now.setDate(now.getDate() - 7));
+      const batch = writeBatch(db);
+      let hasUpdates = false;
+
+      stores.forEach(store => {
+        if (store.checklists && store.checklists.length > 0) {
+          const originalLength = store.checklists.length;
+          
+          // Filtramos as tarefas que queremos MANTÊR
+          const validChecklists = store.checklists.filter(task => {
+            if (!task.feita) return true;
+            
+            if (!task.data) return true; 
+            
+            const taskDate = new Date(task.data);
+            // Mantém a tarefa se ela for mais RECENTE que 7 dias atrás
+            return taskDate >= sevenDaysAgo;
+          });
+
+          if (validChecklists.length !== originalLength) {
+            hasUpdates = true;
+            const storeRef = doc(db, "stores", store.id.toString());
+            batch.update(storeRef, { checklists: validChecklists });
+          }
+        }
+      });
+
+      if (hasUpdates) {
+        try {
+          await batch.commit();
+          console.log("Limpeza de tarefas antigas concluída com sucesso!");
+        } catch (error) {
+          console.error("Erro ao limpar tarefas antigas:", error);
+        }
+      }
+    };
+
+    cleanOldTasks();
+  }, [stores.length, canEdit]);
 
   const updateStoreInCloud = (updatedStore) => {
     setDoc(doc(db, "stores", updatedStore.id.toString()), updatedStore)
@@ -569,6 +613,8 @@ export default function App() {
     let totalTarget = 0, totalProjected = 0, totalGlobalAds = 0;
     let totalOrders = 0, totalUnits = 0, totalCurrentRevenue = 0;
     let totalAgencyRevenue = 0, totalAgencyRevenueActual = 0, agencyTarget = 0; 
+    
+    const mktPerformance = {};
 
     const processedStores = stores.map(store => {
       const growthRate = store.customGrowth !== undefined ? Number(store.customGrowth) : globalGrowth;
@@ -590,8 +636,7 @@ export default function App() {
       const matchSearch = !searchTerm || store.client.toLowerCase().includes(searchTerm.toLowerCase()) || store.store.toLowerCase().includes(searchTerm.toLowerCase());
       const matchStatus = statusFilter === 'all' || store.status === statusFilter;
       const matchMkt = mktFilter === 'all' || (store.marketplace && store.marketplace.toUpperCase() === mktFilter);
-      const matchResp = respFilter === 'all' || store.responsavel === respFilter;
-      return matchSearch && matchStatus && matchMkt && matchResp;
+      return matchSearch && matchStatus && matchMkt;
     });
 
     const groups = {};
@@ -602,6 +647,10 @@ export default function App() {
       totalGlobalAds += (s.adsInvestment || 0);
       totalOrders += (s.orders || 0);
       totalUnits += (s.units || 0);
+
+      const mktName = s.marketplace ? s.marketplace.toUpperCase() : 'N/A';
+      if (!mktPerformance[mktName]) mktPerformance[mktName] = { name: mktName, revenue: 0 };
+      mktPerformance[mktName].revenue += (Number(s.currentRevenue) || 0);
 
       if (!groups[s.client]) groups[s.client] = { client: s.client, stores: [], totalGmvBase: 0, totalGmvTarget: 0, totalCurrentRevenue: 0, totalProjectedGmv: 0, totalAds: 0, totalOrders: 0, totalUnits: 0 };
       groups[s.client].stores.push(s);
@@ -647,15 +696,18 @@ export default function App() {
       return b.totalCurrentRevenue - a.totalCurrentRevenue;
     });
 
+    const rankingMarketplaces = Object.values(mktPerformance).sort((a, b) => b.revenue - a.revenue);
+
     return { 
       groupedClients, 
       flatFilteredStores: filteredStores, 
       totalTarget, totalProjected, totalCurrentRevenue, 
       totalAgencyRevenue, totalAgencyRevenueActual, agencyTarget, 
       totalGlobalAds, totalOrders, totalUnits,
-      globalRoas: totalGlobalAds > 0 ? (totalCurrentRevenue / totalGlobalAds).toFixed(1) : 0 
+      globalRoas: totalGlobalAds > 0 ? (totalCurrentRevenue / totalGlobalAds).toFixed(1) : 0,
+      rankingMarketplaces
     };
-  }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, respFilter]);
+  }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter]);
 
   const pieData = useMemo(() => dashboardData.groupedClients.map(g => ({ name: g.client, value: g.totalProjectedGmv })).filter(g => g.value > 0), [dashboardData]);
   const roasData = useMemo(() => dashboardData.groupedClients.filter(g => g.totalAds > 0).map(g => ({ name: g.client, roas: Number(g.roas) })).sort((a, b) => b.roas - a.roas), [dashboardData]);
@@ -795,11 +847,6 @@ export default function App() {
                 <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors border-r border-white/10">
                   <option value="all" className="bg-gray-900 text-white">🛍️ CANAIS</option>
                   {uniqueMkts.map(m => <option key={m} value={m} className="bg-gray-900 text-white">{m}</option>)}
-                </select>
-                 
-                <select value={respFilter} onChange={e => setRespFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors">
-                  <option value="all" className="bg-gray-900 text-white">👤 EQUIPE</option>
-                  {uniqueResps.map(r => <option key={r} value={r} className="bg-gray-900 text-white">{r}</option>)}
                 </select>
               </div>
               

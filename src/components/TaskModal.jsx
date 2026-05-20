@@ -304,21 +304,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 {store.client} {store.marketplace && `• ${store.marketplace}`}
               </p>
             </div>
-            
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5">
-                <Avatar name={storeResp} size="sm" />
-                <select 
-                  value={storeResp} 
-                  onChange={handleStoreRespChange}
-                  className="bg-transparent text-xs text-gray-300 outline-none w-28 cursor-pointer font-semibold"
-                >
-                  <option value="">Sem Resp.</option>
-                  {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
-                </select>
-              </div>
-              <button onClick={onClose} className="md:hidden p-2 hover:bg-white/10 rounded-full transition-colors border border-transparent"><X size={20} className="text-gray-400" /></button>
-            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-5 md:p-6 space-y-8 custom-scrollbar">

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, PieChartIcon } from 'lucide-react';
+import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, PieChartIcon, Users } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line, Legend } from 'recharts';
 
 export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieData, roasData, COLORS, currentDay, daysInMonth }) {
@@ -280,6 +280,29 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
               <Line yAxisId="right" type="monotone" dataKey="agencyRevenue" name="Receita Avante" stroke="#A855F7" strokeWidth={4} dot={{ r: 4, strokeWidth: 2, fill: '#0B0F19' }} activeDot={{ r: 6, fill: '#A855F7' }} />
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* 🌟 GRÁFICO DE RANKING (MARKETPLACE - OCUPANDO LARGURA TOTAL) */}
+      <div className="w-full mb-6">
+        <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+              <ShoppingCart size={18} className="text-emerald-400"/>
+            </div>
+            <h3 className="text-base font-bold text-white tracking-wide">Faturamento por Marketplace</h3>
+          </div>
+          <div className="h-80">
+            <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
+              <BarChart data={dashboardData.rankingMarketplaces} layout="vertical" margin={{ left: 10, right: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={11} width={120} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} contentStyle={glassTooltipStyle} itemStyle={{ color: '#fff', fontWeight: 'bold' }} formatter={(value) => formatCurrency(value)} />
+                <Bar dataKey="revenue" fill="#10B981" radius={[0, 6, 6, 0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
