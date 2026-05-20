@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
@@ -37,9 +37,8 @@ export default function App() {
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [currentDay, setCurrentDay] = useState(new Date().getDate());
   
-  // === ESTADOS DO FILTRO GLOBAL (A-Z como padrão) ===
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('name'); // <-- Inicializa por Nome A-Z
+  const [sortBy, setSortBy] = useState('name');
   const [statusFilter, setStatusFilter] = useState('all');
   const [mktFilter, setMktFilter] = useState('all');
   const [respFilter, setRespFilter] = useState('all');
@@ -690,7 +689,7 @@ export default function App() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
               <img src="/logo.jpg" alt="Avante CRM" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
-              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-indigo-400">CRM</span></span>
+              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-sky-800">CRM</span></span>
             </div>
             <div className="hidden md:flex items-center gap-2 border-l border-white/10 pl-6">
               <button onClick={() => setIsBatchMode(true)} className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-inner" title="Apuração Rápida em Massa">
@@ -719,8 +718,8 @@ export default function App() {
               )}
             </button>
             {canEdit && (
-              <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-                Equipe
+              <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                <Shield size={16} /> <span className="hidden md:inline">Equipe</span>
               </button>
             )}
           </nav>
@@ -733,16 +732,16 @@ export default function App() {
               </div>
             )}
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              <div className="hidden sm:flex items-center gap-2 bg-white/5 py-1 pl-1 pr-4 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/20">
-                  {(currentUserData?.nomeCompleto || currentUserData?.nome || user?.email || 'U').charAt(0).toUpperCase()}
+              <div className="flex items-center gap-2 bg-white/5 py-1 pl-1 pr-4 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
+                <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${currentUserData?.avatarColor || 'from-indigo-500 to-purple-600'} flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/20`}>
+                  {(currentUserData?.nomeCompleto || 'U').charAt(0).toUpperCase()}
                 </div>
                 <div>
                   <p className="text-[11px] font-bold text-white leading-tight">
-                    {currentUserData?.nomeCompleto?.split(' ')[0] || currentUserData?.nome || user?.email?.split('@')[0]}
+                    {currentUserData?.nomeCompleto || 'Usuário'}
                   </p>
                   <p className="text-[9px] text-indigo-300 uppercase tracking-widest leading-tight">
-                    {canEdit ? 'Gestor' : 'Estrategista'}
+                    {currentUserData?.role || 'Operacional'}
                   </p>
                 </div>
               </div>
@@ -872,6 +871,7 @@ export default function App() {
             updateStoreInCloud={updateStoreInCloud}
             setStores={setStores}
             openClientFile={openClientFile}
+            teamMembers={teamMembers}
           />
         )}
       </main>

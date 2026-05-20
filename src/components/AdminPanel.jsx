@@ -56,18 +56,15 @@ export default function AdminPanel({
   };
 
   return (
-    <div className="bg-white/[0.02] backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] animate-in fade-in duration-300">
-      
-      {/* CABEÇALHO (GLASS) */}
-      <div className="flex items-center gap-4 mb-8 border-b border-white/10 pb-6 relative overflow-hidden">
-        <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 text-indigo-400 shadow-inner z-10">
-          <Shield size={24} />
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="bg-white/[0.02] backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex items-center gap-4">
+        <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 text-indigo-400 shadow-inner">
+          <Shield size={24} /> 
         </div>
-        <div className="z-10">
+        <div>
           <h2 className="text-xl font-bold text-white tracking-wide">Painel da Equipe</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Crie novos acessos, defina permissões e personalize os perfis.</p>
+          <p className="text-sm text-gray-400 mt-0.5">Gestão de acessos e personalização de perfis.</p>
         </div>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl -mr-20 -mt-20"></div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
