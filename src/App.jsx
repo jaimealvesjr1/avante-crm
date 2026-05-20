@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
@@ -24,6 +24,8 @@ const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899'
 export default function App() {
   const [stores, setStores] = useState(initialStores);
   const [isDbLoading, setIsDbLoading] = useState(true);
+  const [clientTasks, setClientTasks] = useState([]);
+  const [clientTaskModalOpen, setClientTaskModalOpen] = useState(false);
 
   const [activeView, setActiveView] = useState(() => {
     return localStorage.getItem('avante_tela_atual') || 'dashboard';
@@ -37,9 +39,8 @@ export default function App() {
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [currentDay, setCurrentDay] = useState(new Date().getDate());
   
-  // === ESTADOS DO FILTRO GLOBAL (A-Z como padrão) ===
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('name'); // <-- Inicializa por Nome A-Z
+  const [sortBy, setSortBy] = useState('name');
   const [statusFilter, setStatusFilter] = useState('all');
   const [mktFilter, setMktFilter] = useState('all');
   const [respFilter, setRespFilter] = useState('all');
@@ -101,23 +102,30 @@ export default function App() {
   const localToday = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
   const currentTimeStr = now.toTimeString().substring(0, 5);
 
+  const unsubTasks = onSnapshot(collection(db, "client_tasks"), (snapshot) => {
+    setClientTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  });
+
   const globalPendingTasks = useMemo(() => {
     if (!currentUserData) return 0;
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0];
     
-    return stores.flatMap(s => s.checklists || []).filter(c => {
+    const storeTasksCount = stores.flatMap(s => s.checklists || []).filter(c => {
       if (c.feita) return false;
-      const isAssignedToMe = c.responsavel === myName;
-      if (!isAssignedToMe) return false; 
-      if (!c.data) return true;
-      if (c.data < localToday) return true; 
-      if (c.data === localToday) return !c.hora || c.hora <= currentTimeStr;
-      return false;
+      return c.responsavel === myName && (!c.data || c.data <= localToday);
     }).length;
-  }, [stores, currentUserData, localToday, currentTimeStr]);
+
+    const clientTasksCount = clientTasks.filter(c => {
+      if (c.feita) return false;
+      return c.responsavel === myName && (!c.data || c.data <= localToday);
+    }).length;
+
+    return storeTasksCount + clientTasksCount;
+  }, [stores, clientTasks, currentUserData, localToday]);
 
   const uniqueResps = useMemo(() => [...new Set(stores.map(s => s.responsavel))].filter(Boolean).sort(), [stores]);
   const uniqueMkts = useMemo(() => [...new Set(stores.map(s => s.marketplace?.toUpperCase()))].filter(Boolean).sort(), [stores]);
+  const clients = useMemo(() => [...new Set(stores.map(s => s.client))].filter(Boolean).sort(), [stores]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -315,7 +323,6 @@ export default function App() {
     toast.success(`Tarefa replicada em ${storeIds.length} loja(s)!`);
   };
 
-  // === NOVO SISTEMA DE LANÇAMENTO EM MASSA BLINDADO (Resolve o bug do "1.000") ===
   const handleSaveBatch = async (batchDay, formData) => {
     const batch = writeBatch(db);
     let localStores = [...stores];
@@ -394,6 +401,45 @@ export default function App() {
     await batch.commit();
     setStores(localStores);
     toast.success(`Apuração do dia ${batchDay} salva na nuvem!`);
+  };
+
+  const handleSaveClientTask = async (taskData) => {
+    try {
+      const taskRef = doc(collection(db, "client_tasks"));
+      await setDoc(taskRef, {
+        client: taskData.client.toUpperCase().trim(),
+        texto: taskData.texto,
+        feita: false,
+        responsavel: taskData.responsavel || 'Equipe',
+        data: taskData.data || '',
+        criadoPor: currentUserData?.nomeCompleto || 'Usuário',
+        dataCriacao: new Date().toLocaleDateString('pt-BR')
+      });
+      toast.success("Tarefa de cliente criada com sucesso!");
+    } catch (e) {
+      toast.error("Erro ao criar tarefa corporativa.");
+    }
+  };
+
+  const handleToggleClientTask = async (taskId, currentStatus) => {
+    try {
+      const taskRef = doc(db, "client_tasks", taskId);
+      await setDoc(taskRef, { feita: !currentStatus }, { merge: true });
+      toast.success(!currentStatus ? "✅ Tarefa concluída!" : "Tarefa reaberta!");
+    } catch (e) {
+      toast.error("Erro ao atualizar tarefa.");
+    }
+  };
+
+  const handleDeleteClientTask = async (taskId) => {
+    if (window.confirm("Excluir definitivamente esta tarefa corporativa?")) {
+      try {
+        await deleteDoc(doc(db, "client_tasks", taskId));
+        toast.success("Tarefa excluída.");
+      } catch (e) {
+        toast.error("Erro ao excluir tarefa.");
+      }
+    }
   };
 
   const deleteClient = async (clientName) => { 
@@ -690,7 +736,7 @@ export default function App() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
               <img src="/logo.jpg" alt="Avante CRM" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
-              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-indigo-400">CRM</span></span>
+              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-sky-800">CRM</span></span>
             </div>
             <div className="hidden md:flex items-center gap-2 border-l border-white/10 pl-6">
               <button onClick={() => setIsBatchMode(true)} className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-inner" title="Apuração Rápida em Massa">
@@ -719,8 +765,8 @@ export default function App() {
               )}
             </button>
             {canEdit && (
-              <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-                Equipe
+              <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                <Shield size={16} /> <span className="hidden md:inline">Equipe</span>
               </button>
             )}
           </nav>
@@ -733,16 +779,16 @@ export default function App() {
               </div>
             )}
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              <div className="hidden sm:flex items-center gap-2 bg-white/5 py-1 pl-1 pr-4 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/20">
-                  {(currentUserData?.nomeCompleto || currentUserData?.nome || user?.email || 'U').charAt(0).toUpperCase()}
+              <div className="flex items-center gap-2 bg-white/5 py-1 pl-1 pr-4 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
+                <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${currentUserData?.avatarColor || 'from-indigo-500 to-purple-600'} flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/20`}>
+                  {(currentUserData?.nomeCompleto || 'U').charAt(0).toUpperCase()}
                 </div>
                 <div>
                   <p className="text-[11px] font-bold text-white leading-tight">
-                    {currentUserData?.nomeCompleto?.split(' ')[0] || currentUserData?.nome || user?.email?.split('@')[0]}
+                    {currentUserData?.nomeCompleto || 'Usuário'}
                   </p>
                   <p className="text-[9px] text-indigo-300 uppercase tracking-widest leading-tight">
-                    {canEdit ? 'Gestor' : 'Estrategista'}
+                    {currentUserData?.role || 'Operacional'}
                   </p>
                 </div>
               </div>
@@ -865,6 +911,11 @@ export default function App() {
         {activeView === 'rotinas' && (
           <TaskView 
             stores={dashboardData.flatFilteredStores} 
+            clientTasks={clientTasks}
+            onToggleClientTask={handleToggleClientTask}  
+            onDeleteClientTask={handleDeleteClientTask}  
+            onSaveClientTask={handleSaveClientTask}  
+            clients={clients}
             openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
             openBulkTaskModal={() => setBulkTaskModalOpen(true)}
             currentUserData={currentUserData}
@@ -872,6 +923,7 @@ export default function App() {
             updateStoreInCloud={updateStoreInCloud}
             setStores={setStores}
             openClientFile={openClientFile}
+            teamMembers={teamMembers}
           />
         )}
       </main>

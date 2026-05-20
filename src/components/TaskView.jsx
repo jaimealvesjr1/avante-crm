@@ -1,10 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Bell, CopyPlus, Check, CalendarClock } from 'lucide-react';
+import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Bell, CopyPlus, Check, CalendarClock, Briefcase, Plus, Trash2, User } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores, openClientFile }) {
+export default function TaskView({ 
+  stores, clientTasks = [], onToggleClientTask, onDeleteClientTask, onSaveClientTask, clients = [],
+  openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores, openClientFile, teamMembers 
+}) {
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || '';
   const [menuOpenId, setMenuOpenId] = useState(null);
+
+  const [showNewClientTask, setShowNewClientTask] = useState(false);
+  const [cTaskText, setCTaskText] = useState('');
+  const [cTaskClient, setCTaskClient] = useState('');
+  const [cTaskResp, setCTaskResp] = useState('');
+  const [cTaskDate, setCTaskDate] = useState('');
+
+  const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
 
   const getInitials = (name) => {
     if (!name) return '?';
@@ -30,7 +41,14 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     );
   };
 
-  // INBOX: Notificações Inteligentes
+  const handleCreateClientTask = (e) => {
+    e.preventDefault();
+    if (!cTaskText.trim() || !cTaskClient) return toast.error("Preencha a descrição e selecione o cliente.");
+    onSaveClientTask({ texto: cTaskText, client: cTaskClient, responsavel: cTaskResp, data: cTaskDate });
+    setCTaskText(''); setCTaskClient(''); setCTaskResp(''); setCTaskDate('');
+    setShowNewClientTask(false);
+  };
+
   const groupedInbox = useMemo(() => {
     if (!myName) return [];
     const groups = {};
@@ -70,7 +88,7 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     return Object.values(groups).sort((a, b) => new Date(a.lastAccess || 0) - new Date(b.lastAccess || 0));
   }, [stores, myName]);
 
-  // COLUNAS KANBAN (Usa diretamente as 'stores' que já vêm filtradas do App.jsx)
+  // Filtra e organiza as colunas Kanban das lojas tradicionais
   const groupedTasks = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
     const groups = { atrasadas: [], hoje: [], semData: [], futuro: [] };
@@ -92,6 +110,11 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
 
     return groups;
   }, [stores]);
+
+  // Filtra as Tarefas de Cliente Pendentes para a visão geral
+  const pendingClientTasks = useMemo(() => {
+    return clientTasks.filter(t => !t.feita).sort((a,b) => (a.data || '9999') > (b.data || '9999') ? 1 : -1);
+  }, [clientTasks]);
 
   const handleQuickAction = (e, store, action) => {
     e.stopPropagation();
@@ -155,8 +178,8 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
   return (
     <div className="animate-in fade-in duration-300" onClick={() => setMenuOpenId(null)}>
       
-      {/* 🌟 CABEÇALHO DO WORKFLOW (LIMPO, SEM FILTROS DE CAIXA) */}
-      <div className="bg-white/[0.02] backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* CABEÇALHO PADRONIZADO GLASS */}
+      <div className="bg-white/[0.02] backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center border border-indigo-500/30">
             <CalendarDays className="text-indigo-400" size={20} />
@@ -174,23 +197,28 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         </div>
       </div>
 
-      {groupedInbox.length > 0 && (
-        <div className="mb-6 bg-indigo-500/5 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 shadow-lg relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
+      {/* BLOCO CENTRALIZADO DE TAREFAS DE CLIENTES */}
+      {pendingClientTasks.length > 0 && (
+        <div className="mb-6 bg-emerald-500/5 backdrop-blur-md border border-emerald-500/20 rounded-2xl p-5 shadow-lg">
           <div className="flex items-center gap-2 mb-4">
-            <Bell className="text-indigo-400 animate-pulse" size={18} />
-            <h3 className="text-base font-bold text-white tracking-wide">Radar de Atenção ({groupedInbox.length} Clientes)</h3>
+            <Briefcase className="text-emerald-400" size={18} />
+            <h3 className="text-base font-bold text-white tracking-wide">Pendências Corporativas (Clientes)</h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {groupedInbox.map(group => (
-              <div key={group.clientName} className="bg-white/[0.02] border border-white/5 hover:border-indigo-500/30 rounded-2xl p-4 flex flex-col shadow-sm transition-all">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 onClick={() => openClientFile(group.clientName)} className="font-bold text-white text-sm cursor-pointer hover:text-indigo-300 transition-colors truncate">{group.clientName}</h4>
-                  <span className="bg-indigo-500/20 text-indigo-300 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase border border-indigo-500/30">{group.stores.length} Lojas</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {pendingClientTasks.map(task => (
+              <div key={task.id} className="bg-white/[0.02] border border-white/5 p-3.5 rounded-xl flex items-start justify-between gap-3 shadow-sm hover:border-emerald-500/30 transition-all">
+                <div className="flex items-start gap-3 flex-1">
+                  <input type="checkbox" checked={task.feita} onChange={() => onToggleClientTask(task.id, task.feita)} className="w-4 h-4 mt-0.5 rounded border-white/20 bg-black/40 text-emerald-500 cursor-pointer" />
+                  <div>
+                    <p className="text-xs text-gray-200 font-medium leading-relaxed">{task.texto}</p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <span onClick={() => openClientFile(task.client)} className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded cursor-pointer uppercase tracking-wider">{task.client}</span>
+                      {task.data && <span className="text-[9px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded font-medium">📅 {task.data.split('-').reverse().join('/')}</span>}
+                      {task.responsavel && <span className="text-[9px] text-gray-400 bg-white/5 px-2 py-0.5 rounded">👤 {task.responsavel}</span>}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-2">
-                  {group.stores.map(store => <TaskCard key={`inbox-${store.id}`} store={store} isHighlighted={true} highlightMessages={store.highlightMessages} />)}
-                </div>
+                <button onClick={() => onDeleteClientTask(task.id)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={12}/></button>
               </div>
             ))}
           </div>
