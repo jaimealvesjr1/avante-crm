@@ -259,48 +259,62 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
         </div>
       </div>
 
-      {/* 🌟 GRÁFICO DE COMPARAÇÃO MENSAL (DUAS LINHAS - GLASS) */}
-      <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-purple-500/10 rounded-xl border border-purple-500/20"><Activity size={18} className="text-purple-400"/></div>
-          <h3 className="text-base font-bold text-white tracking-wide">Evolução: Receita Clientes vs Agência</h3>
-        </div>
-        <div className="h-96">
-          <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
-            <LineChart data={monthlyComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-              <XAxis dataKey="month" stroke="#6B7280" fontSize={11} tickMargin={10} axisLine={false} tickLine={false} />
-              {/* Eixo Esquerdo - Faturamento Clientes */}
-              <YAxis yAxisId="left" stroke="#3B82F6" fontSize={11} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
-              {/* Eixo Direito Compactado - Receita Avante */}
-              <YAxis yAxisId="right" orientation="right" stroke="#A855F7" fontSize={11} tickFormatter={(v) => v >= 1000 ? `R$${(v/1000).toFixed(0)}k` : `R$${v}`} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={glassTooltipStyle} itemStyle={{ fontWeight: 'bold' }} formatter={(v) => formatCurrency(v)} />
-              <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px', color: '#9CA3AF' }} iconType="circle" />
-              <Line yAxisId="left" type="monotone" dataKey="clientRevenue" name="Receita Global Clientes" stroke="#3B82F6" strokeWidth={4} dot={{ r: 4, strokeWidth: 2, fill: '#0B0F19' }} activeDot={{ r: 6, fill: '#3B82F6' }} />
-              <Line yAxisId="right" type="monotone" dataKey="agencyRevenue" name="Receita Avante" stroke="#A855F7" strokeWidth={4} dot={{ r: 4, strokeWidth: 2, fill: '#0B0F19' }} activeDot={{ r: 6, fill: '#A855F7' }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* 🌟 GRÁFICO DE RANKING (MARKETPLACE - OCUPANDO LARGURA TOTAL) */}
-      <div className="w-full mb-6">
-        <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
+      {/* 🌟 MARKETPLACE (1/4) VS EVOLUÇÃO (3/4) */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        
+        {/* COLUNA 1/4: FATURAMENTO POR MARKETPLACE (COLUNAS VERTICAIS) */}
+        <div className="lg:col-span-1 bg-white/[0.02] backdrop-blur-xl p-5 rounded-3xl border border-white/5 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center gap-3 mb-4">
             <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
-              <ShoppingCart size={18} className="text-emerald-400"/>
+              <ShoppingCart size={16} className="text-emerald-400"/>
             </div>
-            <h3 className="text-base font-bold text-white tracking-wide">Faturamento por Marketplace</h3>
+            <h3 className="text-sm font-bold text-white tracking-wide">Marketplaces</h3>
           </div>
-          <div className="h-80">
-            <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
-              <BarChart data={dashboardData.rankingMarketplaces} layout="vertical" margin={{ left: 10, right: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={11} width={120} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} contentStyle={glassTooltipStyle} itemStyle={{ color: '#fff', fontWeight: 'bold' }} formatter={(value) => formatCurrency(value)} />
-                <Bar dataKey="revenue" fill="#10B981" radius={[0, 6, 6, 0]} barSize={20} />
+          
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dashboardData.rankingMarketplaces} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="name" stroke="#6B7280" fontSize={10} tickLine={false} />
+                <YAxis stroke="#6B7280" fontSize={10} tickFormatter={(v) => v >= 1000 ? `R$${(v/1000).toFixed(0)}k` : `R$${v}`} axisLine={false} tickLine={false} />
+                
+                <Tooltip 
+                  cursor={{ fill: 'rgba(255,255,255,0.02)' }} 
+                  contentStyle={glassTooltipStyle} 
+                  itemStyle={{ color: '#fff', fontWeight: 'bold' }} 
+                  formatter={(value) => formatCurrency(value)} 
+                />
+                
+                <Bar dataKey="revenue" radius={[6, 6, 0, 0]} barSize={24}>
+                  {dashboardData.rankingMarketplaces.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Bar>
               </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* COLUNA 3/4: EVOLUÇÃO EVOLUÇÃO RECEITA CLIENTES VS AGÊNCIA */}
+        <div className="lg:col-span-3 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-purple-500/10 rounded-xl border border-purple-500/20">
+              <Activity size={18} className="text-purple-400"/>
+            </div>
+            <h3 className="text-base font-bold text-white tracking-wide">Evolução: Receita Clientes vs Agência</h3>
+          </div>
+          <div className="h-72">
+            <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
+              <LineChart data={monthlyComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="month" stroke="#6B7280" fontSize={11} tickMargin={10} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="left" stroke="#3B82F6" fontSize={11} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="right" orientation="right" stroke="#A855F7" fontSize={11} tickFormatter={(v) => v >= 1000 ? `R$${(v/1000).toFixed(0)}k` : `R$${v}`} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={glassTooltipStyle} itemStyle={{ fontWeight: 'bold' }} formatter={(v) => formatCurrency(v)} />
+                <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '12px' }} iconType="circle" />
+                <Line yAxisId="left" type="monotone" dataKey="clientRevenue" name="Global Clientes" stroke="#3B82F6" strokeWidth={4} dot={{ r: 4 }} />
+                <Line yAxisId="right" type="monotone" dataKey="agencyRevenue" name="Receita Avante" stroke="#A855F7" strokeWidth={4} dot={{ r: 4 }} />
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </div>

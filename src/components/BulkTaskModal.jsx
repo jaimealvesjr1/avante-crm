@@ -114,7 +114,6 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               </select>
             </div>
 
-            {/* NOVOS CAMPOS DE DATA E RECORRÊNCIA */}
             <div className="flex flex-wrap items-center gap-2">
               <input type="date" value={taskDate} onChange={(e) => setTaskDate(e.target.value)} className="bg-gray-800 border border-gray-600 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" title="Data da Tarefa" />
               <input type="time" value={taskTime} onChange={(e) => setTaskTime(e.target.value)} className="bg-gray-800 border border-gray-600 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" title="Hora" />

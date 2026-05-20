@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, ShoppingCart, Bell, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, Plus } from 'lucide-react';
+import { Clock, X, CheckSquare, ShoppingCart, Bell, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, Plus, FileText } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 
@@ -11,6 +11,19 @@ export default function ClientFileModal({
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   
+  const [actionType, setActionType] = useState('note');
+  const [targetScope, setTargetScope] = useState('all');
+  const [actionText, setActionText] = useState('');
+  const [taskResp, setTaskResp] = useState('');
+  const [taskData, setTaskData] = useState('');
+  const [taskTime, setTaskTime] = useState('');
+
+  const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
+
+  const [selectedStoresForTask, setSelectedStoresForTask] = useState(() => 
+    clientGroup?.stores.map(s => s.id) || []
+  );
+
   const [batchDay, setBatchDay] = useState(currentDay || 1);
   const [formData, setFormData] = useState(() => {
     const initial = {};
@@ -26,6 +39,40 @@ export default function ClientFileModal({
     }
     return initial;
   });
+
+  const clientOpenTasks = useMemo(() => {
+    if (!clientGroup || !clientGroup.stores) return [];
+    const open = [];
+    clientGroup.stores.forEach(store => {
+      if (store.checklists) {
+        store.checklists.forEach(task => {
+          if (!task.feita) {
+            open.push({ ...task, storeName: store.store, storeId: store.id });
+          }
+        });
+      }
+    });
+    // Ordena da data mais próxima para a mais distante
+    return open.sort((a, b) => {
+      const dateA = new Date(`${a.data || '2099-01-01'}T${a.hora || '00:00'}`);
+      const dateB = new Date(`${b.data || '2099-01-01'}T${b.hora || '00:00'}`);
+      return dateA - dateB;
+    });
+  }, [clientGroup, stores]);
+
+  const handleToggleTask = (storeId, taskId) => {
+    const store = stores.find(s => s.id === storeId);
+    if (!store) return;
+    
+    const updatedChecklists = store.checklists.map(c => 
+      c.id === taskId ? { ...c, feita: true, dataConclusao: new Date().toISOString() } : c
+    );
+    
+    const updatedStore = { ...store, checklists: updatedChecklists };
+    updateStoreInCloud(updatedStore); // Salva no Firebase
+    setStores(stores.map(s => s.id === storeId ? updatedStore : s)); // Atualiza na tela
+    toast.success("Tarefa concluída!");
+  };
 
   const [newNoteText, setNewNoteText] = useState('');
 
@@ -48,6 +95,42 @@ export default function ClientFileModal({
     });
     return active;
   }, [liveStores]);
+
+  const clientMktData = useMemo(() => {
+    if (!clientGroup || !clientGroup.stores) return [];
+    const mktMap = {};
+    
+    clientGroup.stores.forEach(s => {
+      const mkt = s.marketplace ? s.marketplace.toUpperCase() : 'N/A';
+      if (!mktMap[mkt]) mktMap[mkt] = { name: mkt, revenue: 0 };
+      mktMap[mkt].revenue += (Number(s.currentRevenue) || 0);
+    });
+    
+    return Object.values(mktMap).sort((a, b) => b.revenue - a.revenue);
+  }, [clientGroup]);
+
+  const clientHistoryLogs = useMemo(() => {
+    if (!clientGroup || !clientGroup.stores) return [];
+    const allLogs = [];
+    clientGroup.stores.forEach(store => {
+      if (store.taskLogs) {
+        store.taskLogs.forEach(log => {
+          allLogs.push({ ...log, storeName: store.store, storeId: store.id });
+        });
+      }
+    });
+    // Ordena do mais recente para o mais antigo (baseado no ID que é um timestamp)
+    return allLogs.sort((a, b) => b.id - a.id);
+  }, [clientGroup]);
+
+  const glassTooltipStyle = {
+    backgroundColor: 'rgba(11, 15, 25, 0.9)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '12px',
+    color: '#fff',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+  };
 
   // Radar de Marketplaces Potenciais (Laranjas)
   const potentialMarketplaces = useMemo(() => {
@@ -259,8 +342,10 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              {/* GRÁFICOS */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* GRÁFICOS (Agora com 3 colunas) */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* 1. PARTICIPAÇÃO POR LOJA */}
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
                   <h3 className="text-sm font-bold text-white mb-4">Participação por Loja (Share)</h3>
                   <div className="h-64">
@@ -277,6 +362,7 @@ export default function ClientFileModal({
                   </div>
                 </div>
 
+                {/* 2. ROAS POR LOJA */}
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
                   <h3 className="text-sm font-bold text-white mb-4">Eficiência de Ads (ROAS por Loja)</h3>
                   <div className="h-64">
@@ -291,6 +377,30 @@ export default function ClientFileModal({
                         </BarChart>
                       </ResponsiveContainer>
                     ) : <p className="text-gray-500 text-center mt-20 text-sm">Sem dados de Ads registrados.</p>}
+                  </div>
+                </div>
+
+                {/* 3. NOVO GRÁFICO: FATURAMENTO POR MARKETPLACE */}
+                <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
+                  <h3 className="text-sm font-bold text-white mb-4">Market Share (Canais)</h3>
+                  <div className="h-64">
+                    {clientMktData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={clientMktData} layout="vertical" margin={{ left: 0, right: 15, top: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} vertical={true} />
+                          <XAxis type="number" hide />
+                          <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={10} width={80} axisLine={false} tickLine={false} />
+                          <Tooltip contentStyle={glassTooltipStyle} itemStyle={{ color: '#fff', fontWeight: 'bold' }} formatter={(value) => formatCurrency(value)} />
+                          <Bar dataKey="revenue" radius={[0, 4, 4, 0]} barSize={16}>
+                            {clientMktData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={INTERNAL_COLORS[index % INTERNAL_COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className="text-gray-500 text-center mt-20 text-sm">Sem faturamento registrado.</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -352,58 +462,207 @@ export default function ClientFileModal({
             </div>
           )}
 
-          {/* ABA 3: HISTÓRICO E NOTAS */}
+          {/* ABA 3: HISTÓRICO, TAREFAS E NOTAS (LAYOUT REVISADO) */}
           {activeTab === 'historico' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in h-full">
-              
-              {/* TAREFAS */}
-              <div className="flex flex-col bg-black/20 rounded-2xl p-5 border border-white/5 h-[55vh]">
-                <h3 className="text-xs font-bold text-white flex items-center gap-2 mb-4 uppercase tracking-wider pb-2 border-b border-white/5">
-                  <ClipboardList size={14} className="text-indigo-400" /> Tarefas Pendentes
-                </h3>
-                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-3">
-                  {liveStores.flatMap(s => (s.checklists || []).map(t => ({...t, storeName: s.store}))).filter(t => !t.feita).map(task => (
-                    <div key={task.id} className="bg-white/[0.02] p-3.5 rounded-xl border border-white/5 text-sm text-gray-300 flex items-start gap-3 shadow-sm">
-                      <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full mt-2 shrink-0"></div>
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-200">{task.texto}</p>
-                        <div className="flex justify-between items-center mt-2.5 pt-2 border-t border-white/5 text-[10px] text-gray-500">
-                          <span className="font-bold uppercase tracking-wider">{task.storeName}</span>
-                          <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">Resp: {task.responsavel || 'Equipe'}</span>
-                        </div>
+            <div className="mt-4 animate-in fade-in duration-300 flex flex-col gap-6">
+
+              {/* LINHA 1: LARGURA TOTAL - TAREFA EM MASSA */}
+              <div className="w-full bg-white/[0.02] p-5 rounded-2xl border border-white/5 flex flex-col gap-4">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <CheckSquare size={16} className="text-indigo-400" /> Ação Direta (Lançar Tarefas em Massa)
+                </h4>
+                
+                <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
+                  
+                  {/* Bloco 1: Seleção Múltipla de Lojas (1/4 do Form) */}
+                  <div className="xl:col-span-1 flex flex-col gap-1">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[10px] uppercase font-bold text-gray-400">Lojas Alvo:</label>
+                      <button 
+                        onClick={() => setSelectedStoresForTask(selectedStoresForTask.length === clientGroup.stores.length ? [] : clientGroup.stores.map(s => s.id))}
+                        className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold transition-colors"
+                      >
+                        {selectedStoresForTask.length === clientGroup.stores.length ? 'Desmarcar Todas' : 'Marcar Todas'}
+                      </button>
+                    </div>
+                    <div className="bg-gray-900 border border-white/10 rounded-xl p-2 h-[120px] overflow-y-auto custom-scrollbar flex flex-col gap-1 shadow-inner">
+                      {clientGroup.stores.map(s => (
+                        <label key={s.id} className="flex items-center gap-2 p-1.5 hover:bg-white/5 rounded-lg cursor-pointer transition-colors">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedStoresForTask.includes(s.id)}
+                            onChange={(e) => {
+                              if(e.target.checked) setSelectedStoresForTask([...selectedStoresForTask, s.id]);
+                              else setSelectedStoresForTask(selectedStoresForTask.filter(id => id !== s.id));
+                            }}
+                            className="accent-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                          />
+                          <span className="text-xs text-gray-300 font-medium truncate">🏪 {s.store}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Bloco 2: Configuração e Disparo da Tarefa (3/4 do Form) */}
+                  <div className="xl:col-span-3 flex flex-col gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] uppercase font-bold text-gray-400">Responsável:</label>
+                        <input 
+                          type="text" value={taskResp} onChange={e => setTaskResp(e.target.value)} placeholder="Nome" 
+                          className="w-full bg-gray-900 border border-white/10 text-white rounded-xl p-2.5 text-xs outline-none focus:border-indigo-500 shadow-inner" 
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] uppercase font-bold text-gray-400">Prazo:</label>
+                        <input 
+                          type="date" value={taskData} onChange={e => setTaskData(e.target.value)} 
+                          className="w-full bg-gray-900 border border-white/10 text-white rounded-xl p-2.5 text-xs outline-none focus:border-indigo-500 text-gray-400 shadow-inner" 
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] uppercase font-bold text-gray-400">Hora:</label>
+                        <input 
+                          type="time" value={taskTime} onChange={e => setTaskTime(e.target.value)} 
+                          className="w-full bg-gray-900 border border-white/10 text-white rounded-xl p-2.5 text-xs outline-none focus:border-indigo-500 text-gray-400 shadow-inner" 
+                        />
                       </div>
                     </div>
-                  ))}
-                  {liveStores.every(s => !s.checklists?.some(t => !t.feita)) && (
-                    <div className="text-center p-8 border border-dashed border-white/10 rounded-2xl h-full flex items-center justify-center">
-                      <p className="text-gray-500 text-xs italic font-medium">Nenhuma tarefa pendente cadastrada.</p>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase font-bold text-gray-400">Descrição da Tarefa:</label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input 
+                          value={actionText} 
+                          onChange={e => setActionText(e.target.value)}
+                          placeholder="O que precisa ser feito nestas lojas?"
+                          className="flex-1 bg-gray-900 border border-white/10 text-white rounded-xl p-2.5 text-xs outline-none focus:border-indigo-500 shadow-inner"
+                        />
+                        <button 
+                          onClick={() => {
+                            if(selectedStoresForTask.length === 0) return toast.error("Selecione pelo menos uma loja!");
+                            if(!actionText.trim()) return toast.error("Por favor, digite uma descrição!");
+                            
+                            const username = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
+
+                            const updatedStores = stores.map(store => {
+                              if (selectedStoresForTask.includes(store.id)) {
+                                let updatedStore = { ...store };
+                                const newTask = { 
+                                  id: Date.now() + Math.random(), texto: actionText, feita: false, 
+                                  responsavel: taskResp.trim(), criadoPor: username, dataCriacao: new Date().toLocaleDateString('pt-BR'), 
+                                  data: taskData || '', hora: taskTime || '', recurrence: 'none' 
+                                };
+                                updatedStore.checklists = [...(store.checklists || []), newTask];
+                                updatedStore.dataUltimoAcesso = new Date().toISOString();
+                                updateStoreInCloud(updatedStore);
+                                return updatedStore;
+                              }
+                              return store;
+                            });
+
+                            setStores(updatedStores);
+                            setActionText(''); setTaskResp(''); setTaskData(''); setTaskTime('');
+                            toast.success(`Tarefa replicada em ${selectedStoresForTask.length} loja(s)!`);
+                          }}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-6 py-2.5 rounded-xl transition-all shadow-md shrink-0 sm:w-auto w-full whitespace-nowrap"
+                        >
+                          Criar Tarefas
+                        </button>
+                      </div>
                     </div>
-                  )}
+                  </div>
+
                 </div>
               </div>
 
-              {/* TIMELINE */}
-              <div className="flex flex-col bg-black/20 rounded-2xl p-5 border border-white/5 h-[55vh]">
-                <h3 className="text-xs font-bold text-white flex items-center gap-2 mb-4 uppercase tracking-wider pb-2 border-b border-white/5">
-                  <History size={14} className="text-emerald-400" /> Histórico & Bloco de Notas
-                </h3>
+              {/* LINHA 2: GRID DE 5 COLUNAS (3/5 TIMELINE | 2/5 TAREFAS PENDENTES) */}
+              <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
                 
-                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar border-l border-white/10 ml-2 pl-4 mb-4 space-y-4">
-                  {liveStores.flatMap(s => (s.taskLogs || []).map(l => ({...l, store: s.store})))
-                    .sort((a,b) => b.id - a.id).map(log => (
-                    <div key={log.id} className="relative group">
-                      <div className="absolute -left-[21px] top-1.5 w-1.5 h-1.5 bg-[#0B0F19] rounded-full border border-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.8)]"></div>
-                      <div className="flex justify-between items-start mb-1 text-[10px]">
-                        <p className="text-emerald-400 font-bold">{log.data}</p>
-                        <p className="text-gray-500 italic bg-black/20 px-1.5 py-0.5 rounded-md border border-white/5">Por: {log.author}</p>
+                {/* TIMELINE (OCUPA 3 DAS 5 COLUNAS) */}
+                <div className="xl:col-span-3 bg-white/[0.01] p-5 rounded-2xl border border-white/5 flex flex-col">
+                  <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-gray-500/10 rounded-xl border border-gray-500/20">
+                        <History size={16} className="text-gray-400"/>
                       </div>
-                      <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">{log.store}</p>
-                      <p className="text-sm text-gray-300 leading-relaxed bg-white/[0.01] p-3 rounded-xl border border-white/5">{log.texto}</p>
+                      <h4 className="text-sm font-bold text-white tracking-wide">Linha do Tempo de Ocorrências</h4>
                     </div>
-                  ))}
-                  {liveStores.every(s => !s.taskLogs || s.taskLogs.length === 0) && (
-                     <div className="h-full flex items-center text-gray-500 text-xs italic font-medium">Nenhum registro de atividade na timeline.</div>
-                  )}
+                    <span className="bg-white/5 text-gray-400 font-bold px-2 py-0.5 rounded text-xs">{clientHistoryLogs.length}</span>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 max-h-[500px] custom-scrollbar border-l-2 border-gray-800 ml-2 pl-4">
+                    {clientHistoryLogs.length > 0 ? clientHistoryLogs.map(log => (
+                      <div key={log.id} className="relative group">
+                        <div className="absolute -left-[23px] top-1.5 w-2.5 h-2.5 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.6)]"></div>
+                        <div className="flex flex-col mb-1.5">
+                          <span className="text-[10px] font-bold text-indigo-400 flex items-center gap-1.5">
+                            {log.storeName}
+                          </span>
+                          <span className="text-[9px] text-gray-500 font-medium">
+                            {log.data} por <span className="text-gray-400">{log.author}</span>
+                          </span>
+                        </div>
+                        <div className="bg-gray-900/80 p-3 rounded-lg border border-white/5 text-xs text-gray-300 leading-relaxed shadow-sm">
+                          {log.texto}
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="text-center p-8 border border-dashed border-white/10 rounded-xl text-gray-500 text-sm ml-[-16px]">
+                        Nenhum registro histórico para este cliente.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* TAREFAS PENDENTES (OCUPA 2 DAS 5 COLUNAS) */}
+                <div className="xl:col-span-2 bg-white/[0.01] p-5 rounded-2xl border border-white/5 flex flex-col">
+                  <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-amber-500/10 rounded-xl border border-amber-500/20">
+                        <CheckSquare size={16} className="text-amber-400"/>
+                      </div>
+                      <h4 className="text-sm font-bold text-white tracking-wide">Tarefas Pendentes</h4>
+                    </div>
+                    <span className="bg-amber-500/20 text-amber-400 font-bold px-2 py-0.5 rounded text-xs">{clientOpenTasks.length}</span>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 max-h-[500px] custom-scrollbar">
+                    {clientOpenTasks.length > 0 ? clientOpenTasks.map(task => (
+                      <div key={task.id} className="bg-gray-900/50 p-3 rounded-xl border border-white/5 flex gap-3 group transition-colors hover:border-white/10">
+                        <button 
+                          onClick={() => handleToggleTask(task.storeId, task.id)} 
+                          className="mt-0.5 text-gray-500 hover:text-emerald-400 transition-colors shrink-0"
+                          title="Concluir Tarefa"
+                        >
+                          <div className="w-4 h-4 rounded-full border-2 border-gray-500 group-hover:border-emerald-400 flex items-center justify-center transition-colors"></div>
+                        </button>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                            <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                              {task.storeName}
+                            </span>
+                            {(task.data || task.hora) && (
+                              <span className="text-[9px] text-gray-400 flex items-center gap-1">
+                                <Clock size={10} /> 
+                                {task.data && new Date(task.data + 'T12:00:00').toLocaleDateString('pt-BR')} {task.hora}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-300 mb-1.5 leading-snug">{task.texto}</p>
+                          {task.responsavel && (
+                            <p className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">
+                              Para: <span className="text-indigo-400">{task.responsavel}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="text-center p-8 border border-dashed border-white/10 rounded-xl text-gray-500 text-sm">
+                        Tudo limpo! Nenhuma pendência para este cliente. 🎉
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
