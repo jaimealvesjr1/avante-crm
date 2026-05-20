@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, Edit2, Check, X, MessageCircle, Trash2, BarChart2, ShoppingBag, Briefcase } from 'lucide-react';
+import { Plus, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, Edit2, Check, X, MessageCircle, Trash2, BarChart2, ShoppingBag } from 'lucide-react';
 
 export default function OperationalTable({
   canEdit, dashboardData, expandedClients, toggleClientExpansion, editingClient, setEditingClient, clientEditData, setClientEditData,
@@ -24,18 +24,7 @@ export default function OperationalTable({
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      
-      <div className="bg-white/[0.02] backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex items-center gap-4">
-        <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 text-indigo-400 shadow-inner">
-          <Briefcase size={24} />
-        </div>
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-wide">Portfólio Operacional</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Cenário atual de operação por cliente.</p>
-        </div>
-      </div>
-
+    <div className="space-y-4 animate-in fade-in duration-300">
       {filteredGroups.length > 0 ? filteredGroups.map((group) => {
         const isExpanded = expandedClients.includes(group.client);
         const clientStatusClass = getStatusColor(group.status);
