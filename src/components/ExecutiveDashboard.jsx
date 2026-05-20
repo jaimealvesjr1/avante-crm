@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, PieChartIcon } from 'lucide-react';
+import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line, Legend } from 'recharts';
 
 export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieData, roasData, COLORS, currentDay, daysInMonth }) {
@@ -80,16 +80,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      
-      <div className="bg-white/[0.02] backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex items-center gap-4">
-        <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 text-indigo-400 shadow-inner">
-          <PieChartIcon size={24} />
-        </div>
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-wide">Dashboard de Fechamento</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Métricas de desempenho até o momento.</p>
-        </div>
-      </div>
       
       {/* 🌟 QUADROS DE KPI (GLASSMORPHISM) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
