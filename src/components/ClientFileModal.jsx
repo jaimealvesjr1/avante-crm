@@ -354,147 +354,57 @@ export default function ClientFileModal({
 
           {/* ABA 3: HISTÓRICO E NOTAS */}
           {activeTab === 'historico' && (
-            <div className="space-y-6 animate-fade-in">
-              {/* Formulários Rápidos para Inserir Ações/Notas ou Tarefas diretamente no Cliente */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white/[0.02] p-4 rounded-2xl border border-white/5">
-                
-                {/* 1. Criar Nota de Histórico / Ação Comercial */}
-                <div className="space-y-2 border-r border-white/5 pr-0 md:pr-4">
-                  <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider">Nova Nota / Registro de Ação</h4>
-                  <div className="space-y-2">
-                    <textarea
-                      id="quick-note-text"
-                      placeholder="Registrar ligação, reunião ou observação..."
-                      rows={2}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 resize-none"
-                    />
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const txt = document.getElementById('quick-note-text').value;
-                          if (!txt.trim()) return;
-                          
-                          // Cria a nota para todas as lojas desse cliente para manter histórico unificado
-                          clientStores.forEach(s => {
-                            const updatedNotes = [
-                              {
-                                id: Date.now() + Math.random(),
-                                texto: txt.trim(),
-                                data: new Date().toLocaleDateString('pt-BR'),
-                                autor: user?.email?.split('@')[0] || 'Operador'
-                              },
-                              ...(s.notes || [])
-                            ];
-                            onUpdateStore(s.id, { notes: updatedNotes });
-                          });
-                          
-                          document.getElementById('quick-note-text').value = '';
-                          alert('Nota inserida com sucesso no histórico do cliente!');
-                        }}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-                      >
-                        Salvar Nota
-                      </button>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in h-full">
+              
+              {/* TAREFAS */}
+              <div className="flex flex-col bg-black/20 rounded-2xl p-5 border border-white/5 h-[55vh]">
+                <h3 className="text-xs font-bold text-white flex items-center gap-2 mb-4 uppercase tracking-wider pb-2 border-b border-white/5">
+                  <ClipboardList size={14} className="text-indigo-400" /> Tarefas Pendentes
+                </h3>
+                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-3">
+                  {liveStores.flatMap(s => (s.checklists || []).map(t => ({...t, storeName: s.store}))).filter(t => !t.feita).map(task => (
+                    <div key={task.id} className="bg-white/[0.02] p-3.5 rounded-xl border border-white/5 text-sm text-gray-300 flex items-start gap-3 shadow-sm">
+                      <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full mt-2 shrink-0"></div>
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-200">{task.texto}</p>
+                        <div className="flex justify-between items-center mt-2.5 pt-2 border-t border-white/5 text-[10px] text-gray-500">
+                          <span className="font-bold uppercase tracking-wider">{task.storeName}</span>
+                          <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">Resp: {task.responsavel || 'Equipe'}</span>
+                        </div>
+                      </div>
                     </div>
-
-                  </div>
-                </div>
-
-                {/* 2. Criar Nova Tarefa de Checklist diretamente daqui */}
-                <div className="space-y-2 pl-0 md:pl-2">
-                  <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider">Criar Tarefa / Checklist Rápido</h4>
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      id="quick-task-text"
-                      placeholder="Ex: Verificar faturamento ou enviar relatório..."
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
-                    />
-                    <div className="grid grid-cols-2 gap-2">
-                      <select
-                        id="quick-task-resp"
-                        className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none"
-                      >
-                        <option value="" className="bg-[#151b2c]">Responsável...</option>
-                        {TeamMembers?.map(m => (
-                          <option key={m.nome} value={m.nome} className="bg-[#151b2c]">{m.nome}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const txt = document.getElementById('quick-task-text').value;
-                          const resp = document.getElementById('quick-task-resp').value;
-                          if (!txt.trim() || !resp) {
-                            alert('Preencha a descrição e escolha um responsável para a tarefa.');
-                            return;
-                          }
-
-                          // Adiciona a tarefa em todas as sub-lojas deste cliente corporativo
-                          clientStores.forEach(s => {
-                            const updatedChecklists = [
-                              ...(s.checklists || []),
-                              {
-                                id: Date.now() + Math.random(),
-                                texto: txt.trim(),
-                                data: new Date().toISOString().split('T')[0],
-                                hora: '08:00',
-                                responsavel: resp,
-                                recorrencia: 'none',
-                                feita: false,
-                                dataCriacao: new Date().toLocaleDateString('pt-BR'),
-                                criadoPor: user?.email?.split('@')[0] || 'Sistema'
-                              }
-                            ];
-                            onUpdateStore(s.id, { checklists: updatedChecklists });
-                          });
-
-                          document.getElementById('quick-task-text').value = '';
-                          document.getElementById('quick-task-resp').value = '';
-                          alert('Tarefa distribuída para as lojas deste cliente!');
-                        }}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-center"
-                      >
-                        Criar Tarefa
-                      </button>
+                  ))}
+                  {liveStores.every(s => !s.checklists?.some(t => !t.feita)) && (
+                    <div className="text-center p-8 border border-dashed border-white/10 rounded-2xl h-full flex items-center justify-center">
+                      <p className="text-gray-500 text-xs italic font-medium">Nenhuma tarefa pendente cadastrada.</p>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              {/* Listagem do Histórico Consolidado Existente */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span>Histórico de Interações Concluídas</span>
+              {/* TIMELINE */}
+              <div className="flex flex-col bg-black/20 rounded-2xl p-5 border border-white/5 h-[55vh]">
+                <h3 className="text-xs font-bold text-white flex items-center gap-2 mb-4 uppercase tracking-wider pb-2 border-b border-white/5">
+                  <History size={14} className="text-emerald-400" /> Histórico & Bloco de Notas
                 </h3>
                 
-                {allNotes.length === 0 ? (
-                  <p className="text-xs text-gray-500 bg-white/[0.01] p-4 rounded-xl border border-white/5 text-center">
-                    Nenhuma nota ou ação registrada para este cliente até o momento.
-                  </p>
-                ) : (
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
-                    {allNotes.map((note) => (
-                      <div key={note.id} className="bg-white/5 border border-white/5 p-3 rounded-xl flex items-start justify-between gap-4">
-                        <div className="space-y-1">
-                          <p className="text-xs text-gray-200">{note.texto}</p>
-                          <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                            <span className="font-medium text-indigo-400">@{note.autor || 'Operador'}</span>
-                            <span>•</span>
-                            <span>{note.data}</span>
-                            {note.storeName && (
-                              <>
-                                <span>•</span>
-                                <span className="bg-white/5 px-1.5 py-0.5 rounded text-[9px] text-gray-300 font-mono">{note.storeName}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
+                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar border-l border-white/10 ml-2 pl-4 mb-4 space-y-4">
+                  {liveStores.flatMap(s => (s.taskLogs || []).map(l => ({...l, store: s.store})))
+                    .sort((a,b) => b.id - a.id).map(log => (
+                    <div key={log.id} className="relative group">
+                      <div className="absolute -left-[21px] top-1.5 w-1.5 h-1.5 bg-[#0B0F19] rounded-full border border-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.8)]"></div>
+                      <div className="flex justify-between items-start mb-1 text-[10px]">
+                        <p className="text-emerald-400 font-bold">{log.data}</p>
+                        <p className="text-gray-500 italic bg-black/20 px-1.5 py-0.5 rounded-md border border-white/5">Por: {log.author}</p>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">{log.store}</p>
+                      <p className="text-sm text-gray-300 leading-relaxed bg-white/[0.01] p-3 rounded-xl border border-white/5">{log.texto}</p>
+                    </div>
+                  ))}
+                  {liveStores.every(s => !s.taskLogs || s.taskLogs.length === 0) && (
+                     <div className="h-full flex items-center text-gray-500 text-xs italic font-medium">Nenhum registro de atividade na timeline.</div>
+                  )}
+                </div>
               </div>
             </div>
           )}
