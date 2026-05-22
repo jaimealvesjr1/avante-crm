@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Bell, CopyPlus, Check, CalendarClock, Activity, Target } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores, openClientFile, broadcastTaskFocus, openInternalTasks }) {
+export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores, openClientFile, broadcastTaskFocus }) {
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || '';
   const [menuOpenId, setMenuOpenId] = useState(null);
 
@@ -131,9 +131,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={openInternalTasks} className="bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-sm">
-            <Target size={18} /> Tarefa Interna
-          </button>
           <button onClick={openBulkTaskModal} className="bg-white/10 hover:bg-white/20 text-white border border-white/10 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-sm">
             <CopyPlus size={18} /> Tarefa em Massa
           </button>

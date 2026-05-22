@@ -214,7 +214,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             <h3 className="text-base font-bold text-white tracking-wide">Market Share por Cliente</h3>
           </div>
           <div className="h-80 relative">
-            <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
+            <ResponsiveContainer width="99%" height={300} minWidth={0} minHeight={0}>
               <PieChart>
                 <Pie data={pieData} cx="50%" cy="50%" innerRadius={85} outerRadius={120} paddingAngle={4} dataKey="value" stroke="none">
                   {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
@@ -242,7 +242,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             </span>
           </div>
           <div className="h-80">
-            <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
+            <ResponsiveContainer width="99%" height={300} minWidth={0} minHeight={0}>
               <BarChart data={roasData} layout="vertical" margin={{ left: 10, right: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
                 <XAxis type="number" hide />
@@ -271,8 +271,8 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             <h3 className="text-sm font-bold text-white tracking-wide">Marketplaces</h3>
           </div>
           
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="w-full h-64 mt-4">
+            <ResponsiveContainer width="100%" height={300}>
               <BarChart data={dashboardData.rankingMarketplaces} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                 <XAxis dataKey="name" stroke="#6B7280" fontSize={10} tickLine={false} />
@@ -303,8 +303,8 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             </div>
             <h3 className="text-base font-bold text-white tracking-wide">Evolução: Receita Clientes vs Agência</h3>
           </div>
-          <div className="h-72">
-            <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
+          <div className="w-full h-64 mt-4">
+            <ResponsiveContainer width="99%" height={300} minWidth={0} minHeight={0}>
               <LineChart data={monthlyComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                 <XAxis dataKey="month" stroke="#6B7280" fontSize={11} tickMargin={10} axisLine={false} tickLine={false} />

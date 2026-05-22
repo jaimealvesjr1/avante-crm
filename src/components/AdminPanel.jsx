@@ -19,7 +19,8 @@ export default function AdminPanel({
   newUserName, setNewUserName,
   teamMembers,
   handleUpdateUser,
-  handleToggleRole
+  handleToggleRole,
+  stores, closeMonth
 }) {
   const [editingUser, setEditingUser] = useState(null);
   const [editName, setEditName] = useState('');
@@ -57,13 +58,23 @@ export default function AdminPanel({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="bg-white/[0.02] backdrop-blur-xl p-6 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex items-center gap-4">
-        <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 text-indigo-400 shadow-inner">
-          <Shield size={24} /> 
+      <div className="bg-white/[0.02] backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center border border-indigo-500/30">
+            <Shield className="text-indigo-400" size={20} />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white tracking-wide">Painel da Equipe</h2>
+            <p className="text-sm text-gray-400 mt-0.5">Gestão de acessos e personalização de perfis.</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-wide">Painel da Equipe</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Gestão de acessos e personalização de perfis.</p>
+        <div className="flex gap-4">
+          <button 
+            onClick={closeMonth} 
+            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all"
+          >
+            Encerrar Competência
+          </button>
         </div>
       </div>
 

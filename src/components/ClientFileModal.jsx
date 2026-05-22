@@ -355,7 +355,7 @@ export default function ClientFileModal({
                   <h3 className="text-sm font-bold text-white mb-4">Participação por Loja (Share)</h3>
                   <div className="h-64">
                     {pieData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height={250}>
                         <PieChart>
                           <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
                             {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
@@ -372,7 +372,7 @@ export default function ClientFileModal({
                   <h3 className="text-sm font-bold text-white mb-4">Eficiência de Ads (ROAS por Loja)</h3>
                   <div className="h-64">
                     {roasData.filter(d => d.roas > 0).length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height={250}>
                         <BarChart data={roasData} layout="vertical" margin={{ left: 10 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
                           <XAxis type="number" hide />
@@ -390,7 +390,7 @@ export default function ClientFileModal({
                   <h3 className="text-sm font-bold text-white mb-4">Market Share (Canais)</h3>
                   <div className="h-64">
                     {clientMktData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height={250}>
                         <BarChart data={clientMktData} layout="vertical" margin={{ left: 0, right: 15, top: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} vertical={true} />
                           <XAxis type="number" hide />
