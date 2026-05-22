@@ -304,6 +304,10 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 {store.client} {store.marketplace && `• ${store.marketplace}`}
               </p>
             </div>
+            {/* Botão de fechar visível apenas em telas menores onde as colunas se empilham */}
+            <button onClick={onClose} className="lg:hidden p-2 hover:bg-white/10 rounded-full transition-colors border border-transparent">
+              <X size={20} className="text-gray-400 hover:text-white" />
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-5 md:p-6 space-y-8 custom-scrollbar">
@@ -500,8 +504,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
         {/* =========================================
             LADO DIREITO: AGENDAMENTO E NOTAS
         ============================================= */}
-        <div className="w-full md:w-[340px] bg-black/20 flex flex-col shrink-0">
-          <div className="hidden md:flex justify-end p-4 border-b border-white/5">
+        <div className="w-full lg:w-[340px] bg-black/20 flex flex-col shrink-0">
+          <div className="hidden lg:flex justify-end p-4 border-b border-white/5">
             <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors border border-transparent">
               <X size={20} className="text-gray-400 hover:text-white" />
             </button>
