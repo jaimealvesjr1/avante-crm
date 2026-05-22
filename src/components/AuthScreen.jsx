@@ -28,7 +28,7 @@ export default function AuthScreen({ handleLogin, email, setEmail, password, set
             alt="Avante HUB" 
             className="h-20 w-auto object-contain mb-4 rounded-2xl shadow-lg border border-white/10" 
           />
-          <h2 className="text-2xl font-bold text-white tracking-tight">Avante<span className="text-sky-800">HUB</span></h2>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Avante<span className="text-yellow-500">HUB</span></h2>
           <p className="text-xs text-gray-400 mt-1 uppercase tracking-widest font-semibold text-center">Central de Inteligência Estratégica</p>
         </div>
 

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers }) {
+export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus }) {
   const [newLog, setNewLog] = useState('');
   const [newChecklist, setNewChecklist] = useState('');
   const [newChecklistResp, setNewChecklistResp] = useState('');
@@ -10,7 +10,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [newTaskTime, setNewTaskTime] = useState('');
   const [newTaskRecurrence, setNewTaskRecurrence] = useState('none');
 
-  const [nextDate, setNextDate] = useState(store.dataProximoAcesso || '');
+  const [nextDate, setNextDate] = useState(store.dataProximoAcesso ? store.dataProximoAcesso.split('T')[0] : '');
   const [storeResp, setStoreResp] = useState(store.responsavel || '');
   const [fixedNotes, setFixedNotes] = useState(store.notasFixas || '');
   const [isDuplicating, setIsDuplicating] = useState(false);
@@ -31,7 +31,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
 
-  // --- FUNÇÕES DE AVATAR (Para a UI ficar incrível) ---
   const getInitials = (name) => {
     if (!name) return '?';
     const parts = name.trim().split(' ');
@@ -59,7 +58,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     );
   };
 
-  // --- LÓGICA DE NEGÓCIO (Intacta) ---
   const saveChanges = (updatedStore) => {
     updateStoreInCloud(updatedStore);
     setStores(stores.map(s => s.id === updatedStore.id ? updatedStore : s));
@@ -182,8 +180,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
     if (isCompleting && task.recorrencia && task.recorrencia !== 'none') {
       const currentIndex = updatedChecklists.findIndex(t => t.id === id);
-      updatedChecklists[currentIndex].feita = true;
-
+      
       const [year, month, day] = task.data.split('-').map(Number);
       let nextDateObj = new Date(year, month - 1, day);
       if (task.recorrencia === 'daily') nextDateObj.setDate(nextDateObj.getDate() + 1);
@@ -191,10 +188,51 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       if (task.recorrencia === 'monthly') nextDateObj.setMonth(nextDateObj.getMonth() + 1);
 
       const nextDateStr = `${nextDateObj.getFullYear()}-${String(nextDateObj.getMonth() + 1).padStart(2, '0')}-${String(nextDateObj.getDate()).padStart(2, '0')}`;
-      updatedChecklists.push({ ...task, id: Date.now() + 1, feita: false, data: nextDateStr });
-      toast.success('Tarefa concluída! Próxima repetição gerada.');
+      
+      // A Mutação: A tarefa avança no tempo e limpa os cronômetros
+      updatedChecklists[currentIndex] = { 
+        ...task, 
+        feita: false, 
+        data: nextDateStr,
+        startedAt: null, 
+        completedAt: null, 
+        completedAtFull: null, 
+        completedBy: null 
+      };
+
+      // Cópia Fantasma: Fica no banco de dados para dar os pontos de XP, mas vamos ocultá-la da interface
+      const deadCopy = {
+          ...task,
+          id: Date.now() + Math.random(),
+          feita: true,
+          recorrencia: 'ghost', // Marcador para não aparecer na tela
+          completedAt: new Date().toISOString().split('T')[0],
+          completedAtFull: new Date().toISOString(),
+          completedBy: username
+      };
+      updatedChecklists.push(deadCopy);
+
+      toast.success('Tarefa renovada para o próximo ciclo!');
+      updatedLogs = [...updatedLogs, { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `✅ Tarefa cumprida: "${task.texto}" (Ciclo Renovado)`, author: username }];
+
     } else {
-      updatedChecklists = updatedChecklists.map(c => c.id === id ? { ...c, feita: !c.feita } : c);
+      updatedChecklists = updatedChecklists.map(c => {
+        if (c.id === id) {
+          if (isCompleting) {
+            return { 
+              ...c, 
+              feita: true, 
+              completedAt: new Date().toISOString().split('T')[0], 
+              completedAtFull: new Date().toISOString(),
+              completedBy: username 
+            };
+          } else {
+            const { completedAt, completedAtFull, completedBy, startedAt, ...rest } = c;
+            return { ...rest, feita: false };
+          }
+        }
+        return c;
+      });
       toast.success(isCompleting ? '✅ Tarefa concluída!' : 'Tarefa reaberta!');
     }
 
@@ -243,7 +281,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
   const saveNextDate = () => {
     setIsScheduling(true);
-    saveChanges({ ...store, dataProximoAcesso: nextDate });
+    saveChanges({ ...store, dataProximoAcesso: nextDate ? `${nextDate}T00:00` : '' });
     setTimeout(() => { setIsScheduling(false); toast.success('Retorno agendado com sucesso!'); }, 500);
   };
 
@@ -284,6 +322,22 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     setIsDuplicating(false); setDuplicateTargetId('');
   };
 
+  const handleStartTask = (taskId, taskText) => {
+    if (broadcastTaskFocus) {
+      broadcastTaskFocus(`Executando: ${taskText} | ${store.store}`);
+    }
+    
+    // Agora gravamos o timestamp de INÍCIO na tarefa
+    const updatedChecklists = store.checklists.map(c => 
+      c.id === taskId ? { ...c, startedAt: new Date().toISOString() } : c
+    );
+    
+    const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `▶️ Iniciou a tarefa: "${taskText}"`, author: username };
+    
+    saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() });
+    toast.success("Tarefa iniciada! Tempo correndo ⏱️");
+  };
+
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
       {/* 🌟 CONTAINER PRINCIPAL (GLASSMORPHISM) */}
@@ -322,7 +376,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               <div className="space-y-2 mb-4 max-h-[40vh] overflow-y-auto pr-1 custom-scrollbar">
                 {(() => {
                   const pendingTasks = store.checklists?.filter(t => !t.feita) || [];
-                  const completedTasks = store.checklists?.filter(t => t.feita) || [];
+                  const completedTasks = store.checklists?.filter(t => t.feita && t.recorrencia !== 'ghost') || [];
                   
                   // Ordenação inteligente das pendentes: tarefas com prazos mais próximos ou atrasados ficam no topo
                   pendingTasks.sort((a, b) => {
@@ -354,15 +408,12 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     
                     // Identificador Inteligente de Campanhas Críticas (Cupons, Descontos, Relâmpago)
                     const textLower = (item.texto || '').toLowerCase();
-                    const isSpecialCampaign = textLower.includes('cupom') || textLower.includes('desconto') || textLower.includes('relampago') || textLower.includes('oferta') || textLower.includes('promo');
 
                     return (
                       <div 
                         key={item.id} 
                         className={`flex flex-col p-2.5 rounded-lg border group shadow-sm transition-all ${
-                          item.feita ? 'bg-gray-800/40 border-gray-800' :
-                          isSpecialCampaign ? 'bg-amber-950/20 border-amber-500/40 hover:border-amber-500/70 shadow-[0_0_8px_rgba(245,158,11,0.05)]' :
-                          'bg-gray-800 border-gray-700 hover:border-gray-600'
+                          item.feita ? 'bg-gray-800/40 border-gray-800' : 'bg-gray-800 border-gray-700 hover:border-gray-600'
                         }`}
                       >
                         {isEditing ? (
@@ -400,12 +451,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                                   {item.texto}
                                 </span>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                  {/* TAG CRÍTICA DE PROMOÇÃO/CUPOM */}
-                                  {isSpecialCampaign && !item.feita && (
-                                    <span className="text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider animate-pulse">
-                                      🔥 Alerta de Oferta
-                                    </span>
-                                  )}
                                   {item.data && (
                                     <span className="text-[9px] bg-gray-900 border border-gray-700 text-amber-400 px-1.5 py-0.5 rounded font-bold flex items-center gap-1 shadow-sm">
                                       <CalendarDays size={10} /> 
@@ -422,11 +467,16 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                                 </div>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
-                              {canEditTask && !item.feita && (
-                                <button type="button" onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1 bg-gray-900 rounded"><Edit2 size={14}/></button>
+                            <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                              {!item.feita && (
+                                <button type="button" onClick={() => handleStartTask(item.id, item.texto)} className="text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/20 px-2 py-1 bg-gray-900 border border-emerald-500/30 rounded flex items-center gap-1 text-[10px] font-bold transition-colors" title="Sinalizar que está executando agora">
+                                  <Play size={12}/> Iniciar
+                                </button>
                               )}
-                              <button type="button" onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 p-1 bg-gray-900 rounded"><Trash2 size={14}/></button>
+                              {canEditTask && !item.feita && (
+                                <button type="button" onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1.5 bg-gray-900 hover:bg-white/10 rounded transition-colors"><Edit2 size={14}/></button>
+                              )}
+                              <button type="button" onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 p-1.5 bg-gray-900 hover:bg-red-500/10 rounded transition-colors"><Trash2 size={14}/></button>
                             </div>
                           </div>
                         )}
@@ -512,40 +562,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
           </div>
           
           <div className="p-5 flex-1 flex flex-col gap-5 overflow-y-auto custom-scrollbar">
-            
-            {/* 1. DESEMPENHO DIÁRIO */}
-            <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/10 shadow-sm">
-              <h4 className="text-xs font-bold text-indigo-400 uppercase flex items-center gap-2 mb-4">
-                <TrendingUp size={14} /> Lançamento Diário
-              </h4>
-              
-              <div className="grid grid-cols-4 gap-2 mb-4">
-                <div className="col-span-1">
-                  <label className="text-[9px] text-gray-500 font-bold block mb-1.5 uppercase tracking-wider">Dia</label>
-                  <input type="number" value={entryDay} onChange={e => setEntryDay(e.target.value)} className="w-full bg-indigo-500/10 border border-indigo-500/30 rounded-xl p-2.5 text-xs text-indigo-200 outline-none text-center font-bold" />
-                </div>
-                <div className="col-span-3">
-                  <label className="text-[9px] text-gray-500 font-bold block mb-1.5 uppercase tracking-wider">GMV (R$)</label>
-                  <input type="number" value={dailyGMV} onChange={e => setDailyGMV(e.target.value)} placeholder="0.00" className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-xs text-white outline-none focus:border-indigo-500 transition-colors" />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-[9px] text-gray-500 font-bold block mb-1.5 uppercase tracking-wider">Ads (R$)</label>
-                  <input type="number" value={dailyAds} onChange={e => setDailyAds(e.target.value)} placeholder="0.00" className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-xs text-white outline-none focus:border-indigo-500 transition-colors" />
-                </div>
-                <div className="col-span-1">
-                  <label className="text-[9px] text-gray-500 font-bold block mb-1.5 uppercase tracking-wider">Ped.</label>
-                  <input type="number" value={dailyOrders} onChange={e => setDailyOrders(e.target.value)} placeholder="0" className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-xs text-white outline-none focus:border-indigo-500 text-center transition-colors" />
-                </div>
-                <div className="col-span-1">
-                  <label className="text-[9px] text-gray-500 font-bold block mb-1.5 uppercase tracking-wider">Unid.</label>
-                  <input type="number" value={dailyUnits} onChange={e => setDailyUnits(e.target.value)} placeholder="0" className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-xs text-white outline-none focus:border-indigo-500 text-center transition-colors" />
-                </div>
-              </div>
-
-              <button onClick={saveDailyEntry} disabled={isSavingDaily} className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900 text-white font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-md">
-                {isSavingDaily ? <Loader2 size={14} className="animate-spin" /> : `Lançar Dados (Dia ${entryDay})`}
-              </button>
-            </div>
 
             {/* 2. NOTAS FIXAS */}
             <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/10 flex-1 flex flex-col min-h-[220px] shadow-sm">

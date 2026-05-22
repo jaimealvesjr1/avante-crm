@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, Check } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays,
+  BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, Check, Bell } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
+  ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, writeBatch } from "firebase/firestore";
@@ -21,13 +23,14 @@ import BulkTaskModal from './components/BulkTaskModal';
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
 
-function TeamFeedView({ currentUserData, user, stores }) {
+function TeamFeedView({ currentUserData, user, stores, openTaskModal, internalTasksModalOpen }) {
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
-  const [currentFocus, setCurrentFocus] = useState('');
-  const [dismissedLogs, setDismissedLogs] = useState(() => JSON.parse(localStorage.getItem('avante_dismissed_logs') || '[]'));
+  const [feedClearedAt, setFeedClearedAt] = useState(() => Number(localStorage.getItem('avante_feed_cleared_at')) || 0);
   const [liveStatus, setLiveStatus] = useState({});
+  const [feedFilter, setFeedFilter] = useState('all');
+  const [internalTasks, setInternalTasks] = useState([]);
 
-  // Escuta em tempo real o que a equipe está fazendo agora
+
   useEffect(() => {
     const unsubFocus = onSnapshot(doc(db, "settings", "atividades_equipe"), (docSnap) => {
       if (docSnap.exists()) setLiveStatus(docSnap.data());
@@ -35,22 +38,11 @@ function TeamFeedView({ currentUserData, user, stores }) {
     return () => unsubFocus();
   }, []);
 
-  const handleSaveFocus = async () => {
-    if (!currentFocus.trim()) return;
-    const updatedStatus = { ...liveStatus, [myName]: { texto: currentFocus, timestamp: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}) } };
-    await setDoc(doc(db, "settings", "atividades_equipe"), updatedStatus);
-    setCurrentFocus('');
-    toast.success("Seu foco atual foi atualizado para toda a equipe!");
+  const handleOpenStore = (storeName) => {
+    const targetStore = stores.find(s => s.store === storeName);
+    if (targetStore && openTaskModal) openTaskModal(targetStore);
   };
 
-  const dismissLog = (id) => {
-    const updated = [...dismissedLogs, id];
-    setDismissedLogs(updated);
-    localStorage.setItem('avante_dismissed_logs', JSON.stringify(updated));
-    toast.success("Notificação arquivada");
-  };
-
-  // Agrega logs e gera o ranking usando a data cravada do fuso local
   const now = new Date();
   const localToday = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
   const [year, month, day] = localToday.split('-');
@@ -60,106 +52,303 @@ function TeamFeedView({ currentUserData, user, stores }) {
   
   const rankingDiario = useMemo(() => {
     const stats = {};
-    allLogs.forEach(log => {
-      if (!log.data || !log.data.includes(todayDateStr)) return;
-      const author = log.author || 'Sistema';
-      if (!stats[author]) stats[author] = { name: author, tasks: 0, actions: 0 };
-      
-      if (log.texto?.includes('✅ Tarefa concluída')) stats[author].tasks += 1;
-      else stats[author].actions += 1;
-    });
-    return Object.values(stats).sort((a, b) => (b.tasks + b.actions) - (a.tasks + a.actions));
-  }, [stores, todayDateStr, allLogs]);
+    const localTodayStr = localToday; 
 
-  const visibleLogs = allLogs.filter(l => !dismissedLogs.includes(l.id)).sort((a, b) => b.id - a.id);
+    stores.forEach(store => {
+      (store.checklists || []).forEach(task => {
+        if (task.feita && task.completedAt === localTodayStr) {
+          const author = task.completedBy || 'Sistema';
+          if (!stats[author]) stats[author] = { name: author, tasks: 0, points: 0, totalTimeMs: 0, trackedTasks: 0 };
+          
+          stats[author].tasks += 1;
+          
+          let earnedPoints = 10;
+          if (task.data) {
+            if (task.data >= localTodayStr) earnedPoints = 15;
+            else earnedPoints = 5;
+          }
+          stats[author].points += earnedPoints;
+
+          // Calcula o tempo de execução (se a pessoa clicou em iniciar antes de concluir)
+          if (task.startedAt && task.completedAtFull) {
+            const durationMs = new Date(task.completedAtFull) - new Date(task.startedAt);
+            if (durationMs > 0 && durationMs < 86400000) { // Sanity check: ignora se der erro ou mais de 24h
+              stats[author].totalTimeMs += durationMs;
+              stats[author].trackedTasks += 1;
+            }
+          }
+        }
+      });
+    });
+
+    // Finaliza convertendo os milissegundos para média em minutos
+    return Object.values(stats).map(r => {
+      const avgMinutes = r.trackedTasks > 0 ? Math.round((r.totalTimeMs / r.trackedTasks) / 60000) : 0;
+      return { ...r, avgMinutes };
+    }).sort((a, b) => b.points - a.points);
+  }, [stores, localToday]);
+
+  // INBOX: Notificações Inteligentes
+  const groupedInbox = useMemo(() => {
+    if (!myName) return [];
+    const groups = {};
+    const now = new Date();
+    const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    const currentTimeStr = now.toTimeString().substring(0, 5);
+
+    stores.forEach(store => {
+      const notificationReasons = [];
+
+      const delegatedTasksCount = store.checklists?.filter(c => {
+        if (c.feita) return false;
+        const isAssignedToMe = c.responsavel === myName;
+        if (!isAssignedToMe) return false;
+        
+        if (!c.data) return true;
+        if (c.data < todayStr) return true;
+        if (c.data === todayStr) return !c.hora || c.hora <= currentTimeStr;
+        return false;
+      }).length || 0;
+
+      if (delegatedTasksCount > 0) notificationReasons.push(`${delegatedTasksCount} tarefa(s) pendente(s)`);
+
+      if (notificationReasons.length > 0) {
+        if (!groups[store.client]) groups[store.client] = { clientName: store.client, stores: [], lastAccess: store.dataUltimoAcesso || 0 };
+        groups[store.client].stores.push({ ...store, highlightMessages: notificationReasons });
+        const currentStoreAccess = new Date(store.dataUltimoAcesso || 0);
+        const groupOldestAccess = new Date(groups[store.client].lastAccess);
+        if (currentStoreAccess < groupOldestAccess) groups[store.client].lastAccess = store.dataUltimoAcesso;
+      }
+    });
+    return Object.values(groups).sort((a, b) => new Date(a.lastAccess || 0) - new Date(b.lastAccess || 0));
+  }, [stores, myName]);
+
+  // Aplicação dos Filtros de Ruído
+  const visibleLogs = useMemo(() => {
+    return allLogs
+      .filter(l => l.id > feedClearedAt)
+      .filter(l => {
+        if (feedFilter === 'tasks') return l.texto?.includes('✅ Tarefa concluída');
+        if (feedFilter === 'mine') return l.author === myName;
+        return true;
+      })
+      .sort((a, b) => b.id - a.id);
+  }, [allLogs, feedClearedAt, feedFilter, myName]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
       
-      {/* COLUNA 1 & 2: STATUS ATUAL E FEED VIVO */}
       <div className="lg:col-span-2 space-y-6">
-        <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-lg">
-          <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Activity size={16} /> O que você está focando agora?
-          </h3>
-          <div className="flex gap-2">
-            <input type="text" value={currentFocus} onChange={e => setCurrentFocus(e.target.value)} placeholder="Ex: Analisando campanhas de Ads na Milane Shoes..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-emerald-500" />
-            <button onClick={handleSaveFocus} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 rounded-lg text-sm transition-colors">Atualizar Status</button>
-          </div>
 
-          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-gray-700/50 pt-4">
-            {Object.entries(liveStatus).map(([userName, data]) => (
-              <div key={userName} className="bg-gray-900/60 p-3 rounded-lg border border-gray-700 flex items-start gap-3 relative overflow-hidden">
-                <div className="absolute top-0 left-0 h-full w-1 bg-emerald-500"></div>
-                <div className="flex-1">
-                  <p className="text-xs font-bold text-white flex items-center justify-between">
-                    <span>{userName}</span>
-                    <span className="text-[10px] text-gray-500 font-normal">{data.timestamp}</span>
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1 italic leading-relaxed">" {data.texto} "</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-lg flex flex-col h-[50vh]">
-          <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4 flex items-center justify-between">
-            <span>Mural de Atividades Recentes</span>
-            <span className="text-[10px] bg-gray-700 text-gray-300 px-2 py-0.5 rounded font-bold">{visibleLogs.length} Alertas</span>
-          </h3>
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-            {visibleLogs.map(log => (
-              <div key={log.id} className="bg-gray-900/60 p-3.5 rounded-lg border border-gray-700 flex justify-between items-start group transition-all hover:border-gray-600">
-                <div className="space-y-1">
-                  <div className="text-[10px] font-bold text-indigo-400">
-                    {log.clientName} / {log.storeName} <span className="text-gray-500 font-normal ml-2">{log.data}</span>
+        {/* BLOCO DE FOCO */}
+        {Object.keys(liveStatus).length > 0 && (
+          <div className="bg-gray-800/80 p-5 rounded-xl border border-gray-700 shadow-lg">
+            <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2 mb-4">
+              <Activity size={16} /> Radar da Equipe (Agora)
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {Object.entries(liveStatus).map(([userName, data]) => (
+                <div key={userName} 
+                  onClick={() => {
+                      const parts = data.texto.split(' | ');
+                      if (parts.length > 1) handleOpenStore(parts[1]);
+                  }}
+                  className="bg-gray-900/80 p-3.5 rounded-lg border border-gray-700 flex items-start gap-3 relative overflow-hidden cursor-pointer hover:border-emerald-500 transition-colors">
+                  <div className="absolute top-0 left-0 h-full w-1 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]"></div>
+                  <div className="flex-1">
+                    <p className="text-[11px] font-bold text-white flex items-center justify-between">
+                      <span className="uppercase tracking-wider">{userName}</span>
+                      <span className="text-[9px] text-emerald-500/70 bg-emerald-500/10 px-1.5 rounded">{data.timestamp}</span>
+                    </p>
+                    <p className="text-xs text-gray-300 mt-1.5 font-medium leading-relaxed">{data.texto}</p>
                   </div>
-                  <p className="text-sm text-gray-200 font-medium">{log.texto}</p>
-                  <p className="text-[10px] text-gray-500">Registrado por: <span className="text-gray-400 font-semibold">{log.author}</span></p>
                 </div>
-                <button onClick={() => dismissLog(log.id)} className="text-gray-500 hover:text-green-400 p-1.5 bg-gray-800 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Marcar como lido e ocultar">
-                  <Check size={14} />
-                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* RADAR DE ATENÇÃO */}
+        {groupedInbox && groupedInbox.length > 0 && (
+          <div className="bg-indigo-500/10 border border-indigo-500/30 p-5 rounded-xl shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
+            <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2 mb-4">
+              <Bell size={16} className="animate-pulse" /> Radar de Atenção ({groupedInbox.length} Clientes)
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {groupedInbox.map(group => (
+                <div key={group.clientName} className="bg-gray-900/60 border border-indigo-500/20 rounded-lg p-3">
+                  <h4 className="font-bold text-white text-xs mb-2 truncate">{group.clientName}</h4>
+                  <div className="space-y-2">
+                    {group.stores.map(store => (
+                      <div 
+                        key={store.id} 
+                        onClick={() => openTaskModal && openTaskModal(store)}
+                        className="bg-indigo-500/10 p-2 rounded border border-indigo-500/30 cursor-pointer hover:bg-indigo-500/30 hover:border-indigo-400 transition-colors group/radar"
+                      >
+                        <p className="text-[10px] font-bold text-indigo-200 truncate group-hover/radar:text-white transition-colors">{store.store}</p>
+                        {store.highlightMessages?.map((msg, i) => (
+                          <span key={i} className="text-[9px] text-indigo-400 block mt-0.5 group-hover/radar:text-indigo-300">{msg}</span>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* MURAL COM FILTROS */}
+        <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-lg flex flex-col h-[50vh]">
+          <div className="flex justify-between items-center mb-5 border-b border-gray-700 pb-4">
+            <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+              Timeline <span className="text-[10px] bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">{visibleLogs.length}</span>
+            </h3>
+            <div className="flex items-center gap-2">
+              <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700">
+                <button onClick={() => setFeedFilter('all')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'all' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tudo</button>
+                <button onClick={() => setFeedFilter('tasks')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
               </div>
-            ))}
-            {visibleLogs.length === 0 && (
-              <div className="text-center p-8 text-gray-500 italic text-sm">Nenhuma atividade recente no mural de notificações.</div>
-            )}
+              {visibleLogs.length > 0 && (
+                <button onClick={() => { setFeedClearedAt(Date.now()); localStorage.setItem('avante_feed_cleared_at', Date.now()); toast.success("Mural limpo!"); }} className="text-[10px] bg-gray-900 hover:bg-gray-700 text-gray-400 font-bold px-3 py-2 border border-gray-700 rounded-lg">Limpar</button>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar border-l-2 border-gray-700/50 ml-2 pl-4">
+            {visibleLogs.map(log => {
+              const isTask = log.texto?.includes('✅ Tarefa concluída');
+              return (
+                <div key={log.id}
+                onClick={() => handleOpenStore(log.storeName)}
+                className="relative group cursor-pointer">
+                  <div className={`absolute -left-[23px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-gray-800 ${isTask ? 'bg-emerald-500' : 'bg-indigo-500'}`}></div>
+                  <div className={`p-3.5 rounded-xl border flex flex-col gap-1 transition-colors hover:brightness-125 ${isTask ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-gray-900/50 border-gray-700'}`}>
+                    <div className="flex justify-between items-start">
+                      <div className="text-[10px] font-black text-indigo-400 uppercase">{log.clientName} <span className="text-gray-500 mx-1">•</span> {log.storeName}</div>
+                      <span className="text-[9px] text-gray-500">{log.data}</span>
+                    </div>
+                    <p className={`text-sm ${isTask ? 'text-emerald-100 font-medium' : 'text-gray-300'}`}>{log.texto}</p>
+                    <p className="text-[10px] text-gray-500 mt-1">Por: <span className="text-gray-400 font-bold">{log.author}</span></p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* COLUNA 3: RANKING DIÁRIO (LEADERBOARD) */}
+      {/* COLUNA 3: RANKING DE EXECUÇÃO */}
       <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-lg flex flex-col">
-        <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-          🏆 Performance de Hoje ({todayDateStr})
-        </h3>
-        <div className="space-y-2 flex-1 overflow-y-auto pr-1 custom-scrollbar">
+        <div className="mb-4 border-b border-gray-700 pb-4">
+          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">🏆 Execução Diária</h3>
+          <p className="text-[10px] text-gray-400 mt-1">Pontuação e tempo médio por tarefa.</p>
+        </div>
+        
+        <div className="space-y-3 flex-1 overflow-y-auto pr-1 custom-scrollbar">
           {rankingDiario.map((rank, i) => (
-            <div key={rank.name} className="bg-gray-900 p-3.5 rounded-lg border border-gray-700 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className={`w-6 h-6 rounded-full text-xs font-black flex items-center justify-center ${i === 0 ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40' : i === 1 ? 'bg-gray-400/20 text-gray-300 border border-gray-400/40' : i === 2 ? 'bg-amber-700/20 text-amber-500 border border-amber-700/40' : 'bg-gray-800 text-gray-500'}`}>
-                  {i + 1}
-                </span>
-                <div>
-                  <p className="text-sm font-bold text-white">{rank.name}</p>
-                  <p className="text-[10px] text-gray-500">Ações: {rank.actions}</p>
+            <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className={`w-7 h-7 rounded-full text-xs font-black flex items-center justify-center shadow-inner ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-500 border border-gray-700'}`}>
+                    {i + 1}
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold text-gray-200">{rank.name}</p>
+                    <p className="text-[10px] text-amber-500 font-bold">{rank.points} XP</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-lg font-bold border border-emerald-500/20 block mb-1">
+                    {rank.tasks} Entregas
+                  </span>
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-xs bg-emerald-950 text-emerald-400 px-2 py-1 rounded-md font-bold border border-emerald-900/50">
-                  {rank.tasks} Tar. Concluídas
+              
+              {/* DISPLAY DO TEMPO MÉDIO (NOVO) */}
+              <div className="bg-black/40 rounded px-3 py-1.5 flex justify-between items-center">
+                <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1"><Clock size={10}/> Tempo Médio/Tarefa</span>
+                <span className={`text-[11px] font-bold ${rank.avgMinutes > 0 && rank.avgMinutes < 15 ? 'text-emerald-400' : rank.avgMinutes >= 30 ? 'text-amber-400' : 'text-gray-300'}`}>
+                  {rank.avgMinutes > 0 ? `${rank.avgMinutes} min` : '--'}
                 </span>
               </div>
             </div>
           ))}
-          {rankingDiario.length === 0 && (
-            <div className="text-center p-8 text-gray-500 italic text-xs border border-dashed border-gray-700 rounded-lg">Nenhum integrante pontuou hoje ainda.</div>
-          )}
+          {rankingDiario.length === 0 && <div className="text-center p-8 text-gray-500 italic text-xs border border-dashed border-gray-700 rounded-xl">Nenhuma entrega registrada.</div>}
         </div>
       </div>
 
+    </div>
+  );
+}
+
+function InternalTasksModal({ isOpen, onClose, tasks, updateTasks, currentUserData, teamMembers }) {
+  if (!isOpen) return null;
+  const [newTask, setNewTask] = useState('');
+  const [resp, setResp] = useState('');
+  const myName = currentUserData?.nomeCompleto || currentUserData?.nome || 'Usuário';
+
+  const addTask = () => {
+    if(!newTask.trim()) return;
+    const newTasksList = [...(tasks || []), { id: Date.now(), texto: newTask, feita: false, responsavel: resp, criadoPor: myName }];
+    updateTasks(newTasksList);
+    setNewTask(''); setResp('');
+  };
+
+  const toggleTask = (id) => {
+    const updated = tasks.map(t => t.id === id ? { ...t, feita: !t.feita } : t);
+    updateTasks(updated);
+  };
+
+  const deleteTask = (id) => {
+    if(window.confirm("Apagar esta operação avulsa?")) {
+      updateTasks(tasks.filter(t => t.id !== id));
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4 backdrop-blur-sm animate-in fade-in">
+       <div className="bg-gray-900 border border-indigo-500/30 p-6 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+          <div className="flex justify-between items-center mb-6">
+             <div>
+               <h2 className="text-xl font-bold text-indigo-400 flex items-center gap-2"><Target size={22}/> Nova Tarefa Interna</h2>
+               <p className="text-xs text-gray-400 mt-1">Tarefas globais da equipe, sem vínculo com lojas específicas.</p>
+             </div>
+             <button onClick={onClose} className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors"><X size={20}/></button>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row gap-2 mb-6 bg-black/20 p-3 rounded-xl border border-white/5">
+            <input type="text" value={newTask} onChange={e=>setNewTask(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTask()} placeholder="O que precisa ser feito?" className="flex-1 bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm text-white outline-none focus:border-indigo-500" />
+            <select value={resp} onChange={e=>setResp(e.target.value)} className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm text-gray-300 outline-none focus:border-indigo-500 cursor-pointer">
+              <option value="">Sem Resp.</option>
+              {teamMembers.map(m => <option key={m.email} value={m.nomeCompleto || m.nome}>{m.nomeCompleto || m.nome}</option>)}
+            </select>
+            <button onClick={addTask} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-lg font-bold text-sm shadow-md transition-colors whitespace-nowrap">Add Operação</button>
+          </div>
+
+          <div className="space-y-2 overflow-y-auto pr-2 custom-scrollbar flex-1">
+            {(tasks || []).map(t => (
+              <div key={t.id} className={`flex justify-between items-center p-3 rounded-xl border transition-all ${t.feita ? 'bg-gray-800/40 border-gray-800 opacity-60' : 'bg-gray-800 border-gray-700 hover:border-gray-500'}`}>
+                <div className="flex gap-3 items-center">
+                  <input type="checkbox" checked={t.feita} onChange={() => toggleTask(t.id)} className="w-5 h-5 cursor-pointer rounded border-gray-600 bg-gray-900 text-indigo-500" />
+                  <div>
+                    <p className={`text-sm font-medium ${t.feita ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{t.texto}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] text-gray-400 bg-gray-900 px-1.5 py-0.5 rounded border border-gray-700">Resp: {t.responsavel || 'Equipe'}</span>
+                      <span className="text-[10px] text-gray-500">Por: {t.criadoPor}</span>
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => deleteTask(t.id)} className="text-gray-500 hover:text-red-400 p-2 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={16}/></button>
+              </div>
+            ))}
+            {(!tasks || tasks.length === 0) && (
+              <div className="text-center p-8 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl">
+                Nenhuma operação avulsa cadastrada no momento.
+              </div>
+            )}
+          </div>
+       </div>
     </div>
   );
 }
@@ -168,12 +357,20 @@ export default function App() {
   const [stores, setStores] = useState(initialStores);
   const [isDbLoading, setIsDbLoading] = useState(true);
 
+  const [internalTasksModalOpen, setInternalTasksModalOpen] = useState(false);
   const [activeView, setActiveView] = useState(() => {
     return localStorage.getItem('avante_tela_atual') || 'dashboard';
   });
 
   useEffect(() => {
     localStorage.setItem('avante_tela_atual', activeView);
+
+    const unsubInternal = onSnapshot(doc(db, "settings", "internal_tasks"), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().tasks) {
+        setInternalTasks(docSnap.data().tasks);
+      }
+    });
+
   }, [activeView]);
 
   const [globalGrowth, setGlobalGrowth] = useState(10);
@@ -242,6 +439,13 @@ export default function App() {
   const localToday = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
   const currentTimeStr = now.toTimeString().substring(0, 5);
 
+  const [internalTasks, setInternalTasks] = useState([]);
+  
+  const updateInternalTasks = async (newTasks) => {
+    setInternalTasks(newTasks);
+    await setDoc(doc(db, "settings", "internal_tasks"), { tasks: newTasks }, { merge: true });
+  };
+
   const globalPendingTasks = useMemo(() => {
     if (!currentUserData) return 0;
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0];
@@ -299,7 +503,12 @@ export default function App() {
       if (!snapshot.empty) setTeamMembers(snapshot.docs.map(doc => doc.data()));
     });
 
-    return () => { unsubStores(); unsubSettings(); unsubEquipe(); };
+    const unsubInternal = onSnapshot(doc(db, "settings", "internal_tasks"), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().tasks) {
+        setInternalTasks(docSnap.data().tasks);
+      }
+    });
+    return () => { unsubStores(); unsubSettings(); unsubEquipe(); unsubInternal(); };
   }, [user]);
 
 useEffect(() => {
@@ -879,6 +1088,20 @@ useEffect(() => {
   }, [activeStore, daysInMonth, currentDay, globalGrowth]);
 
   const activeStoreMonthlyData = useMemo(() => (!activeStore || !activeStore.monthlyHistory) ? [] : activeStore.monthlyHistory.map(h => ({ month: h.month, revenue: Math.round(h.gmv) })), [activeStore]);
+  
+  const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || '';
+
+  const broadcastTaskFocus = async (taskText) => {
+    if (!myName) return;
+    const updatedStatus = { 
+      [myName]: { 
+        texto: taskText, 
+        timestamp: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}) 
+      } 
+    };
+    await setDoc(doc(db, "settings", "atividades_equipe"), updatedStatus, { merge: true });
+    toast.success(`Sinalizado: ${taskText}`);
+  };
 
   if (authLoading || !user) return <AuthScreen email={email} setEmail={setEmail} password={password} setPassword={setPassword} handleLogin={handleLogin} authError={authError} authLoading={authLoading} />;
 
@@ -892,30 +1115,20 @@ useEffect(() => {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
               <img src="/logo.jpg" alt="Avante HUB" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
-              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-sky-800">HUB</span></span>
-            </div>
-            <div className="hidden md:flex items-center gap-2 border-l border-white/10 pl-6">
-              <button onClick={() => setIsBatchMode(true)} className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-inner" title="Apuração Rápida em Massa">
-                <Zap size={14} /> Apuração
-              </button>
-              {canEdit && (
-                <button onClick={closeMonth} className="bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-inner" title="Fechar o Mês Atual">
-                  <ArchiveRestore size={14} /> Fechar
-                </button>
-              )}
+              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-yellow-500">HUB</span></span>
             </div>
           </div>
           <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
-            <button onClick={() => setActiveView('feed_equipe')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'feed_equipe' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+            <button onClick={() => setActiveView('feed_equipe')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'feed_equipe' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <Activity size={16} /> Feed
             </button>
-            <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'dashboard' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+            <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'dashboard' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <PieChartIcon size={16} /> <span className="hidden md:inline">Dashboard</span>
             </button>
-            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'operacional' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'operacional' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <Briefcase size={16} /> <span className="hidden md:inline">Portfólio</span>
             </button>
-            <button onClick={() => setActiveView('rotinas')} className={`relative px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'rotinas' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+            <button onClick={() => setActiveView('rotinas')} className={`relative px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'rotinas' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <CalendarDays size={16} /> <span className="hidden md:inline">Workflow</span>
               {globalPendingTasks > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-lg border border-red-400/50">
@@ -1015,9 +1228,13 @@ useEffect(() => {
           </div>
         )}
 
-        {/* NOVA VIEW: FEED DA EQUIPE, STATUS REAL-TIME E RANKING */}
         {activeView === 'feed_equipe' && (
-          <TeamFeedView currentUserData={currentUserData} user={user} stores={stores} />
+          <TeamFeedView 
+            currentUserData={currentUserData} 
+            user={user} 
+            stores={stores} 
+            openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
+          />
         )}
 
         {activeView === 'dashboard' && <ExecutiveDashboard dashboardData={dashboardData} formatCurrency={formatCurrency} pieData={pieData} roasData={roasData} COLORS={COLORS} currentDay={currentDay} daysInMonth={daysInMonth} />}
@@ -1072,17 +1289,17 @@ useEffect(() => {
             stores={dashboardData.flatFilteredStores} 
             openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
             openBulkTaskModal={() => setBulkTaskModalOpen(true)}
+            openInternalTasks={() => setInternalTasksModalOpen(true)}
             currentUserData={currentUserData}
             user={user}
             updateStoreInCloud={updateStoreInCloud}
             setStores={setStores}
             openClientFile={openClientFile}
             teamMembers={teamMembers}
+            broadcastTaskFocus={broadcastTaskFocus}
           />
         )}
       </main>
-
-      {/* --- MODAIS COMPLEMENTARES --- */}
 
       {passwordModalOpen && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
@@ -1124,6 +1341,7 @@ useEffect(() => {
           currentUserData={currentUserData}
           isManager={canEdit}
           teamMembers={teamMembers}
+          broadcastTaskFocus={broadcastTaskFocus}
         />
       )}
 
@@ -1402,6 +1620,16 @@ useEffect(() => {
           canEdit={canEdit}
         />
       )}
+
+      <InternalTasksModal 
+        isOpen={internalTasksModalOpen}
+        onClose={() => setInternalTasksModalOpen(false)}
+        tasks={internalTasks}
+        updateTasks={updateInternalTasks}
+        currentUserData={currentUserData}
+        teamMembers={teamMembers}
+      />
+
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Bell, CopyPlus, Check, CalendarClock } from 'lucide-react';
+import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Bell, CopyPlus, Check, CalendarClock, Activity, Target } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores, openClientFile }) {
+export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores, openClientFile, broadcastTaskFocus, openInternalTasks }) {
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || '';
   const [menuOpenId, setMenuOpenId] = useState(null);
 
@@ -29,41 +29,6 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
       </div>
     );
   };
-
-  // INBOX: Notificações Inteligentes
-  const groupedInbox = useMemo(() => {
-    if (!myName) return [];
-    const groups = {};
-    const now = new Date();
-    const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-    const currentTimeStr = now.toTimeString().substring(0, 5);
-
-    stores.forEach(store => {
-      const notificationReasons = [];
-
-      const delegatedTasksCount = store.checklists?.filter(c => {
-        if (c.feita) return false;
-        const isAssignedToMe = c.responsavel === myName;
-        if (!isAssignedToMe) return false;
-        
-        if (!c.data) return true;
-        if (c.data < todayStr) return true;
-        if (c.data === todayStr) return !c.hora || c.hora <= currentTimeStr;
-        return false;
-      }).length || 0;
-
-      if (delegatedTasksCount > 0) notificationReasons.push(`${delegatedTasksCount} tarefa(s) pendente(s)`);
-
-      if (notificationReasons.length > 0) {
-        if (!groups[store.client]) groups[store.client] = { clientName: store.client, stores: [], lastAccess: store.dataUltimoAcesso || 0 };
-        groups[store.client].stores.push({ ...store, highlightMessages: notificationReasons });
-        const currentStoreAccess = new Date(store.dataUltimoAcesso || 0);
-        const groupOldestAccess = new Date(groups[store.client].lastAccess);
-        if (currentStoreAccess < groupOldestAccess) groups[store.client].lastAccess = store.dataUltimoAcesso;
-      }
-    });
-    return Object.values(groups).sort((a, b) => new Date(a.lastAccess || 0) - new Date(b.lastAccess || 0));
-  }, [stores, myName]);
 
   // COLUNAS KANBAN (Usa diretamente as 'stores' que já vêm filtradas do App.jsx)
   const groupedTasks = useMemo(() => {
@@ -107,6 +72,10 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
     }
     updateStoreInCloud(updatedStore);
     setStores(prev => prev.map(s => s.id === store.id ? updatedStore : s));
+  };
+
+  const saveInternalTasks = async (newTasksList) => {
+    await setDoc(doc(db, "settings", "internal_tasks"), { tasks: newTasksList }, { merge: true });
   };
 
   const TaskCard = ({ store, isHighlighted = false, highlightMessages = [] }) => {
@@ -162,34 +131,14 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
+          <button onClick={openInternalTasks} className="bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-sm">
+            <Target size={18} /> Tarefa Interna
+          </button>
           <button onClick={openBulkTaskModal} className="bg-white/10 hover:bg-white/20 text-white border border-white/10 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-sm">
             <CopyPlus size={18} /> Tarefa em Massa
           </button>
         </div>
       </div>
-
-      {groupedInbox.length > 0 && (
-        <div className="mb-6 bg-indigo-500/5 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 shadow-lg relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
-          <div className="flex items-center gap-2 mb-4">
-            <Bell className="text-indigo-400 animate-pulse" size={18} />
-            <h3 className="text-base font-bold text-white tracking-wide">Radar de Atenção ({groupedInbox.length} Clientes)</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {groupedInbox.map(group => (
-              <div key={group.clientName} className="bg-white/[0.02] border border-white/5 hover:border-indigo-500/30 rounded-2xl p-4 flex flex-col shadow-sm transition-all">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 onClick={() => openClientFile(group.clientName)} className="font-bold text-white text-sm cursor-pointer hover:text-indigo-300 transition-colors truncate">{group.clientName}</h4>
-                  <span className="bg-indigo-500/20 text-indigo-300 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase border border-indigo-500/30">{group.stores.length} Lojas</span>
-                </div>
-                <div className="flex flex-col gap-2">
-                  {group.stores.map(store => <TaskCard key={`inbox-${store.id}`} store={store} isHighlighted={true} highlightMessages={store.highlightMessages} />)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
         <div className="bg-red-500/5 backdrop-blur-sm p-4 rounded-2xl border border-red-500/10 flex flex-col gap-3 min-h-[400px]">
