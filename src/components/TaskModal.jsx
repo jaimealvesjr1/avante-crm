@@ -287,7 +287,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
       {/* 🌟 CONTAINER PRINCIPAL (GLASSMORPHISM) */}
-      <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl overflow-hidden flex flex-col md:flex-row h-[90vh]">
+      <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl overflow-hidden flex flex-col lg:flex-row h-[90vh]">
         
         {/* =========================================
             LADO ESQUERDO: CHECKLIST E HISTÓRICO
@@ -314,82 +314,127 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 To-Do List
               </h4>
               
-              <div className="space-y-3 mb-5">
-                {store.checklists?.map(item => {
-                  const isEditing = editingTaskId === item.id;
-                  const canEditTask = isManager || item.criadoPor === username;
+              {/* Lista de Tarefas (Ordenadas por Urgência e Tipo) */}
+              <div className="space-y-2 mb-4 max-h-[40vh] overflow-y-auto pr-1 custom-scrollbar">
+                {(() => {
+                  const pendingTasks = store.checklists?.filter(t => !t.feita) || [];
+                  const completedTasks = store.checklists?.filter(t => t.feita) || [];
+                  
+                  // Ordenação inteligente das pendentes: tarefas com prazos mais próximos ou atrasados ficam no topo
+                  pendingTasks.sort((a, b) => {
+                    if (a.data && b.data) {
+                      const dateTimeA = new Date(`${a.data}T${a.hora || '00:00'}`);
+                      const dateTimeB = new Date(`${b.data}T${b.hora || '00:00'}`);
+                      return dateTimeA - dateTimeB;
+                    }
+                    if (a.data) return -1; // Com data ganha prioridade máxima
+                    if (b.data) return 1;
+                    return 0;
+                  });
 
-                  return (
-                    <div key={item.id} className="flex flex-col bg-white/[0.03] hover:bg-white/[0.05] p-3.5 rounded-2xl border border-white/5 group transition-all shadow-sm">
-                      {isEditing ? (
-                        <div className="flex flex-col gap-3 w-full animate-in fade-in">
-                          <div className="flex gap-2">
-                            <input type="text" value={editTaskData.texto} onChange={e => setEditTaskData({...editTaskData, texto: e.target.value})} className="flex-1 bg-black/40 border border-indigo-500/30 rounded-xl p-2 text-sm text-white outline-none focus:border-indigo-500" />
-                            <select value={editTaskData.responsavel} onChange={e => setEditTaskData({...editTaskData, responsavel: e.target.value})} className="w-32 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
-                              <option value="">Sem Resp.</option>
-                              {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
-                            </select>
-                          </div>
-                          <div className="flex flex-wrap gap-2 items-center">
-                            <input type="date" value={editTaskData.data} onChange={(e) => setEditTaskData({...editTaskData, data: e.target.value})} className="bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-white outline-none cursor-pointer" />
-                            <input type="time" value={editTaskData.hora} onChange={(e) => setEditTaskData({...editTaskData, hora: e.target.value})} className="bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-white outline-none cursor-pointer" />
-                            <select value={editTaskData.recorrencia} onChange={(e) => setEditTaskData({...editTaskData, recorrencia: e.target.value})} className="bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none cursor-pointer">
-                              <option value="none">S/ Repetição</option>
-                              <option value="daily">🔁 Diário</option>
-                              <option value="weekly">🔁 Semanal</option>
-                              <option value="monthly">🔁 Mensal</option>
-                            </select>
-                            <button onClick={() => setEditTaskData({...editTaskData, data: '', hora: '', recorrencia: 'none'})} className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-xl transition-colors border border-white/5"><Eraser size={14}/></button>
-                            <div className="flex gap-2 ml-auto">
-                              <button onClick={() => setEditingTaskId(null)} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all">Cancelar</button>
-                              <button onClick={() => saveTaskEdit(item.id)} className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"><Check size={14}/> Salvar</button>
+                  // Mantém apenas as últimas 5 concluídas na base do modal
+                  const recentCompleted = completedTasks.slice(-5);
+                  const tasksToRender = [...pendingTasks, ...recentCompleted];
+
+                  if (tasksToRender.length === 0) {
+                    return (
+                      <p className="text-xs text-gray-500 italic p-2 border border-dashed border-gray-700 rounded-lg text-center">
+                        Nenhuma tarefa cadastrada.
+                      </p>
+                    );
+                  }
+
+                  return tasksToRender.map(item => {
+                    const isEditing = editingTaskId === item.id;
+                    const canEditTask = isManager || item.criadoPor === username;
+                    
+                    // Identificador Inteligente de Campanhas Críticas (Cupons, Descontos, Relâmpago)
+                    const textLower = (item.texto || '').toLowerCase();
+                    const isSpecialCampaign = textLower.includes('cupom') || textLower.includes('desconto') || textLower.includes('relampago') || textLower.includes('oferta') || textLower.includes('promo');
+
+                    return (
+                      <div 
+                        key={item.id} 
+                        className={`flex flex-col p-2.5 rounded-lg border group shadow-sm transition-all ${
+                          item.feita ? 'bg-gray-800/40 border-gray-800' :
+                          isSpecialCampaign ? 'bg-amber-950/20 border-amber-500/40 hover:border-amber-500/70 shadow-[0_0_8px_rgba(245,158,11,0.05)]' :
+                          'bg-gray-800 border-gray-700 hover:border-gray-600'
+                        }`}
+                      >
+                        {isEditing ? (
+                          /* MODO DE EDIÇÃO */
+                          <div className="flex flex-col gap-2 w-full animate-in fade-in duration-200">
+                            <div className="flex gap-2">
+                              <input type="text" value={editTaskData.texto} onChange={e => setEditTaskData({...editTaskData, texto: e.target.value})} className="flex-1 bg-gray-900 border border-gray-600 rounded p-1.5 text-sm text-white outline-none focus:border-indigo-500" />
+                              <select value={editTaskData.responsavel} onChange={e => setEditTaskData({...editTaskData, responsavel: e.target.value})} className="w-28 bg-gray-900 border border-gray-600 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
+                                <option value="">Sem Resp.</option>
+                                {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
+                              </select>
                             </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-start justify-between w-full">
-                          <div className="flex items-start gap-3 flex-1">
-                            <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-5 h-5 mt-0.5 rounded-md border-white/20 bg-black/40 text-indigo-500 cursor-pointer focus:ring-offset-0 focus:ring-0 transition-all" />
-                            <div className="flex-1 flex flex-col">
-                              <span className={`text-sm ${item.feita ? 'text-gray-500 line-through' : 'text-gray-200 font-medium'}`}>{item.texto}</span>
-                              <div className="flex flex-wrap items-center gap-2 mt-2">
-                                {item.data && (
-                                  <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-md font-bold flex items-center gap-1 shadow-sm">
-                                    <CalendarDays size={12} /> 
-                                    {item.data.split('-').reverse().join('/')} {item.hora && `às ${item.hora}`}
-                                  </span>
-                                )}
-                                {item.recorrencia && item.recorrencia !== 'none' && (
-                                  <span className="text-[10px] bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
-                                    🔁 {item.recorrencia === 'daily' ? 'Diário' : item.recorrencia === 'weekly' ? 'Semanal' : 'Mensal'}
-                                  </span>
-                                )}
-                                {item.responsavel && (
-                                  <div className="flex items-center gap-1 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded-md shadow-sm">
-                                    <Avatar name={item.responsavel} size="sm" />
-                                    <span className="text-[10px] text-gray-400 font-medium">{item.responsavel}</span>
-                                  </div>
-                                )}
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <input type="date" value={editTaskData.data} onChange={(e) => setEditTaskData({...editTaskData, data: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
+                              <input type="time" value={editTaskData.hora} onChange={(e) => setEditTaskData({...editTaskData, hora: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
+                              <select value={editTaskData.recorrencia} onChange={(e) => setEditTaskData({...editTaskData, recorrencia: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none cursor-pointer">
+                                <option value="none">S/ Repetição</option>
+                                <option value="daily">🔁 Diário</option>
+                                <option value="weekly">🔁 Semanal</option>
+                                <option value="monthly">🔁 Mensal</option>
+                              </select>
+                              <div className="flex gap-1 ml-auto">
+                                <button type="button" onClick={() => setEditingTaskId(null)} className="p-1 bg-gray-700 hover:bg-gray-600 text-white rounded"><X size={14}/></button>
+                                <button type="button" onClick={() => saveTaskEdit(item.id)} className="p-1 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={14}/></button>
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity mt-1">
-                            {canEditTask && <button onClick={() => startEditingTask(item)} className="text-gray-400 hover:text-indigo-400 p-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-transparent"><Edit2 size={14}/></button>}
-                            <button onClick={() => deleteChecklist(item.id)} className="text-gray-400 hover:text-red-400 p-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-transparent"><Trash2 size={14}/></button>
+                        ) : (
+                          /* MODO DE LEITURA NORMAL */
+                          <div className="flex items-start justify-between w-full">
+                            <div className="flex items-start gap-3 flex-1">
+                              <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-4 h-4 mt-0.5 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" />
+                              <div className="flex-1 flex flex-col">
+                                <span className={`text-sm font-medium ${item.feita ? 'text-gray-500 line-through' : 'text-gray-200'}`}>
+                                  {item.texto}
+                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                  {/* TAG CRÍTICA DE PROMOÇÃO/CUPOM */}
+                                  {isSpecialCampaign && !item.feita && (
+                                    <span className="text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider animate-pulse">
+                                      🔥 Alerta de Oferta
+                                    </span>
+                                  )}
+                                  {item.data && (
+                                    <span className="text-[9px] bg-gray-900 border border-gray-700 text-amber-400 px-1.5 py-0.5 rounded font-bold flex items-center gap-1 shadow-sm">
+                                      <CalendarDays size={10} /> 
+                                      {item.data.split('-').reverse().join('/')} {item.hora && `às ${item.hora}`}
+                                    </span>
+                                  )}
+                                  {item.recorrencia && item.recorrencia !== 'none' && (
+                                    <span className="text-[9px] bg-indigo-900/40 border border-indigo-500/50 text-indigo-300 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
+                                      🔁 {item.recorrencia === 'daily' ? 'Diário' : item.recorrencia === 'weekly' ? 'Semanal' : 'Mensal'}
+                                    </span>
+                                  )}
+                                  {item.responsavel && <span className="text-[9px] text-gray-400 border border-gray-600 px-1.5 py-0.5 rounded shadow-sm">Resp: {item.responsavel}</span>}
+                                  {item.criadoPor && <span className="text-[9px] text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded shadow-sm">Por: {item.criadoPor}</span>}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                              {canEditTask && !item.feita && (
+                                <button type="button" onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1 bg-gray-900 rounded"><Edit2 size={14}/></button>
+                              )}
+                              <button type="button" onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 p-1 bg-gray-900 rounded"><Trash2 size={14}/></button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {(!store.checklists || store.checklists.length === 0) && (
-                  <p className="text-xs text-gray-500 italic p-4 border border-dashed border-white/10 rounded-2xl text-center bg-white/[0.01]">A lista de tarefas está vazia.</p>
-                )}
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
               
               {/* Formulário Nova Tarefa */}
               <div className="flex flex-col gap-3 bg-black/20 p-4 rounded-2xl border border-white/5 shadow-inner">
-                <div className="flex flex-col md:flex-row gap-2">
+                <div className="flex flex-col lg:flex-row gap-2">
                   <input type="text" value={newChecklist} onChange={e => setNewChecklist(e.target.value)} onKeyDown={e => e.key === 'Enter' && addChecklist()} placeholder="O que precisa ser feito?" className="flex-1 bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" />
                   <select value={newChecklistResp} onChange={e => setNewChecklistResp(e.target.value)} className="w-full md:w-36 bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-gray-300 outline-none focus:border-indigo-500 cursor-pointer transition-colors">
                     <option value="">Sem Resp.</option>

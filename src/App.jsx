@@ -297,9 +297,17 @@ useEffect(() => {
   const handleStoreChange = (id, field, value) => {
     let finalValue = value;
     if (typeof value === 'string' && (field === 'currentRevenue' || field === 'adsInvestment' || field === 'gmvBase' || field === 'customGrowth')) {
-      finalValue = value.replace(/\./g, '').replace(',', '.');
+      let str = value.trim();
+      if (str.includes(',')) {
+        str = str.replace(/\./g, '').replace(',', '.');
+      }
+      finalValue = str;
     }
+    
     const numericValue = finalValue !== '' ? Number(finalValue) : 0;
+    
+    if (isNaN(numericValue)) return;
+
     const updatedStores = stores.map(s => {
       if (s.id === id) {
         const novaLoja = { ...s, [field]: numericValue };
@@ -740,8 +748,8 @@ useEffect(() => {
         <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
-              <img src="/logo.jpg" alt="Avante CRM" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
-              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-sky-800">CRM</span></span>
+              <img src="/logo.jpg" alt="Avante HUB" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
+              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-sky-800">HUB</span></span>
             </div>
             <div className="hidden md:flex items-center gap-2 border-l border-white/10 pl-6">
               <button onClick={() => setIsBatchMode(true)} className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-inner" title="Apuração Rápida em Massa">
@@ -749,12 +757,15 @@ useEffect(() => {
               </button>
               {canEdit && (
                 <button onClick={closeMonth} className="bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-inner" title="Fechar o Mês Atual">
-                  <ArchiveRestore size={14} /> Fechar Mês
+                  <ArchiveRestore size={14} /> Fechar
                 </button>
               )}
             </div>
           </div>
           <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
+            <button onClick={() => setActiveView('feed_equipe')} className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeView === 'feed_equipe' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+              <Activity size={16} /> Feed
+            </button>
             <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'dashboard' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <PieChartIcon size={16} /> <span className="hidden md:inline">Dashboard</span>
             </button>
@@ -860,6 +871,149 @@ useEffect(() => {
             </div>
           </div>
         )}
+
+        {/* NOVA VIEW: FEED DA EQUIPE, STATUS REAL-TIME E RANKING */}
+        {activeView === 'feed_equipe' && (() => {
+          const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
+          const [currentFocus, setCurrentFocus] = useState('');
+          const [dismissedLogs, setDismissedLogs] = useState(() => JSON.parse(localStorage.getItem('avante_dismissed_logs') || '[]'));
+          const [liveStatus, setLiveStatus] = useState({});
+
+          // Escuta em tempo real o que a equipe está fazendo agora
+          useEffect(() => {
+            const unsubFocus = onSnapshot(doc(db, "settings", "atividades_equipe"), (docSnap) => {
+              if (docSnap.exists()) setLiveStatus(docSnap.data());
+            });
+            return () => unsubFocus();
+          }, []);
+
+          const handleSaveFocus = async () => {
+            if (!currentFocus.trim()) return;
+            const updatedStatus = { ...liveStatus, [myName]: { texto: currentFocus, timestamp: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}) } };
+            await setDoc(doc(db, "settings", "atividades_equipe"), updatedStatus);
+            setCurrentFocus('');
+            toast.success("Seu foco atual foi atualizado para toda a equipe!");
+          };
+
+          const dismissLog = (id) => {
+            const updated = [...dismissedLogs, id];
+            setDismissedLogs(updated);
+            localStorage.setItem('avante_dismissed_logs', JSON.stringify(updated));
+            toast.success("Notificação arquivada");
+          };
+
+          // Agrega logs e gera o ranking do dia de hoje
+          const todayDateStr = new Date().toLocaleDateString('pt-BR');
+          const allLogs = stores.flatMap(s => (s.taskLogs || []).map(l => ({ ...l, storeName: s.store, clientName: s.client })));
+          
+          const rankingDiario = useMemo(() => {
+            const stats = {};
+            allLogs.forEach(log => {
+              if (!log.data || !log.data.includes(todayDateStr)) return;
+              const author = log.author || 'Sistema';
+              if (!stats[author]) stats[author] = { name: author, tasks: 0, actions: 0 };
+              
+              if (log.texto?.includes('✅ Tarefa concluída')) stats[author].tasks += 1;
+              else stats[author].actions += 1;
+            });
+            return Object.values(stats).sort((a, b) => (b.tasks + b.actions) - (a.tasks + a.actions));
+          }, [stores, todayDateStr]);
+
+          const visibleLogs = allLogs.filter(l => !dismissedLogs.includes(l.id)).sort((a, b) => b.id - a.id);
+
+          return (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
+              
+              {/* COLUNA 1 & 2: STATUS ATUAL E FEED VIVO */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* WIDGET DOING NOW */}
+                <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-lg">
+                  <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Activity size={16} /> O que você está focando agora?
+                  </h3>
+                  <div className="flex gap-2">
+                    <input type="text" value={currentFocus} onChange={e => setCurrentFocus(e.target.value)} placeholder="Ex: Analisando campanhas de Ads na Milane Shoes..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-emerald-500" />
+                    <button onClick={handleSaveFocus} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 rounded-lg text-sm transition-colors">Atualizar Status</button>
+                  </div>
+
+                  {/* LISTA DOING NOW DA EQUIPE */}
+                  <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-gray-700/50 pt-4">
+                    {Object.entries(liveStatus).map(([user, data]) => (
+                      <div key={user} className="bg-gray-900/60 p-3 rounded-lg border border-gray-700 flex items-start gap-3 relative overflow-hidden">
+                        <div className="absolute top-0 left-0 h-full w-1 bg-emerald-500"></div>
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-white flex items-center justify-between">
+                            <span>{user}</span>
+                            <span className="text-[10px] text-gray-500 font-normal">{data.timestamp}</span>
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1 italic leading-relaxed">" {data.texto} "</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* FEED DE NOTIFICAÇÕES GLOBAIS */}
+                <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-lg flex flex-col h-[50vh]">
+                  <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4 flex items-center justify-between">
+                    <span>Mural de Atividades Recentes</span>
+                    <span className="text-[10px] bg-gray-700 text-gray-300 px-2 py-0.5 rounded font-bold">{visibleLogs.length} Alertas</span>
+                  </h3>
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                    {visibleLogs.map(log => (
+                      <div key={log.id} className="bg-gray-900/60 p-3.5 rounded-lg border border-gray-700 flex justify-between items-start group transition-all hover:border-gray-600">
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-bold text-indigo-400">
+                            {log.clientName} / {log.storeName} <span className="text-gray-500 font-normal ml-2">{log.data}</span>
+                          </div>
+                          <p className="text-sm text-gray-200 font-medium">{log.texto}</p>
+                          <p className="text-[10px] text-gray-500">Registrado por: <span className="text-gray-400 font-semibold">{log.author}</span></p>
+                        </div>
+                        <button onClick={() => dismissLog(log.id)} className="text-gray-500 hover:text-green-400 p-1.5 bg-gray-800 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Marcar como lido e ocultar">
+                          <Check size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    {visibleLogs.length === 0 && (
+                      <div className="text-center p-8 text-gray-500 italic text-sm">Nenhuma atividade recente no mural de notificações.</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* COLUNA 3: RANKING DIÁRIO (LEADERBOARD) */}
+              <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-lg flex flex-col">
+                <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  🏆 Performance de Hoje ({todayDateStr})
+                </h3>
+                <div className="space-y-2 flex-1 overflow-y-auto pr-1 custom-scrollbar">
+                  {rankingDiario.map((rank, i) => (
+                    <div key={rank.name} className="bg-gray-900 p-3.5 rounded-lg border border-gray-700 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className={`w-6 h-6 rounded-full text-xs font-black flex items-center justify-center ${i === 0 ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40' : i === 1 ? 'bg-gray-400/20 text-gray-300 border border-gray-400/40' : i === 2 ? 'bg-amber-700/20 text-amber-500 border border-amber-700/40' : 'bg-gray-800 text-gray-500'}`}>
+                          {i + 1}
+                        </span>
+                        <div>
+                          <p className="text-sm font-bold text-white">{rank.name}</p>
+                          <p className="text-[10px] text-gray-500">Ações: {rank.actions}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs bg-emerald-950 text-emerald-400 px-2 py-1 rounded-md font-bold border border-emerald-900/50">
+                          {rank.tasks} Tar. Concluídas
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {rankingDiario.length === 0 && (
+                    <div className="text-center p-8 text-gray-500 italic text-xs border border-dashed border-gray-700 rounded-lg">Nenhum integrante pontuou hoje ainda.</div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          );
+        })()}
 
         {activeView === 'dashboard' && <ExecutiveDashboard dashboardData={dashboardData} formatCurrency={formatCurrency} pieData={pieData} roasData={roasData} COLORS={COLORS} currentDay={currentDay} daysInMonth={daysInMonth} />}
         
