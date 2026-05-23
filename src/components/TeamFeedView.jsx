@@ -51,12 +51,16 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
             stats[author].points += earnedPoints;
 
             // Calcula o tempo de execução (se a pessoa clicou em iniciar antes de concluir)
-            if (task.startedAt && task.completedAtFull) {
-            const durationMs = new Date(task.completedAtFull) - new Date(task.startedAt);
-            if (durationMs > 0 && durationMs < 86400000) { // Sanity check: ignora se der erro ou mais de 24h
-                stats[author].totalTimeMs += durationMs;
-                stats[author].trackedTasks += 1;
+            let taskDuration = 0;
+            if (task.accumulatedTimeMs) {
+                taskDuration = task.accumulatedTimeMs;
+            } else if (task.startedAt && task.completedAtFull) {
+                taskDuration = new Date(task.completedAtFull) - new Date(task.startedAt);
             }
+
+            if (taskDuration > 0 && taskDuration < 86400000) {
+                stats[author].totalTimeMs += taskDuration;
+                stats[author].trackedTasks += 1;
             }
         }
         });
@@ -122,32 +126,51 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         <div className="lg:col-span-2 space-y-6">
 
         {/* BLOCO DE FOCO */}
-        {Object.keys(liveStatus).length > 0 && (
-            <div className="bg-gray-800/80 p-5 rounded-xl border border-gray-700 shadow-lg">
+        <div className="bg-gray-800/80 p-5 rounded-xl border border-gray-700 shadow-lg">
             <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2 mb-4">
                 <Activity size={16} /> Radar da Equipe (Agora)
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {Object.entries(liveStatus).map(([userName, data]) => (
-                <div key={userName} 
-                    onClick={() => {
-                        const parts = data.texto.split(' | ');
-                        if (parts.length > 1) handleOpenStore(parts[1]);
-                    }}
-                    className="bg-gray-900/80 p-3.5 rounded-lg border border-gray-700 flex items-start gap-3 relative overflow-hidden cursor-pointer hover:border-emerald-500 transition-colors">
-                    <div className="absolute top-0 left-0 h-full w-1 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]"></div>
-                    <div className="flex-1">
-                    <p className="text-[11px] font-bold text-white flex items-center justify-between">
-                        <span className="uppercase tracking-wider">{userName}</span>
-                        <span className="text-[9px] text-emerald-500/70 bg-emerald-500/10 px-1.5 rounded">{data.timestamp}</span>
-                    </p>
-                    <p className="text-xs text-gray-300 mt-1.5 font-medium leading-relaxed">{data.texto}</p>
-                    </div>
+            
+            {Object.keys(liveStatus).length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {Object.entries(liveStatus).map(([userName, data]) => {
+
+                        const isPaused = data.texto?.includes('⏸️');
+
+                        return (
+                        <div key={userName} 
+                            onClick={() => {
+                                const parts = data.texto.split(' | ');
+                                if (parts.length > 1) handleOpenStore(parts[1]);
+                            }}
+                            className={`bg-gray-900/80 p-3.5 rounded-lg border flex items-start gap-3 relative overflow-hidden cursor-pointer transition-colors ${
+                                isPaused ? 'border-amber-500/30 hover:border-amber-500' : 'border-gray-700 hover:border-emerald-500'
+                            }`}>
+                            {/* Linha indicadora lateral dinâmica */}
+                            <div className={`absolute top-0 left-0 h-full w-1 transition-all ${
+                                isPaused ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
+                            }`}></div>
+                            <div className="flex-1">
+                            <p className="text-[11px] font-bold text-white flex items-center justify-between">
+                                <span className="uppercase tracking-wider">{userName}</span>
+                                {/* Badge de Horário Dinâmico */}
+                                <span className={`text-[9px] px-1.5 rounded font-bold transition-all ${
+                                    isPaused ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-500/70 bg-emerald-500/10'
+                                }`}>{data.timestamp}</span>
+                            </p>
+                            <p className="text-xs text-gray-300 mt-1.5 font-medium leading-relaxed">{data.texto}</p>
+                            </div>
+                        </div>
+                        );
+                    })}
                 </div>
-                ))}
-            </div>
-            </div>
-        )}
+            ) : (
+                <div className="flex flex-col items-center justify-center p-6 border border-dashed border-gray-700 rounded-xl bg-gray-900/30">
+                    <Activity size={24} className="text-gray-600 mb-2" />
+                    <p className="text-xs text-gray-500 italic">Equipe livre. Nenhuma tarefa em execução no momento.</p>
+                </div>
+            )}
+        </div>
 
         {/* RADAR DE ATENÇÃO */}
         {groupedInbox && groupedInbox.length > 0 && (

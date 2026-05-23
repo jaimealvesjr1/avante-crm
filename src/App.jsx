@@ -5,7 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
   ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
-import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, writeBatch } from "firebase/firestore";
+import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, writeBatch, deleteField } from "firebase/firestore";
 import { Toaster, toast } from 'react-hot-toast';
 import ClientFileModal from './components/ClientFileModal';
 
@@ -511,7 +511,7 @@ useEffect(() => {
         });
       });
 
-      await batch.commit(); // Executa tudo de uma vez de forma segura
+      await batch.commit();
       await updateGlobalSettings('day', 1);
       toast.success("✅ Mês fechado! Tiers e Receitas homologados com sucesso.");
       
@@ -790,16 +790,24 @@ useEffect(() => {
   
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || '';
 
-  const broadcastTaskFocus = async (taskText) => {
+  const broadcastTaskFocus = async (taskText, action = 'set') => {
     if (!myName) return;
-    const updatedStatus = { 
-      [myName]: { 
+    const updatedStatus = {};
+    
+    if (action === 'clear') {
+      updatedStatus[myName] = deleteField();
+    } else {
+      updatedStatus[myName] = { 
         texto: taskText, 
         timestamp: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}) 
-      } 
-    };
+      };
+    }
+
     await setDoc(doc(db, "settings", "atividades_equipe"), updatedStatus, { merge: true });
-    toast.success(`Sinalizado: ${taskText}`);
+    // Só exibe o toast se não for uma ação silenciosa de limpar
+    if (action !== 'clear' && !taskText.includes('Pausada')) {
+      toast.success(`Sinalizado: ${taskText.replace('▶️ Executando: ', '')}`);
+    }
   };
 
   if (authLoading || !user) return <AuthScreen email={email} setEmail={setEmail} password={password} setPassword={setPassword} handleLogin={handleLogin} authError={authError} authLoading={authLoading} />;

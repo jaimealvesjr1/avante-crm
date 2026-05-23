@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus }) {
@@ -27,6 +27,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [dailyUnits, setDailyUnits] = useState('');
   const [entryDay, setEntryDay] = useState(new Date().getDate());
   const [isSavingDaily, setIsSavingDaily] = useState(false);
+  const [pendingStartInfo, setPendingStartInfo] = useState(null);
 
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
@@ -176,6 +177,12 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const toggleChecklist = (id) => {
     const task = store.checklists.find(c => c.id === id);
     const isCompleting = !task.feita;
+
+    if (isCompleting && (task.executingStatus === 'playing' || task.executingStatus === 'paused') && broadcastTaskFocus) {
+       broadcastTaskFocus('', 'clear');
+    }
+    
+    const nowTime = new Date().getTime();
     let updatedChecklists = [...store.checklists];
 
     if (isCompleting && task.recorrencia && task.recorrencia !== 'none') {
@@ -189,45 +196,29 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
       const nextDateStr = `${nextDateObj.getFullYear()}-${String(nextDateObj.getMonth() + 1).padStart(2, '0')}-${String(nextDateObj.getDate()).padStart(2, '0')}`;
       
-      // A Mutação: A tarefa avança no tempo e limpa os cronômetros
+      const sessionTime = task.startedAt && task.executingStatus === 'playing' ? nowTime - new Date(task.startedAt).getTime() : 0;
+
       updatedChecklists[currentIndex] = { 
-        ...task, 
-        feita: false, 
-        data: nextDateStr,
-        startedAt: null, 
-        completedAt: null, 
-        completedAtFull: null, 
-        completedBy: null 
+        ...task, feita: false, data: nextDateStr, startedAt: null, completedAt: null, completedAtFull: null, completedBy: null, accumulatedTimeMs: 0, executingStatus: 'none'
       };
 
-      // Cópia Fantasma: Fica no banco de dados para dar os pontos de XP, mas vamos ocultá-la da interface
       const deadCopy = {
-          ...task,
-          id: Date.now() + Math.random(),
-          feita: true,
-          recorrencia: 'ghost', // Marcador para não aparecer na tela
-          completedAt: new Date().toISOString().split('T')[0],
-          completedAtFull: new Date().toISOString(),
-          completedBy: username
+          ...task, id: Date.now() + Math.random(), feita: true, recorrencia: 'ghost', completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username, accumulatedTimeMs: (task.accumulatedTimeMs || 0) + sessionTime
       };
       updatedChecklists.push(deadCopy);
-
       toast.success('Tarefa renovada para o próximo ciclo!');
-      updatedLogs = [...updatedLogs, { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `✅ Tarefa cumprida: "${task.texto}" (Ciclo Renovado)`, author: username }];
-
+      
     } else {
       updatedChecklists = updatedChecklists.map(c => {
         if (c.id === id) {
           if (isCompleting) {
+            const sessionTime = c.startedAt && c.executingStatus === 'playing' ? nowTime - new Date(c.startedAt).getTime() : 0;
             return { 
-              ...c, 
-              feita: true, 
-              completedAt: new Date().toISOString().split('T')[0], 
-              completedAtFull: new Date().toISOString(),
-              completedBy: username 
+              ...c, feita: true, completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username, accumulatedTimeMs: (c.accumulatedTimeMs || 0) + sessionTime, executingStatus: 'completed'
             };
           } else {
-            const { completedAt, completedAtFull, completedBy, startedAt, ...rest } = c;
+            // Reabrindo a tarefa (zera os status)
+            const { completedAt, completedAtFull, completedBy, startedAt, accumulatedTimeMs, executingStatus, ...rest } = c;
             return { ...rest, feita: false };
           }
         }
@@ -249,6 +240,11 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
   const deleteChecklist = (id) => {
     const task = store.checklists.find(c => c.id === id);
+    
+    if (task && (task.executingStatus === 'playing' || task.executingStatus === 'paused') && broadcastTaskFocus) {
+       broadcastTaskFocus('', 'clear');
+    }
+
     const updatedChecklists = store.checklists.filter(c => c.id !== id);
     const newNextAccess = autoScheduleStore(updatedChecklists);
     let finalNextAccess = newNextAccess;
@@ -323,19 +319,116 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   };
 
   const handleStartTask = (taskId, taskText) => {
-    if (broadcastTaskFocus) {
-      broadcastTaskFocus(`Executando: ${taskText} | ${store.store}`);
+    // Escaneia todas as lojas para ver se este usuário já tem alguma tarefa rodando ('playing')
+    const runningTask = stores
+      .flatMap(s => (s.checklists || []).map(t => ({ ...t, storeObject: s })))
+      .find(t => t.executingStatus === 'playing' && t.startedBy === username && !t.feita);
+
+    // Se encontrar um conflito, interrompe o início e abre a janela de escolha
+    if (runningTask) {
+      setPendingStartInfo({ currentTaskId: taskId, currentTaskText: taskText, runningTask });
+      return;
     }
-    
-    // Agora gravamos o timestamp de INÍCIO na tarefa
+
+    // Se não houver conflitos, inicia normalmente
+    executeStart(taskId, taskText);
+  };
+
+  const executeStart = (taskId, taskText) => {
+    if (broadcastTaskFocus) {
+      broadcastTaskFocus(`▶️ Executando: ${taskText} | ${store.store}`);
+    }
     const updatedChecklists = store.checklists.map(c => 
-      c.id === taskId ? { ...c, startedAt: new Date().toISOString() } : c
+      // Ao invés de preservar o startedAt antigo, a gente renova ele toda vez que dá Play
+      c.id === taskId ? { ...c, startedAt: new Date().toISOString(), executingStatus: 'playing', startedBy: username } : c
     );
-    
     const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `▶️ Iniciou a tarefa: "${taskText}"`, author: username };
-    
     saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() });
-    toast.success("Tarefa iniciada! Tempo correndo ⏱️");
+  };
+
+  const handlePauseTask = (taskId, taskText) => {
+    if (broadcastTaskFocus) {
+      broadcastTaskFocus(`⏸️ Pausada: ${taskText} | ${store.store}`);
+    }
+    const nowTime = new Date().getTime();
+    const updatedChecklists = store.checklists.map(c => {
+      if (c.id === taskId) {
+        // Pega o tempo da sessão atual e soma no acumulador
+        const sessionTime = c.startedAt ? nowTime - new Date(c.startedAt).getTime() : 0;
+        return { 
+            ...c, 
+            executingStatus: 'paused', 
+            accumulatedTimeMs: (c.accumulatedTimeMs || 0) + sessionTime, 
+            startedAt: null // Limpa para o relógio parar de contar
+        };
+      }
+      return c;
+    });
+    const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `⏸️ Pausou a tarefa: "${taskText}"`, author: username };
+    saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() });
+    toast.success("Tarefa pausada.");
+  };
+
+  const resolveConflictAndStart = async (action) => {
+    if (!pendingStartInfo) return;
+    const { currentTaskId, currentTaskText, runningTask } = pendingStartInfo;
+    const nowTime = new Date().getTime();
+
+    if (store.id !== runningTask.storeObject.id) {
+      const oldStore = stores.find(s => s.id === runningTask.storeObject.id);
+      if (oldStore) {
+        const updatedOldChecklists = oldStore.checklists.map(t => {
+          if (t.id === runningTask.id) {
+            const sessionTime = t.startedAt ? nowTime - new Date(t.startedAt).getTime() : 0;
+            const totalTime = (t.accumulatedTimeMs || 0) + sessionTime;
+            
+            return action === 'complete' 
+              ? { ...t, feita: true, executingStatus: 'completed', accumulatedTimeMs: totalTime, completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username }
+              : { ...t, executingStatus: 'paused', accumulatedTimeMs: totalTime, startedAt: null };
+          }
+          return t;
+        });
+
+        const logText = action === 'complete' ? `✅ Tarefa concluída via alternância: "${runningTask.texto}"` : `⏸️ Tarefa pausada via alternância: "${runningTask.texto}"`;
+        const updatedOldLogs = [...(oldStore.taskLogs || []), { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: logText, author: username }];
+        
+        const finalOldStore = { ...oldStore, checklists: updatedOldChecklists, taskLogs: updatedOldLogs, dataUltimoAcesso: new Date().toISOString() };
+        updateStoreInCloud(finalOldStore);
+        setStores(prev => prev.map(s => s.id === oldStore.id ? finalOldStore : s));
+      }
+      executeStart(currentTaskId, currentTaskText);
+    } else {
+      const finalChecklists = store.checklists.map(c => {
+        if (c.id === runningTask.id) {
+          const sessionTime = c.startedAt ? nowTime - new Date(c.startedAt).getTime() : 0;
+          const totalTime = (c.accumulatedTimeMs || 0) + sessionTime;
+          return action === 'complete'
+            ? { ...c, feita: true, executingStatus: 'completed', accumulatedTimeMs: totalTime, completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username }
+            : { ...c, executingStatus: 'paused', accumulatedTimeMs: totalTime, startedAt: null };
+        }
+        if (c.id === currentTaskId) {
+          return { ...c, startedAt: new Date().toISOString(), executingStatus: 'playing', startedBy: username };
+        }
+        return c;
+      });
+
+      const logTextOld = action === 'complete' ? `✅ Tarefa concluída via alternância: "${runningTask.texto}"` : `⏸️ Tarefa pausada via alternância: "${runningTask.texto}"`;
+      const finalLogs = [
+        ...(store.taskLogs || []),
+        { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: logTextOld, author: username },
+        { id: Date.now() + 1, data: new Date().toLocaleString('pt-BR'), texto: `▶️ Iniciou a tarefa: "${currentTaskText}"`, author: username }
+      ];
+
+      const finalStoreObj = { ...store, checklists: finalChecklists, taskLogs: finalLogs, dataUltimoAcesso: new Date().toISOString() };
+      updateStoreInCloud(finalStoreObj);
+      setStores(prev => prev.map(s => s.id === store.id ? finalStoreObj : s));
+
+      if (broadcastTaskFocus) {
+        broadcastTaskFocus(`▶️ Executando: ${currentTaskText} | ${store.store}`);
+      }
+    }
+    setPendingStartInfo(null);
+    toast.success(action === 'complete' ? "Anterior concluída e nova iniciada!" : "Anterior pausada e nova iniciada!");
   };
 
   return (
@@ -468,11 +561,21 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                               </div>
                             </div>
                             <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
-                              {!item.feita && (
-                                <button type="button" onClick={() => handleStartTask(item.id, item.texto)} className="text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/20 px-2 py-1 bg-gray-900 border border-emerald-500/30 rounded flex items-center gap-1 text-[10px] font-bold transition-colors" title="Sinalizar que está executando agora">
-                                  <Play size={12}/> Iniciar
+                              
+                              {/* Botão de INICIAR ou RETOMAR */}
+                              {!item.feita && item.executingStatus !== 'playing' && (
+                                <button type="button" onClick={() => handleStartTask(item.id, item.texto)} className="text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/20 px-2 py-1 bg-gray-900 border border-emerald-500/30 rounded flex items-center gap-1 text-[10px] font-bold transition-colors" title={item.executingStatus === 'paused' ? "Retomar execução" : "Sinalizar que está executando agora"}>
+                                  <Play size={12}/> {item.executingStatus === 'paused' ? 'Retomar' : 'Iniciar'}
                                 </button>
                               )}
+
+                              {/* Botão de PAUSAR */}
+                              {!item.feita && item.executingStatus === 'playing' && (
+                                <button type="button" onClick={() => handlePauseTask(item.id, item.texto)} className="text-amber-500 hover:text-amber-400 hover:bg-amber-500/20 px-2 py-1 bg-gray-900 border border-amber-500/30 rounded flex items-center gap-1 text-[10px] font-bold transition-colors" title="Pausar execução">
+                                  <Pause size={12}/> Pausar
+                                </button>
+                              )}
+
                               {canEditTask && !item.feita && (
                                 <button type="button" onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1.5 bg-gray-900 hover:bg-white/10 rounded transition-colors"><Edit2 size={14}/></button>
                               )}
@@ -622,6 +725,42 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
           </div>
         </div>
       </div>
+      {/* Interface de Resolução de Conflitos de Tarefa Única */}
+      {pendingStartInfo && (
+        <div className="fixed inset-0 bg-[#0B0F19]/90 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+          <div className="bg-gray-900 border border-white/10 p-6 rounded-2xl max-w-md w-full shadow-2xl flex flex-col gap-4">
+            <h4 className="text-base font-bold text-white flex items-center gap-2">
+              ⚠️ Tarefa já em execução
+            </h4>
+            <p className="text-sm text-gray-300 leading-relaxed">
+              Você já possui a tarefa <strong className="text-indigo-400">"{pendingStartInfo.runningTask.texto}"</strong> ativa na loja <strong className="text-white">{pendingStartInfo.runningTask.storeObject.store}</strong>.
+            </p>
+            <p className="text-xs text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+              Você deseja pausar ou concluir a tarefa anterior para poder iniciar esta nova?
+            </p>
+            <div className="flex gap-2 mt-2">
+              <button 
+                onClick={() => setPendingStartInfo(null)}
+                className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 font-bold py-2.5 rounded-xl text-xs transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => resolveConflictAndStart('pause')}
+                className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1"
+              >
+                Pausar
+              </button>
+              <button 
+                onClick={() => resolveConflictAndStart('complete')}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
