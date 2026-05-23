@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus } from 'lucide-react';
+import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, Settings } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
+import StoreManagementModal from './StoreManagementModal'; // <-- NOVO IMPORT
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
@@ -12,6 +13,7 @@ export default function ClientFileModal({
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
+  const [isStoreManagementModalOpen, setIsStoreManagementModalOpen] = useState(false); // <-- NOVO ESTADO
   
   const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
@@ -43,7 +45,7 @@ export default function ClientFileModal({
     });
 
     setStores(updatedStores);
-    setIsBulkTaskModalOpen(false); // Fecha o modal após salvar
+    setIsBulkTaskModalOpen(false);
     toast.success(`Tarefa replicada em ${selectedStoreIds.length} loja(s)!`);
   };
 
@@ -66,7 +68,7 @@ export default function ClientFileModal({
     if (!clientGroup || !clientGroup.stores) return [];
     const open = [];
     clientGroup.stores.forEach(store => {
-      if (store.checklists) {
+      if (store.checklists && !store.arquivada) { // <-- Ignora tarefas de lojas arquivadas
         store.checklists.forEach(task => {
           if (!task.feita) {
             open.push({ ...task, storeName: store.store, storeId: store.id });
@@ -74,7 +76,6 @@ export default function ClientFileModal({
         });
       }
     });
-    // Ordena da data mais próxima para a mais distante
     return open.sort((a, b) => {
       const dateA = new Date(`${a.data || '2099-01-01'}T${a.hora || '00:00'}`);
       const dateB = new Date(`${b.data || '2099-01-01'}T${b.hora || '00:00'}`);
@@ -91,19 +92,18 @@ export default function ClientFileModal({
     );
     
     const updatedStore = { ...store, checklists: updatedChecklists };
-    updateStoreInCloud(updatedStore); // Salva no Firebase
-    setStores(stores.map(s => s.id === storeId ? updatedStore : s)); // Atualiza na tela
+    updateStoreInCloud(updatedStore); 
+    setStores(stores.map(s => s.id === storeId ? updatedStore : s)); 
     toast.success("Tarefa concluída!");
   };
 
   if (!clientGroup) return null;
 
-  // Lógica reativa das lojas
+  // <-- LÓGICA REATIVA: Agora filtramos as lojas arquivadas (Soft Delete)
   const liveStores = useMemo(() => {
-    return stores.filter(s => s.client === clientGroup.client);
+    return stores.filter(s => s.client === clientGroup.client && !s.arquivada);
   }, [stores, clientGroup.client]);
 
-  // Radar de Marketplaces Ativos (Verdes)
   const activeMarketplaces = useMemo(() => {
     const active = new Set();
     liveStores.forEach(s => {
@@ -117,31 +117,30 @@ export default function ClientFileModal({
   }, [liveStores]);
 
   const clientMktData = useMemo(() => {
-    if (!clientGroup || !clientGroup.stores) return [];
+    if (!liveStores) return [];
     const mktMap = {};
     
-    clientGroup.stores.forEach(s => {
+    liveStores.forEach(s => {
       const mkt = s.marketplace ? s.marketplace.toUpperCase() : 'N/A';
       if (!mktMap[mkt]) mktMap[mkt] = { name: mkt, revenue: 0 };
       mktMap[mkt].revenue += (Number(s.currentRevenue) || 0);
     });
     
     return Object.values(mktMap).sort((a, b) => b.revenue - a.revenue);
-  }, [clientGroup]);
+  }, [liveStores]);
 
   const clientHistoryLogs = useMemo(() => {
-    if (!clientGroup || !clientGroup.stores) return [];
+    if (!liveStores) return [];
     const allLogs = [];
-    clientGroup.stores.forEach(store => {
+    liveStores.forEach(store => {
       if (store.taskLogs) {
         store.taskLogs.forEach(log => {
           allLogs.push({ ...log, storeName: store.store, storeId: store.id });
         });
       }
     });
-    // Ordena do mais recente para o mais antigo (baseado no ID que é um timestamp)
     return allLogs.sort((a, b) => b.id - a.id);
-  }, [clientGroup]);
+  }, [liveStores]);
 
   const glassTooltipStyle = {
     backgroundColor: 'rgba(11, 15, 25, 0.9)',
@@ -152,12 +151,10 @@ export default function ClientFileModal({
     boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
   };
 
-  // Radar de Marketplaces Potenciais (Laranjas)
   const potentialMarketplaces = useMemo(() => {
     return liveStores[0]?.potentialMarketplaces || [];
   }, [liveStores]);
 
-  // Alterar potencial do canal
   const togglePotentialMarketplace = (mkt) => {
     if (!canUseBatchEntry) return; 
     if (activeMarketplaces.has(mkt)) return; 
@@ -179,7 +176,6 @@ export default function ClientFileModal({
     setStores(updatedStoresGlobal);
   };
 
-  // Gráficos
   const pieData = useMemo(() => 
     liveStores.map(s => ({ name: s.store, value: s.currentRevenue || 0 })).filter(s => s.value > 0)
   , [liveStores]);
@@ -250,10 +246,9 @@ export default function ClientFileModal({
 
       const finalStore = { 
         ...s, 
-        history: newHistory.sort((a, b) => a.day - b.day) // Ordenação matemática corrigida
+        history: newHistory.sort((a, b) => a.day - b.day)
       };
 
-      // Só atualiza os valores gerais da loja se for o último dia lançado
       const maxDay = Math.max(...finalStore.history.map(h => h.day));
       if (dayVal === maxDay) {
           finalStore.currentRevenue = cumRev;
@@ -294,7 +289,15 @@ export default function ClientFileModal({
             <button onClick={() => setActiveTab('historico')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'historico' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><ClipboardList size={16}/> Histórico & Notas</button>
           </div>
 
-          <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent rounded-full text-gray-400 transition-colors"><X size={20}/></button>
+          {/* BOTÕES DE AÇÃO DO CABEÇALHO */}
+          <div className="flex items-center gap-2">
+            {canEdit && (
+              <button onClick={() => setIsStoreManagementModalOpen(true)} className="px-3 py-2 bg-slate-700 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-gray-300 flex items-center transition-colors">
+                <Settings size={16} /> <span className="hidden md:inline"></span>
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent rounded-xl text-gray-400 transition-colors"><X size={20}/></button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-transparent">
@@ -302,7 +305,6 @@ export default function ClientFileModal({
           {/* ABA 1: DASHBOARD E RADAR */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-in fade-in">
-              {/* RADAR DE MARKETPLACES */}
               <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Target size={14}/> Radar de Expansão (Marketplaces)</h3>
                 <div className="flex flex-wrap gap-2">
@@ -324,7 +326,6 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              {/* KPIs GERAIS */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Faturamento Total do Grupo</span>
@@ -347,10 +348,7 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              {/* GRÁFICOS (Agora com 3 colunas) */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* 1. PARTICIPAÇÃO POR LOJA */}
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
                   <h3 className="text-sm font-bold text-white mb-4">Participação por Loja (Share)</h3>
                   <div className="h-64">
@@ -367,7 +365,6 @@ export default function ClientFileModal({
                   </div>
                 </div>
 
-                {/* 2. ROAS POR LOJA */}
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
                   <h3 className="text-sm font-bold text-white mb-4">Eficiência de Ads (ROAS por Loja)</h3>
                   <div className="h-64">
@@ -385,7 +382,6 @@ export default function ClientFileModal({
                   </div>
                 </div>
 
-                {/* 3. NOVO GRÁFICO: FATURAMENTO POR MARKETPLACE */}
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
                   <h3 className="text-sm font-bold text-white mb-4">Market Share (Canais)</h3>
                   <div className="h-64">
@@ -418,7 +414,7 @@ export default function ClientFileModal({
               <div className="flex justify-between items-center bg-black/20 p-4 rounded-2xl border border-white/5">
                 <div>
                   <h3 className="text-white font-bold flex items-center gap-2"><Zap className="text-amber-400" size={16}/> Lançamento Rápido</h3>
-                  <p className="text-xs text-gray-400 mt-1">Insira os dados atualizados das lojas deste cliente.</p>
+                  <p className="text-xs text-gray-400 mt-1">Insira os dados atualizados das lojas ativas deste cliente.</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Dia Ref.</label>
@@ -467,11 +463,9 @@ export default function ClientFileModal({
             </div>
           )}
 
-          {/* ABA 3: HISTÓRICO E TAREFAS (VISUAL LIMPO EM 2 COLUNAS) */}
+          {/* ABA 3: HISTÓRICO E TAREFAS */}
           {activeTab === 'historico' && (
             <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mt-4 animate-in fade-in duration-300">
-              
-              {/* COLUNA ESQUERDA: TIMELINE (OCUPA 3 DAS 5 COLUNAS) */}
               <div className="xl:col-span-3 bg-white/[0.02] p-5 rounded-3xl border border-white/5 flex flex-col shadow-sm">
                 <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
                   <div className="flex items-center gap-3">
@@ -507,10 +501,7 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              {/* COLUNA DIREITA: TAREFAS PENDENTES E BOTÃO (OCUPA 2 DAS 5 COLUNAS) */}
               <div className="xl:col-span-2 bg-white/[0.02] p-5 rounded-3xl border border-white/5 flex flex-col shadow-sm">
-                
-                {/* Cabeçalho com o botão integrado */}
                 <div className="flex flex-col gap-4 mb-4 border-b border-white/5 pb-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -522,7 +513,6 @@ export default function ClientFileModal({
                     <span className="bg-amber-500/20 text-amber-400 font-bold px-2 py-0.5 rounded text-xs">{clientOpenTasks.length}</span>
                   </div>
                   
-                  {/* BOTÃO PARA ABRIR O MODAL DE TAREFA EM MASSA */}
                   <button 
                     onClick={() => setIsBulkTaskModalOpen(true)}
                     className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
@@ -573,13 +563,22 @@ export default function ClientFileModal({
         </div>
       </div>
 
-      {/* Renderiza o Modal de Tarefa em Massa focado apenas neste cliente */}
       <BulkTaskModal 
         isOpen={isBulkTaskModalOpen} 
         onClose={() => setIsBulkTaskModalOpen(false)} 
-        stores={clientGroup.stores} 
+        stores={liveStores} 
         onSave={handleBulkTaskSave} 
         teamMembers={teamMembers} 
+      />
+
+      {/* RENDERIZAÇÃO DO NOVO MODAL */}
+      <StoreManagementModal
+        isOpen={isStoreManagementModalOpen}
+        onClose={() => setIsStoreManagementModalOpen(false)}
+        clientGroup={clientGroup}
+        stores={stores}
+        setStores={setStores}
+        updateStoreInCloud={updateStoreInCloud}
       />
     </div>
   );

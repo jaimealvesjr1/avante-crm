@@ -115,7 +115,7 @@ export default function App() {
     if (!currentUserData) return 0;
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0];
     
-    return stores.flatMap(s => s.checklists || []).filter(c => {
+    return stores.filter(s => !s.arquivada).flatMap(s => s.checklists || []).filter(c => {
       if (c.feita) return false;
       const isAssignedToMe = c.responsavel === myName;
       if (!isAssignedToMe) return false; 
@@ -693,6 +693,8 @@ useEffect(() => {
     });
 
     const filteredStores = processedStores.filter(store => {
+      if (store.arquivada) return false;
+
       const matchSearch = !searchTerm || store.client.toLowerCase().includes(searchTerm.toLowerCase()) || store.store.toLowerCase().includes(searchTerm.toLowerCase());
       const matchStatus = statusFilter === 'all' || store.status === statusFilter;
       const matchMkt = mktFilter === 'all' || (store.marketplace && store.marketplace.toUpperCase() === mktFilter);
@@ -829,7 +831,7 @@ useEffect(() => {
       
       {/* 🌟 NAVEGAÇÃO PRINCIPAL (HEADER) */}
       <header className="sticky top-0 z-40 bg-[#0B0F19]/50 backdrop-blur-xl border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.3)]">
-        <div className="max-w-[1920px] w-full mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
+        <div className="w-full px-4 md:px-8 2xl:px-12 mx-auto h-16 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
               <img src="/logo.jpg" alt="Avante HUB" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
@@ -892,14 +894,12 @@ useEffect(() => {
       </header>
 
       {/* ÁREA DE CONTEÚDO PRINCIPAL */}
-      <main className="flex-1 w-full max-w-[1920px] mx-auto p-4 md:p-8 pt-6 relative">
-        
-        {/* ========================================================
-            🌟 BARRA DE FILTROS GLOBAL (FIXA E "PRESA") 🌟
-        ======================================================== */}
+      <main className="flex-1 w-full px-4 md:px-8 2xl:px-12 pt-6 relative mx-auto">
+ 
+        {/* 🌟 BARRA DE FILTROS GLOBAL (FIXA E "PRESA") 🌟 */}
         {['dashboard', 'operacional', 'rotinas'].includes(activeView) && (
-          <div className="sticky top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 animate-in fade-in duration-300">
-            <div className="flex flex-col md:flex-row items-center gap-4 justify-between">
+          <div className="sticky top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
+            <div className="flex flex-col md:flex-row items-center gap-4 justify-between w-full">
               
               <div className="flex flex-wrap items-center gap-3 w-full md:w-auto flex-1">
                 <div className="relative flex-1 min-w-[250px]">
@@ -943,7 +943,7 @@ useEffect(() => {
               <div className="flex w-full md:w-auto">
                 {canEdit && (
                   <button onClick={addNewStore} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 px-6 rounded-xl text-sm font-bold flex justify-center items-center gap-2 transition-all shadow-md">
-                    <Plus size={16} /> Nova Conta
+                    <Plus size={16} /> Novo Cliente
                   </button>
                 )}
               </div>

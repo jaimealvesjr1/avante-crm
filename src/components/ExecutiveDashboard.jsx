@@ -1,19 +1,16 @@
 import React, { useMemo } from 'react';
-import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, PieChartIcon, Users } from 'lucide-react';
+import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, PieChartIcon } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line, Legend } from 'recharts';
 
 export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieData, roasData, COLORS, currentDay, daysInMonth }) {
   
-  // 1. Cálculos Adicionais
   const predictedOrders = currentDay > 0 ? Math.round((dashboardData.totalOrders / currentDay) * daysInMonth) : 0;
   const avgAdsCostPerOrder = dashboardData.totalOrders > 0 ? dashboardData.totalGlobalAds / dashboardData.totalOrders : 0;
   
-  // 2. Lógica de Cores para o ROAS (Acima/Abaixo da média)
   const avgRoas = useMemo(() => {
     return roasData.length > 0 ? roasData.reduce((acc, curr) => acc + curr.roas, 0) / roasData.length : 0;
   }, [roasData]);
 
-  // 3. Agregação por CLIENTE para evitar a multiplicação de taxa fixa por loja
   const monthlyComparisonData = useMemo(() => {
     const monthlyStats = {};
 
@@ -46,7 +43,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
     });
 
     const data = Object.values(monthlyStats);
-    
     data.push({
       month: 'Atual (Proj.)',
       clientRevenue: dashboardData.totalProjected,
@@ -56,7 +52,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
     return data;
   }, [dashboardData]);
 
-  // 4. Alertas de Ritmo baseados em Metas
   const changeLogs = useMemo(() => {
     return dashboardData.groupedClients.filter(g => g.status !== 'success').map(g => ({
       id: g.client,
@@ -67,7 +62,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
     }));
   }, [dashboardData]);
 
-  // Estilos globais para Tooltips dos Gráficos (Glassmorphism inline)
   const glassTooltipStyle = {
     backgroundColor: 'rgba(11, 15, 25, 0.85)',
     backdropFilter: 'blur(12px)',
@@ -79,7 +73,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 w-full">
 
       <div className="bg-white/[0.02] backdrop-blur-xl p-6 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex items-center gap-4">
         <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 text-indigo-400 shadow-inner">
@@ -87,14 +81,13 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
         </div>
         <div>
           <h2 className="text-xl font-bold text-white tracking-wide">Dashboard de Fechamento</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Métricas de desempenho até o momento.</p>
+          <p className="text-sm text-gray-400 mt-0.5">Métricas de desempenho global otimizadas para leitura ampla.</p>
         </div>
       </div>
       
-      {/* 🌟 QUADROS DE KPI (GLASSMORPHISM) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-5 uw:grid-cols-6 lg:grid-cols-4 gap-4 md:gap-5">
+      {/* 🌟 1. QUADROS DE KPI (Linha 1) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-5">
         
-        {/* FATURAMENTO */}
         <div className="bg-white/[0.02] backdrop-blur-xl p-5 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
           <div className="flex justify-between items-start mb-4 relative z-10">
@@ -121,7 +114,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
           </div>
         </div>
 
-        {/* VOLUME DE VENDAS */}
         <div className="bg-white/[0.02] backdrop-blur-xl p-5 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
           <div className="flex justify-between items-start mb-4 relative z-10">
@@ -141,14 +133,13 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
                 <p className="text-sm font-bold text-emerald-300">{dashboardData.totalOrders}</p>
               </div>
               <div>
-                <p className="text-[9px] text-gray-500 uppercase font-bold tracking-wider mb-0.5">Pedidos</p>
+                <p className="text-[9px] text-gray-500 uppercase font-bold tracking-wider mb-0.5">Unid. Físicas</p>
                 <p className="text-sm font-bold text-gray-300">{dashboardData.totalUnits}</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* ROAS MÉDIO */}
         <div className="bg-white/[0.02] backdrop-blur-xl p-5 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
           <div className="flex justify-between items-start mb-4 relative z-10">
@@ -175,7 +166,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
           </div>
         </div>
 
-        {/* RECEITA AVANTE */}
         <div className="bg-white/[0.02] backdrop-blur-xl p-5 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
           <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-purple-400 to-indigo-600 shadow-[0_0_15px_rgba(168,85,247,0.5)]"></div>
@@ -204,10 +194,9 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
         </div>
       </div>
 
-      {/* 🌟 GRÁFICOS INTERMEDIÁRIOS (GLASS) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* 🌟 2. GRÁFICOS DE ANÁLISE SECUNDÁRIA (Linha 2 - Lado a Lado em Ultrawide) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* PIE CHART */}
         <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20"><Target size={18} className="text-indigo-400"/></div>
@@ -222,7 +211,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
                 <Tooltip contentStyle={glassTooltipStyle} itemStyle={{ color: '#fff', fontWeight: 'bold' }} formatter={(value) => formatCurrency(value)} />
               </PieChart>
             </ResponsiveContainer>
-            {/* Texto Central do Gráfico Pizza */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
               <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Total Global</span>
               <span className="text-lg font-bold text-white">{formatCurrency(dashboardData.totalCurrentRevenue)}</span>
@@ -230,7 +218,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
           </div>
         </div>
 
-        {/* BAR CHART ROAS */}
         <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
@@ -257,34 +244,21 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             </ResponsiveContainer>
           </div>
         </div>
-      </div>
 
-      {/* 🌟 MARKETPLACE (1/4) VS EVOLUÇÃO (3/4) */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        
-        {/* COLUNA 1/4: FATURAMENTO POR MARKETPLACE (COLUNAS VERTICAIS) */}
-        <div className="lg:col-span-1 bg-white/[0.02] backdrop-blur-xl p-5 rounded-3xl border border-white/5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center gap-3 mb-4">
+        <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
             <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
-              <ShoppingCart size={16} className="text-emerald-400"/>
+              <ShoppingCart size={18} className="text-emerald-400"/>
             </div>
-            <h3 className="text-sm font-bold text-white tracking-wide">Marketplaces</h3>
+            <h3 className="text-base font-bold text-white tracking-wide">Faturamento por Canal</h3>
           </div>
-          
-          <div className="w-full h-64 mt-4">
+          <div className="h-80 w-full mt-4">
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={dashboardData.rankingMarketplaces} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                 <XAxis dataKey="name" stroke="#6B7280" fontSize={10} tickLine={false} />
                 <YAxis stroke="#6B7280" fontSize={10} tickFormatter={(v) => v >= 1000 ? `R$${(v/1000).toFixed(0)}k` : `R$${v}`} axisLine={false} tickLine={false} />
-                
-                <Tooltip 
-                  cursor={{ fill: 'rgba(255,255,255,0.02)' }} 
-                  contentStyle={glassTooltipStyle} 
-                  itemStyle={{ color: '#fff', fontWeight: 'bold' }} 
-                  formatter={(value) => formatCurrency(value)} 
-                />
-                
+                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} contentStyle={glassTooltipStyle} itemStyle={{ color: '#fff', fontWeight: 'bold' }} formatter={(value) => formatCurrency(value)} />
                 <Bar dataKey="revenue" radius={[6, 6, 0, 0]} barSize={24}>
                   {dashboardData.rankingMarketplaces.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -295,16 +269,21 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
           </div>
         </div>
 
-        {/* COLUNA 3/4: EVOLUÇÃO EVOLUÇÃO RECEITA CLIENTES VS AGÊNCIA */}
-        <div className="lg:col-span-3 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
+      </div>
+
+      {/* 🌟 3. EVOLUÇÃO MENSAL E ALERTAS (Linha 3) */}
+      <div className="grid grid-cols-1 2xl:grid-cols-4 gap-6">
+        
+        {/* EVOLUÇÃO - Toma 3/4 da tela em Ultrawide */}
+        <div className="2xl:col-span-3 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm flex flex-col">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 bg-purple-500/10 rounded-xl border border-purple-500/20">
               <Activity size={18} className="text-purple-400"/>
             </div>
-            <h3 className="text-base font-bold text-white tracking-wide">Evolução: Receita Clientes vs Agência</h3>
+            <h3 className="text-base font-bold text-white tracking-wide">Evolução Histórica: Receita Global vs Receita Agência</h3>
           </div>
-          <div className="w-full h-64 mt-4">
-            <ResponsiveContainer width="99%" height={300} minWidth={0} minHeight={0}>
+          <div className="w-full flex-1 min-h-[300px]">
+            <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
               <LineChart data={monthlyComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                 <XAxis dataKey="month" stroke="#6B7280" fontSize={11} tickMargin={10} axisLine={false} tickLine={false} />
@@ -318,39 +297,37 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             </ResponsiveContainer>
           </div>
         </div>
-      </div>
 
-      {/* 🌟 LOG DE ALTERAÇÕES E ALERTAS (GLASS) */}
-      <div className="bg-white/[0.02] backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-white/5 shadow-sm">
-        <h3 className="text-base font-bold text-white mb-6 flex items-center gap-3">
-          <div className="p-2 bg-gray-500/10 rounded-xl border border-white/10"><AlertCircle size={18} className="text-gray-400"/></div>
-          Radar de Pacing e Mudanças de Ritmo
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 uw:grid-cols-6 gap-4">
-          {changeLogs.map((log, i) => (
-            <div key={i} className={`flex flex-col gap-3 p-4 rounded-2xl border backdrop-blur-md transition-all hover:scale-[1.01] ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
-              <div className="flex items-start gap-3">
-                <div className={`p-2 rounded-xl mt-0.5 ${log.type === 'danger' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                  {log.type === 'danger' ? <AlertCircle size={16} /> : <Clock size={16} />}
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-bold text-white text-sm mb-1">{log.client}</h4>
-                  <p className="text-sm text-gray-400 leading-relaxed">{log.message}</p>
+        {/* LOG DE ALERTAS - Toma 1/4 da tela em Ultrawide */}
+        <div className="2xl:col-span-1 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm overflow-hidden flex flex-col h-full max-h-[400px] 2xl:max-h-none">
+          <h3 className="text-base font-bold text-white mb-6 flex items-center gap-3 shrink-0">
+            <div className="p-2 bg-gray-500/10 rounded-xl border border-white/10"><AlertCircle size={18} className="text-gray-400"/></div>
+            Radar de Pacing
+          </h3>
+          
+          <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
+            {changeLogs.map((log, i) => (
+              <div key={i} className={`flex flex-col gap-3 p-4 rounded-2xl border backdrop-blur-md transition-all hover:scale-[1.02] ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-xl mt-0.5 ${log.type === 'danger' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                    {log.type === 'danger' ? <AlertCircle size={16} /> : <Clock size={16} />}
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-white text-sm mb-1">{log.client}</h4>
+                    <p className="text-xs text-gray-400 leading-relaxed">{log.message}</p>
+                  </div>
                 </div>
               </div>
-              <div className="text-[9px] uppercase font-bold text-gray-500 tracking-wider text-right w-full border-t border-white/5 pt-2">
-                {log.time}
+            ))}
+            {changeLogs.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-3 p-6 text-emerald-400 text-sm font-medium text-center h-full">
+                <CheckCircle size={32} className="opacity-50" /> 
+                <span>Excelente! Todas as contas operando dentro do ritmo.</span>
               </div>
-            </div>
-          ))}
-          {changeLogs.length === 0 && (
-            <div className="col-span-full flex items-center justify-center gap-3 p-6 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl text-emerald-400 text-sm font-medium">
-              <CheckCircle size={24} /> 
-              <span>Excelente! Todas as contas estão operando dentro do ritmo ou acima da meta.</span>
-            </div>
-          )}
+            )}
+          </div>
         </div>
+
       </div>
 
     </div>
