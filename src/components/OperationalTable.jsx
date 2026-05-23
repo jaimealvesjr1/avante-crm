@@ -23,16 +23,6 @@ export default function OperationalTable({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      
-      <div className="bg-white/[0.02] backdrop-blur-xl p-6 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex items-center gap-4">
-        <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 text-indigo-400 shadow-inner">
-          <Briefcase size={24} />
-        </div>
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-wide">Portfólio Operacional</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Visão consolidada e leitura dinâmica do cenário atual.</p>
-        </div>
-      </div>
 
       {filteredGroups.length > 0 ? filteredGroups.map((group) => {
         const isExpanded = expandedClients.includes(group.client);
@@ -106,65 +96,77 @@ export default function OperationalTable({
               </div>
             </div>
 
-            {/* LOJAS DO CLIENTE */}
+            {/* LOJAS DO CLIENTE EM GRID COM NOVOS CARDS */}
             {isExpanded && (
-              <div className="bg-black/20 border-t border-white/5 p-4 md:p-6 space-y-3">
+              <div className="bg-black/20 border-t border-white/5 p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 {group.stores.map((row) => (
-                  <div key={row.id} className="group/store flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/[0.03] hover:bg-white/[0.06] p-4 rounded-xl border border-white/5 transition-all shadow-sm">
-                    
-                    <div className="flex items-center gap-3 flex-[1.5]">
-                      <div className={`w-2 h-8 rounded-full ${row.status === 'success' ? 'bg-emerald-500' : row.status === 'warning' ? 'bg-amber-500' : 'bg-red-500'} shadow-[0_0_10px_rgba(255,255,255,0.1)]`}></div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-gray-200 text-sm">{row.store}</span>
-                          {row.marketplace && <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 rounded-md text-[9px] uppercase tracking-wider font-bold">{row.marketplace}</span>}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase border ${row.tier === 'A' ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' : 'bg-white/5 text-gray-400 border-white/10'}`}>
-                            Tier {row.tier}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                  <div key={row.id} className="group/store flex flex-col bg-white/[0.03] hover:bg-white/[0.06] p-5 rounded-2xl border border-white/5 transition-all shadow-sm relative overflow-hidden">
+                      
+                      {/* Status Line */}
+                      <div className={`absolute top-0 left-0 w-full h-1.5 ${row.status === 'success' ? 'bg-emerald-500' : row.status === 'warning' ? 'bg-amber-500' : 'bg-red-500'}`}></div>
 
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-gray-500 font-bold uppercase mb-1">Cresc. Diário</span>
-                        <span className="text-gray-300 font-bold text-sm bg-black/20 px-2 py-1 rounded-md border border-white/5">{row.customGrowth !== undefined ? row.customGrowth : globalGrowth}%</span>
+                      {/* Header */}
+                      <div className="flex justify-between items-start mb-4 mt-1">
+                          <div>
+                              <div className="flex items-center gap-2 mb-1.5">
+                                  <span className="font-bold text-gray-100 text-lg">{row.store}</span>
+                                  {row.marketplace && <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded text-xs uppercase font-bold tracking-wider">{row.marketplace}</span>}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${row.tier === 'A' ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' : 'bg-white/5 text-gray-400 border-white/10'}`}>
+                                  Tier {row.tier}
+                                  </span>
+                                  <span className="text-xs text-gray-400 font-medium">{row.client}</span>
+                              </div>
+                          </div>
+                          <div className="flex gap-2">
+                              <button onClick={() => openHistoryModal(row)} className={`p-2 rounded-xl transition-all shadow-sm ${row.history?.length > 0 ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/30' : 'bg-white/5 text-gray-500 border border-white/5 hover:bg-white/10'}`} title="Dashboard e Diário"><BarChart2 size={16} /></button>
+                              <a href={generateStoreWhatsAppLink(row)} target="_blank" rel="noopener noreferrer" className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-xl transition-all shadow-sm"><MessageCircle size={16} /></a>
+                          </div>
                       </div>
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-[11px] text-gray-500 font-medium">Base: {formatCurrency(row.gmvBase)}</span>
-                        <span className="font-bold text-gray-300 text-sm">Meta: {formatCurrency(row.gmvTarget)}</span>
-                      </div>
-                    </div>
 
-                    <div className="flex flex-col flex-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-bold text-white text-base">{formatCurrency(row.currentRevenue)}</span>
-                        <span className="text-[10px] text-gray-500 font-bold uppercase">Atual</span>
+                      {/* Progress Section */}
+                      <div className="mb-5 bg-black/30 p-3.5 rounded-xl border border-white/5">
+                          <div className="flex justify-between text-xs mb-2.5">
+                              <span className="text-gray-400 font-medium">Progresso da Meta</span>
+                              <span className="font-bold text-white">{row.percentReached?.toFixed(1)}%</span>
+                          </div>
+                          <div className="w-full bg-black/50 rounded-full h-3 shadow-inner">
+                              <div className={`h-full rounded-full transition-all duration-1000 ${row.status === 'success' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : row.status === 'warning' ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]'}`} style={{ width: `${Math.min(row.percentReached || 0, 100)}%` }}></div>
+                          </div>
+                          <div className="flex justify-between mt-2.5">
+                              <span className="text-xs text-gray-400">Atual: <strong className="text-white">{formatCurrency(row.currentRevenue)}</strong></span>
+                              <span className="text-xs text-gray-400">Meta: <strong className="text-gray-300">{formatCurrency(row.gmvTarget)}</strong></span>
+                          </div>
                       </div>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        <span className="bg-white/5 px-1.5 py-0.5 rounded-md border border-white/5 text-[9px] text-gray-400 font-medium">Ads: <span className="text-amber-400">{formatCurrency(row.adsInvestment)}</span></span>
-                        <span className="bg-white/5 px-1.5 py-0.5 rounded-md border border-white/5 text-[9px] text-gray-400 font-medium">Ped: <span className="text-white">{row.orders || 0}</span></span>
+
+                      {/* Ads and Orders Metrics */}
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                          <div className="flex flex-col gap-1 border-r border-white/10 pr-2">
+                              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Ads & ROAS</span>
+                              <span className="font-bold text-amber-400 text-sm">{formatCurrency(row.adsInvestment)}</span>
+                              <span className="text-xs text-gray-400">ROAS: {row.adsInvestment > 0 ? (row.currentRevenue / row.adsInvestment).toFixed(1) : 0}x</span>
+                          </div>
+                          <div className="flex flex-col gap-1 pl-2">
+                              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Tração e Volume</span>
+                              <span className="font-bold text-emerald-400 text-sm">{row.orders || 0} ped</span>
+                              <span className="text-xs text-gray-400">{row.units || 0} unidades</span>
+                          </div>
                       </div>
-                    </div>
 
-                    <div className="flex flex-col flex-1">
-                      <span className={`font-bold text-sm ${row.status === 'success' ? 'text-emerald-400' : row.status === 'warning' ? 'text-amber-400' : 'text-red-400'}`}>
-                        {formatCurrency(row.projectedGmv)}
-                      </span>
-                      <span className="text-[10px] text-gray-500 font-medium mt-0.5 uppercase tracking-wider">Projeção Final</span>
-                      <span className="text-[10px] text-gray-400 mt-1">ROAS: <strong className="text-white">{row.adsInvestment > 0 ? (row.currentRevenue / row.adsInvestment).toFixed(1) : 0}x</strong></span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 flex-[0.5] justify-end">
-                      <button onClick={() => openHistoryModal(row)} className={`p-2 rounded-xl transition-all shadow-sm ${row.history?.length > 0 ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/30' : 'bg-white/5 text-gray-500 border border-white/5 hover:bg-white/10'}`} title="Dashboard e Diário">
-                        <BarChart2 size={16} />
-                      </button>
-                      <a href={generateStoreWhatsAppLink(row)} target="_blank" rel="noopener noreferrer" className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-xl transition-all shadow-sm">
-                        <MessageCircle size={16} />
-                      </a>
-                    </div>
+                      {/* Footer */}
+                      <div className="mt-auto flex items-center justify-between pt-4 border-t border-white/10">
+                          <div className="flex flex-col">
+                              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-0.5">Base Histórica</span>
+                              <span className="text-sm font-bold text-gray-400">{formatCurrency(row.gmvBase)}</span>
+                          </div>
+                          <div className="flex flex-col items-end">
+                              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-0.5">Projeção Final</span>
+                              <span className={`font-bold text-xl leading-none tracking-tight ${row.status === 'success' ? 'text-emerald-400' : row.status === 'warning' ? 'text-amber-400' : 'text-red-400'}`}>
+                              {formatCurrency(row.projectedGmv)}
+                              </span>
+                          </div>
+                      </div>
                   </div>
                 ))}
               </div>

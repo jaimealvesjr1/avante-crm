@@ -58,24 +58,15 @@ export default function AdminPanel({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="bg-white/[0.02] backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center border border-indigo-500/30">
-            <Shield className="text-indigo-400" size={20} />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-white tracking-wide">Painel da Equipe</h2>
-            <p className="text-sm text-gray-400 mt-0.5">Gestão de acessos e personalização de perfis.</p>
-          </div>
-        </div>
-        <div className="flex gap-4">
+
+
+      <div className="flex justify-end mb-4">
           <button 
             onClick={closeMonth} 
             className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all"
           >
             Encerrar Competência
           </button>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
@@ -83,7 +74,7 @@ export default function AdminPanel({
         {/* LADO ESQUERDO: FORMULÁRIO DE CRIAÇÃO (Ocupa 2/5) */}
         <div className="lg:col-span-2">
           <form onSubmit={handleCreateUser} className="bg-black/20 p-6 rounded-3xl border border-white/5 shadow-inner h-full flex flex-col">
-            <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+            <h3 className="text-lg font-bold text-indigo-400 uppercase tracking-wide mb-6 flex items-center gap-2">
               <UserPlus size={16} /> Novo Usuário
             </h3>
 
@@ -113,7 +104,7 @@ export default function AdminPanel({
         {/* LADO DIREITO: LISTA DE USUÁRIOS (Ocupa 3/5) */}
         <div className="lg:col-span-3">
           <div className="bg-black/20 p-6 rounded-3xl border border-white/5 shadow-inner h-full flex flex-col min-h-[450px]">
-            <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-6 flex items-center gap-2">
+            <h3 className="text-lg font-bold text-gray-300 uppercase tracking-wide mb-6 flex items-center gap-2">
               <Users size={16} className="text-gray-400"/> Membros da Equipe ({teamMembers?.length || 0})
             </h3>
             
