@@ -466,19 +466,60 @@ useEffect(() => {
     } 
   };
 
-  const closeMonth = () => {
-    const monthName = prompt("MÊS DE FECHAMENTO\n\nDigite o nome do mês que está sendo fechado agora (Ex: Abr/26):");
+  const closeMonth = async () => {
+    const monthName = prompt("MÊS DE FECHAMENTO\n\nDigite a competência (Ex: Abr/26):");
     if(!monthName) return;
-    if(window.confirm(`Isso salvará o histórico mensal e zerará os lançamentos do painel para o próximo mês.\nDeseja continuar?`)) {
-      const updatedStores = stores.map(s => {
+
+    if(!window.confirm(`⚠️ RISCO ALTO: Isso homologará a competência de ${monthName}.\n\nAs metas serão atualizadas, os Tiers re-ranqueados e o faturamento da agência será travado no histórico.\nDeseja continuar?`)) return;
+
+    setIsDbLoading(true);
+    try {
+      const batch = writeBatch(db);
+
+      stores.forEach(s => {
         const finalRevenue = s.currentRevenue || 0;
-        const newStore = { ...s, monthlyHistory: [...(s.monthlyHistory || []), { month: monthName, gmv: finalRevenue }], gmvBase: finalRevenue > 0 ? finalRevenue : s.gmvBase, currentRevenue: 0, adsInvestment: 0, orders: 0, units: 0, history: [] };
-        updateStoreInCloud(newStore);
-        return newStore;
+
+        // 1. Snapshot da Receita da Agência (O Cofre)
+        let agencyCut = 0;
+        if (s.feeType === 'fixed' || s.fixedFee > 0) {
+          agencyCut = Number(s.fixedFee);
+        } else {
+          agencyCut = finalRevenue * (Number(s.feePercent) / 100);
+        }
+
+        // 2. Montagem do Histórico Blindado
+        const monthSnapshot = {
+          month: monthName,
+          gmv: finalRevenue,
+          agencyRevenue: agencyCut, // Trava o dinheiro que a agência fez
+          feeApplied: s.feeType === 'fixed' ? `Fixo R$${s.fixedFee}` : `${s.feePercent}%`,
+          closedAt: new Date().toISOString()
+        };
+
+        // 3. Atualização da Loja
+        const newGmvBase = finalRevenue > 0 ? finalRevenue : s.gmvBase;
+
+        const storeRef = doc(db, "stores", s.id.toString());
+        batch.update(storeRef, {
+          monthlyHistory: [...(s.monthlyHistory || []), monthSnapshot],
+          gmvBase: newGmvBase, // Isso força a atualização automática de Metas e Tiers
+          currentRevenue: 0,
+          adsInvestment: 0,
+          orders: 0,
+          units: 0,
+          history: [] // Limpa o operacional diário para o novo mês
+        });
       });
-      setStores(updatedStores);
-      updateGlobalSettings('day', 1);
-      toast.success("✅ Mês fechado com sucesso!");
+
+      await batch.commit(); // Executa tudo de uma vez de forma segura
+      await updateGlobalSettings('day', 1);
+      toast.success("✅ Mês fechado! Tiers e Receitas homologados com sucesso.");
+      
+    } catch (error) {
+      console.error("Erro no fechamento do mês:", error);
+      toast.error("Falha crítica ao fechar o mês. Contate o suporte.");
+    } finally {
+      setIsDbLoading(false);
     }
   };
 
@@ -780,12 +821,6 @@ useEffect(() => {
             <button onClick={() => setActiveView('feed_equipe')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'feed_equipe' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <Activity size={16} /> Feed
             </button>
-            <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'dashboard' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-              <PieChartIcon size={16} /> <span className="hidden md:inline">Dashboard</span>
-            </button>
-            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'operacional' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-              <Briefcase size={16} /> <span className="hidden md:inline">Portfólio</span>
-            </button>
             <button onClick={() => setActiveView('rotinas')} className={`relative px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'rotinas' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <CalendarDays size={16} /> <span className="hidden md:inline">Workflow</span>
               {globalPendingTasks > 0 && (
@@ -793,6 +828,12 @@ useEffect(() => {
                   {globalPendingTasks}
                 </span>
               )}
+            </button>
+            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'operacional' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+              <Briefcase size={16} /> <span className="hidden md:inline">Portfólio</span>
+            </button>
+           <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'dashboard' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+              <PieChartIcon size={16} /> <span className="hidden md:inline">Dashboard</span>
             </button>
             {canEdit && (
               <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
