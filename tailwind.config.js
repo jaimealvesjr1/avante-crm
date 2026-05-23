@@ -5,7 +5,13 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      screens: {
+        '3xl': '1600px', // Monitores grandes
+        '4xl': '1920px', // Full HD grande
+        'uw':  '2560px', // Ultrawide
+      }
+    }
   },
   plugins: [],
 }

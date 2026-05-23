@@ -818,7 +818,7 @@ useEffect(() => {
       
       {/* 🌟 NAVEGAÇÃO PRINCIPAL (HEADER) */}
       <header className="sticky top-0 z-40 bg-[#0B0F19]/50 backdrop-blur-xl border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.3)]">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
+        <div className="max-w-[1920px] w-full mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
               <img src="/logo.jpg" alt="Avante HUB" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
@@ -881,7 +881,7 @@ useEffect(() => {
       </header>
 
       {/* ÁREA DE CONTEÚDO PRINCIPAL */}
-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 pt-6 relative">
+      <main className="flex-1 w-full max-w-[1920px] mx-auto p-4 md:p-8 pt-6 relative">
         
         {/* ========================================================
             🌟 BARRA DE FILTROS GLOBAL (FIXA E "PRESA") 🌟
@@ -1054,7 +1054,7 @@ useEffect(() => {
 
       {historyModalOpen && activeStore && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 w-full max-w-4xl overflow-hidden flex flex-col">
+          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 w-full max-w-4xl 2xl:max-w-6xl uw:max-w-[80vw] overflow-hidden flex flex-col">
             <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
               <div className="flex items-center gap-6">
                 <div><h3 className="text-lg font-bold text-white">Dashboard Analítico</h3><p className="text-xs text-gray-400 mt-1">{activeStore.client} - {activeStore.store}</p></div>

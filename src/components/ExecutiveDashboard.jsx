@@ -92,7 +92,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
       </div>
       
       {/* 🌟 QUADROS DE KPI (GLASSMORPHISM) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-5 uw:grid-cols-6 lg:grid-cols-4 gap-4 md:gap-5">
         
         {/* FATURAMENTO */}
         <div className="bg-white/[0.02] backdrop-blur-xl p-5 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative overflow-hidden group">
@@ -327,7 +327,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
           Radar de Pacing e Mudanças de Ritmo
         </h3>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 uw:grid-cols-6 gap-4">
           {changeLogs.map((log, i) => (
             <div key={i} className={`flex flex-col gap-3 p-4 rounded-2xl border backdrop-blur-md transition-all hover:scale-[1.01] ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
               <div className="flex items-start gap-3">

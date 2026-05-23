@@ -71,7 +71,7 @@ export default function AvanteStrategicSimulator({ formatCurrency, groupedClient
       </div>
 
       {/* CARDS DE RESULTADO */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 uw:grid-cols-6 gap-8">
         
         <div className="bg-gray-900 p-8 rounded-xl border border-gray-700 relative overflow-hidden flex flex-col justify-center shadow-lg">
            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Receita Atual Garantida</h3>
