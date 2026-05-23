@@ -20,6 +20,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editTaskData, setEditTaskData] = useState({});
+  const [newTaskWeight, setNewTaskWeight] = useState('media');
 
   const [dailyGMV, setDailyGMV] = useState('');
   const [dailyAds, setDailyAds] = useState('');
@@ -68,7 +69,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     const newResp = e.target.value;
     setStoreResp(newResp);
     saveChanges({ ...store, responsavel: newResp });
-    toast.success('Responsável atualizado com sucesso!');
+    toast.success('Responsável updated com sucesso!');
   };
 
   const autoScheduleStore = (currentChecklists) => {
@@ -255,18 +256,15 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   };
 
   const handleStartTask = (taskId, taskText) => {
-    // Escaneia todas as lojas para ver se este usuário já tem alguma tarefa rodando ('playing')
     const runningTask = stores
       .flatMap(s => (s.checklists || []).map(t => ({ ...t, storeObject: s })))
       .find(t => t.executingStatus === 'playing' && t.startedBy === username && !t.feita);
 
-    // Se encontrar um conflito, interrompe o início e abre a janela de escolha
     if (runningTask) {
       setPendingStartInfo({ currentTaskId: taskId, currentTaskText: taskText, runningTask });
       return;
     }
 
-    // Se não houver conflitos, inicia normalmente
     executeStart(taskId, taskText);
   };
 
@@ -421,22 +419,17 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       setStores(prev => prev.map(s => s.id === store.id ? finalStoreObj : s));
 
       broadcastTaskFocus(`▶️ Executando: ${currentTaskText} | ${store.store}`, 'set', store.id);
-      }
     }
     setPendingStartInfo(null);
     toast.success(action === 'complete' ? "Anterior concluída e nova iniciada!" : "Anterior pausada e nova iniciada!");
+  };
 
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
-      {/* 🌟 CONTAINER PRINCIPAL (GLASSMORPHISM) */}
       <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl overflow-hidden flex flex-col lg:flex-row h-[90vh]">
         
-        {/* =========================================
-            LADO ESQUERDO: CHECKLIST E HISTÓRICO
-        ============================================= */}
+        {/* LADO ESQUERDO */}
         <div className="flex-1 flex flex-col md:border-r border-white/10 relative">
-          
-          {/* CABEÇALHO DA LOJA */}
           <div className="p-5 border-b border-white/5 bg-black/20 flex justify-between items-center shrink-0">
             <div>
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -446,39 +439,34 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 {store.client} {store.marketplace && `• ${store.marketplace}`}
               </p>
             </div>
-            {/* Botão de fechar visível apenas em telas menores onde as colunas se empilham */}
             <button onClick={onClose} className="lg:hidden p-2 hover:bg-white/10 rounded-full transition-colors border border-transparent">
               <X size={20} className="text-gray-400 hover:text-white" />
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-5 md:p-6 space-y-8 custom-scrollbar">
-            
             {/* 1. SESSÃO DE CHECKLIST */}
             <div>
               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">
                 To-Do List
               </h4>
               
-              {/* Lista de Tarefas (Ordenadas por Urgência e Tipo) */}
               <div className="space-y-2 mb-4 max-h-[40vh] overflow-y-auto pr-1 custom-scrollbar">
                 {(() => {
                   const pendingTasks = store.checklists?.filter(t => !t.feita) || [];
                   const completedTasks = store.checklists?.filter(t => t.feita && t.recorrencia !== 'ghost') || [];
                   
-                  // Ordenação inteligente das pendentes: tarefas com prazos mais próximos ou atrasados ficam no topo
                   pendingTasks.sort((a, b) => {
                     if (a.data && b.data) {
                       const dateTimeA = new Date(`${a.data}T${a.hora || '00:00'}`);
                       const dateTimeB = new Date(`${b.data}T${b.hora || '00:00'}`);
                       return dateTimeA - dateTimeB;
                     }
-                    if (a.data) return -1; // Com data ganha prioridade máxima
+                    if (a.data) return -1;
                     if (b.data) return 1;
                     return 0;
                   });
 
-                  // Mantém apenas as últimas 5 concluídas na base do modal
                   const recentCompleted = completedTasks.slice(-5);
                   const tasksToRender = [...pendingTasks, ...recentCompleted];
 
@@ -494,9 +482,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     const isEditing = editingTaskId === item.id;
                     const canEditTask = isManager || item.criadoPor === username;
                     
-                    // Identificador Inteligente de Campanhas Críticas (Cupons, Descontos, Relâmpago)
-                    const textLower = (item.texto || '').toLowerCase();
-
                     return (
                       <div 
                         key={item.id} 
@@ -505,7 +490,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                         }`}
                       >
                         {isEditing ? (
-                          /* MODO DE EDIÇÃO */
                           <div className="flex flex-col gap-2 w-full animate-in fade-in duration-200">
                             <div className="flex gap-2">
                               <input type="text" value={editTaskData.texto} onChange={e => setEditTaskData({...editTaskData, texto: e.target.value})} className="flex-1 bg-gray-900 border border-gray-600 rounded p-1.5 text-sm text-white outline-none focus:border-indigo-500" />
@@ -530,7 +514,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                             </div>
                           </div>
                         ) : (
-                          /* MODO DE LEITURA NORMAL */
                           <div className="flex items-start justify-between w-full">
                             <div className="flex items-start gap-3 flex-1">
                               <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-4 h-4 mt-0.5 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" />
@@ -556,17 +539,14 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                               </div>
                             </div>
                             <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
-                              
-                              {/* Botão de INICIAR ou RETOMAR */}
                               {!item.feita && item.executingStatus !== 'playing' && (
-                                <button type="button" onClick={() => handleStartTask(item.id, item.texto)} className="text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/20 px-2 py-1 bg-gray-900 border border-emerald-500/30 rounded flex items-center gap-1 text-[10px] font-bold transition-colors" title={item.executingStatus === 'paused' ? "Retomar execução" : "Sinalizar que está executando agora"}>
+                                <button type="button" onClick={() => handleStartTask(item.id, item.texto)} className="text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/20 px-2 py-1 bg-gray-900 border border-emerald-500/30 rounded flex items-center gap-1 text-[10px] font-bold transition-colors">
                                   <Play size={12}/> {item.executingStatus === 'paused' ? 'Retomar' : 'Iniciar'}
                                 </button>
                               )}
 
-                              {/* Botão de PAUSAR */}
                               {!item.feita && item.executingStatus === 'playing' && (
-                                <button type="button" onClick={() => handlePauseTask(item.id, item.texto)} className="text-amber-500 hover:text-amber-400 hover:bg-amber-500/20 px-2 py-1 bg-gray-900 border border-amber-500/30 rounded flex items-center gap-1 text-[10px] font-bold transition-colors" title="Pausar execução">
+                                <button type="button" onClick={() => handlePauseTask(item.id, item.texto)} className="text-amber-500 hover:text-amber-400 hover:bg-amber-500/20 px-2 py-1 bg-gray-900 border border-amber-500/30 rounded flex items-center gap-1 text-[10px] font-bold transition-colors">
                                   <Pause size={12}/> Pausar
                                 </button>
                               )}
@@ -584,7 +564,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 })()}
               </div>
               
-              {/* Formulário Nova Tarefa */}
               <div className="flex flex-col gap-3 bg-black/20 p-4 rounded-2xl border border-white/5 shadow-inner">
                 <div className="flex flex-col lg:flex-row gap-2">
                   <input type="text" value={newChecklist} onChange={e => setNewChecklist(e.target.value)} onKeyDown={e => e.key === 'Enter' && addChecklist()} placeholder="O que precisa ser feito?" className="flex-1 bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" />
@@ -597,13 +576,21 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 <div className="flex flex-wrap gap-2 items-center">
                   <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Data da Tarefa" />
                   <input type="time" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Hora" />
-                  <select value={newTaskRecurrence} onChange={(e) => setNewTaskRecurrence(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none cursor-pointer flex-1 min-w-[130px]">
-                    <option value="none">S/ Repetição</option>
-                    <option value="daily">🔁 Diário</option>
+
+                  <select value={newTaskWeight} onChange={e => setNewTaskWeight(e.target.value)} className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
+                    <option value="baixa">🟢 Rápida</option>
+                    <option value="media">🟡 Média</option>
+                    <option value="alta">🔴 Demorada</option>
+                  </select>
+
+                  <select value={newTaskRecurrence} onChange={e => setNewTaskRecurrence(e.target.value)} className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
+                    <option value="none">Sem Repetição</option>
+                    <option value="daily">🔁 Diária</option>
                     <option value="weekly">🔁 Semanal</option>
                     <option value="monthly">🔁 Mensal</option>
                   </select>
-                  <button onClick={() => {setNewTaskDate(''); setNewTaskTime(''); setNewTaskRecurrence('none');}} className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2 rounded-xl transition-colors" title="Limpar Datas"><Eraser size={14}/></button>
+
+                  <button onClick={() => {setNewTaskDate(''); setNewTaskTime(''); setNewTaskRecurrence('none');}} className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2 rounded-xl transition-colors"><Eraser size={14}/></button>
                   <button onClick={addChecklist} disabled={isAddingTask} className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white px-5 py-2 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-xs shrink-0 shadow-md ml-auto">
                     {isAddingTask ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14}/> Add Tarefa</>}
                   </button>
@@ -622,7 +609,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               <div className="space-y-4 border-l border-white/10 ml-3 pl-5 mt-6 relative">
                 {store.taskLogs?.slice().reverse().map((log, i) => (
                   <div key={log.id} className="relative group/log">
-                    {/* Dot Timeline */}
                     <div className="absolute -left-[25px] top-1.5 w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] border border-indigo-300"></div>
                     
                     <div className="flex justify-between items-start mb-1.5">
@@ -649,9 +635,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
           </div>
         </div>
 
-        {/* =========================================
-            LADO DIREITO: AGENDAMENTO E NOTAS
-        ============================================= */}
+        {/* LADO DIREITO */}
         <div className="w-full lg:w-[340px] bg-black/20 flex flex-col shrink-0">
           <div className="hidden lg:flex justify-end p-4 border-b border-white/5">
             <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors border border-transparent">
@@ -660,8 +644,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
           </div>
           
           <div className="p-5 flex-1 flex flex-col gap-5 overflow-y-auto custom-scrollbar">
-
-            {/* 2. NOTAS FIXAS */}
+            {/* NOTAS FIXAS */}
             <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/10 flex-1 flex flex-col min-h-[220px] shadow-sm">
               <div className="flex justify-between items-center mb-3">
                 <h4 className="text-xs font-bold text-emerald-400 uppercase flex items-center gap-2">
@@ -701,7 +684,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               )}
             </div>
 
-            {/* 3. PRÓXIMO ACESSO */}
+            {/* PRÓXIMO ACESSO */}
             <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/10 shrink-0 shadow-sm">
               <h4 className="text-xs font-bold text-amber-400 uppercase flex items-center gap-2 mb-4">
                 <CalendarDays size={14} /> Próximo Acesso
@@ -720,7 +703,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
           </div>
         </div>
       </div>
-      {/* Interface de Resolução de Conflitos de Tarefa Única */}
+
+      {/* Interface de Resolução de Conflitos */}
       {pendingStartInfo && (
         <div className="fixed inset-0 bg-[#0B0F19]/90 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
           <div className="bg-gray-900 border border-white/10 p-6 rounded-2xl max-w-md w-full shadow-2xl flex flex-col gap-4">
@@ -758,4 +742,4 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       )}
     </div>
   );
-};
+}

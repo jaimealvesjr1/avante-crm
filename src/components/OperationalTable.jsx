@@ -157,7 +157,6 @@ export default function OperationalTable({
                             <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase border ${row.tier === 'A' ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' : 'bg-white/5 text-gray-400 border-white/10'}`}>
                               Tier {row.tier}
                             </span>
-                            {row.responsavel && <span className="text-[10px] text-gray-500 font-medium">👤 {row.responsavel}</span>}
                           </div>
                         </div>
                       )}

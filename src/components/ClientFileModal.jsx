@@ -8,7 +8,7 @@ const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899'
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
 
 export default function ClientFileModal({ 
-  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, TeamMembers, allNotes, clientStores, onUpdateStore
+  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
@@ -579,7 +579,7 @@ export default function ClientFileModal({
         onClose={() => setIsBulkTaskModalOpen(false)} 
         stores={clientGroup.stores} 
         onSave={handleBulkTaskSave} 
-        teamMembers={TeamMembers} 
+        teamMembers={teamMembers} 
       />
     </div>
   );

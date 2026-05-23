@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, Bell, Clock } from 'lucide-react';
+import { Activity, Bell, Clock, CheckCircle } from 'lucide-react';
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
@@ -44,9 +44,13 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
             stats[author].tasks += 1;
             
             let earnedPoints = 10;
+            if (task.peso === 'baixa') earnedPoints = 10;
+            else if (task.peso === 'media') earnedPoints = 20;
+            else if (task.peso === 'alta') earnedPoints = 30;
+
             if (task.data) {
-            if (task.data >= localTodayStr) earnedPoints = 15;
-            else earnedPoints = 5;
+                if (task.data >= localTodayStr) earnedPoints += 5;
+                else earnedPoints = Math.max(5, earnedPoints - 10);
             }
             stats[author].points += earnedPoints;
 
@@ -250,45 +254,42 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         </div>
 
         {/* COLUNA 3: RANKING DE EXECUÇÃO */}
-        <div className="bg-gray-800 p-5 rounded-xl border border-gray-700 shadow-lg flex flex-col">
-        <div className="mb-4 border-b border-gray-700 pb-4">
-            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">🏆 Execução Diária</h3>
-            <p className="text-[10px] text-gray-400 mt-1">Pontuação e tempo médio por tarefa.</p>
-        </div>
-        
-        <div className="space-y-3 flex-1 overflow-y-auto pr-1 custom-scrollbar">
-            {rankingDiario.map((rank, i) => (
-            <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <span className={`w-7 h-7 rounded-full text-xs font-black flex items-center justify-center shadow-inner ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-500 border border-gray-700'}`}>
-                    {i + 1}
-                    </span>
-                    <div>
-                    <p className="text-sm font-bold text-gray-200">{rank.name}</p>
-                    <p className="text-[10px] text-amber-500 font-bold">{rank.points} XP</p>
+        <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-lg flex flex-col h-[50vh]">
+          <div className="mb-3 border-b border-gray-700 pb-3">
+              <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">🏆 Execução Diária</h3>
+          </div>
+          
+          <div className="space-y-2 flex-1 overflow-y-auto pr-1 custom-scrollbar">
+              {rankingDiario.map((rank, i) => (
+              <div key={rank.name} className="bg-gray-900 p-2.5 rounded-lg border border-gray-700 flex flex-col gap-1.5 hover:border-gray-500 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <span className={`w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shadow-inner ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-500 border border-gray-700'}`}>
+                        {i + 1}
+                        </span>
+                        <div>
+                        <p className="text-xs font-bold text-gray-200 leading-none">{rank.name}</p>
+                        <p className="text-[9px] text-amber-500 font-bold mt-0.5">{rank.points} XP</p>
+                        </div>
                     </div>
-                </div>
-                <div className="text-right">
-                    <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-lg font-bold border border-emerald-500/20 block mb-1">
-                    {rank.tasks} Entregas
+                    <div className="text-right">
+                        <span className="text-[10px] text-gray-400 font-bold bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                        {rank.tasks} <CheckCircle size={10} className="inline text-emerald-500 mb-0.5"/>
+                        </span>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-black/40 rounded px-2 py-1 flex justify-between items-center mt-1">
+                    <span className="text-[8px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1"><Clock size={8}/> Tempo Méd/Tarefa</span>
+                    <span className={`text-[10px] font-bold ${rank.avgMinutes > 0 && rank.avgMinutes < 15 ? 'text-emerald-400' : rank.avgMinutes >= 30 ? 'text-amber-400' : 'text-gray-300'}`}>
+                        {rank.avgMinutes > 0 ? `${rank.avgMinutes}m` : '--'}
                     </span>
-                </div>
-                </div>
-                
-                {/* DISPLAY DO TEMPO MÉDIO (NOVO) */}
-                <div className="bg-black/40 rounded px-3 py-1.5 flex justify-between items-center">
-                <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1"><Clock size={10}/> Tempo Médio/Tarefa</span>
-                <span className={`text-[11px] font-bold ${rank.avgMinutes > 0 && rank.avgMinutes < 15 ? 'text-emerald-400' : rank.avgMinutes >= 30 ? 'text-amber-400' : 'text-gray-300'}`}>
-                    {rank.avgMinutes > 0 ? `${rank.avgMinutes} min` : '--'}
-                </span>
-                </div>
-            </div>
-            ))}
-            {rankingDiario.length === 0 && <div className="text-center p-8 text-gray-500 italic text-xs border border-dashed border-gray-700 rounded-xl">Nenhuma entrega registrada.</div>}
+                  </div>
+              </div> 
+              ))}
+              {rankingDiario.length === 0 && <div className="text-center p-4 text-gray-500 italic text-[10px] border border-dashed border-gray-700 rounded-lg">Nenhuma entrega registrada.</div>}
+          </div>
         </div>
-        </div>
-
     </div>
     );
 }

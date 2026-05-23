@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays,
-  BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, Check, Bell } from 'lucide-react';
+  Eraser, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, Check, Bell } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
@@ -28,7 +28,9 @@ const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899'
 export default function App() {
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
-
+  const [currentUserData, setCurrentUserData] = useState(null); // Movemos para cima
+  
+  const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
   const [activeView, setActiveView] = useState(() => {
     return localStorage.getItem('avante_tela_atual') || 'dashboard';
   });
@@ -45,6 +47,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState('name');
   const [statusFilter, setStatusFilter] = useState('all');
   const [mktFilter, setMktFilter] = useState('all');
+  const [respFilter, setRespFilter] = useState('all');
 
   const [expandedClients, setExpandedClients] = useState([]);
   const [bulkTaskModalOpen, setBulkTaskModalOpen] = useState(false);
@@ -92,7 +95,6 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   const [userRole, setUserRole] = useState('Operacional');
-  const [currentUserData, setCurrentUserData] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   const isManager = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager';
@@ -694,7 +696,19 @@ useEffect(() => {
       const matchSearch = !searchTerm || store.client.toLowerCase().includes(searchTerm.toLowerCase()) || store.store.toLowerCase().includes(searchTerm.toLowerCase());
       const matchStatus = statusFilter === 'all' || store.status === statusFilter;
       const matchMkt = mktFilter === 'all' || (store.marketplace && store.marketplace.toUpperCase() === mktFilter);
-      return matchSearch && matchStatus && matchMkt;
+      
+      let matchResp = true;
+      if (respFilter !== 'all') {
+         if (respFilter === 'unassigned') {
+            matchResp = store.checklists && store.checklists.some(task => !task.feita && (!task.responsavel || task.responsavel === ''));
+         } else {
+            const targetName = respFilter.toLowerCase().trim();
+            matchResp = store.checklists && store.checklists.some(task => 
+               !task.feita && task.responsavel?.toLowerCase().trim() === targetName
+            );
+         }
+      }
+      return matchSearch && matchStatus && matchMkt && matchResp;
     });
 
     const groups = {};
@@ -763,9 +777,9 @@ useEffect(() => {
       totalAgencyRevenue, totalAgencyRevenueActual, agencyTarget, 
       totalGlobalAds, totalOrders, totalUnits,
       globalRoas: totalGlobalAds > 0 ? (totalCurrentRevenue / totalGlobalAds).toFixed(1) : 0,
-      rankingMarketplaces
+      rankingMarketplaces: Object.values(mktPerformance).sort((a, b) => b.revenue - a.revenue)
     };
-  }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter]);
+  }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, respFilter, myName]);
 
   const pieData = useMemo(() => dashboardData.groupedClients.map(g => ({ name: g.client, value: g.totalProjectedGmv })).filter(g => g.value > 0), [dashboardData]);
   const roasData = useMemo(() => dashboardData.groupedClients.filter(g => g.totalAds > 0).map(g => ({ name: g.client, roas: Number(g.roas) })).sort((a, b) => b.roas - a.roas), [dashboardData]);
@@ -786,8 +800,6 @@ useEffect(() => {
   }, [activeStore, daysInMonth, currentDay, globalGrowth]);
 
   const activeStoreMonthlyData = useMemo(() => (!activeStore || !activeStore.monthlyHistory) ? [] : activeStore.monthlyHistory.map(h => ({ month: h.month, revenue: Math.round(h.gmv) })), [activeStore]);
-  
-  const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || '';
 
   const broadcastTaskFocus = async (taskText, action = 'set', storeId = null) => {
     if (!myName) return;
@@ -921,6 +933,11 @@ useEffect(() => {
                   <option value="all" className="bg-gray-900 text-white">🛍️ CANAIS</option>
                   {uniqueMkts.map(m => <option key={m} value={m} className="bg-gray-900 text-white">{m}</option>)}
                 </select>
+                <select value={respFilter} onChange={e => setRespFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors">
+                  <option value="all" className="bg-gray-900 text-white">👥 TODOS RESP.</option>
+                  <option value="unassigned" className="bg-gray-900 text-amber-400">⚠️ SEM RESPONSÁVEL</option>
+                  {teamMembers.map(m => <option key={m.email} value={m.nomeCompleto || m.nome} className="bg-gray-900 text-white">{m.nomeCompleto || m.nome}</option>)}
+                </select>
               </div>
               
               <div className="flex w-full md:w-auto">
@@ -930,6 +947,22 @@ useEffect(() => {
                   </button>
                 )}
               </div>
+
+              <button 
+                onClick={() => {
+                  setSearchTerm('');
+                  setSortBy('name');
+                  setStatusFilter('all');
+                  setMktFilter('all');
+                  setRespFilter('all');
+                  toast.success('Filtros resetados!');
+                }} 
+                className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2.5 rounded-xl transition-colors"
+                title="Limpar todos os filtros"
+              >
+                <Eraser size={16}/>
+              </button>
+
             </div>
           </div>
         )}
@@ -1319,6 +1352,7 @@ useEffect(() => {
           user={user}
           canUseBatchEntry={canUseBatchEntry}
           canEdit={canEdit}
+          teamMembers={teamMembers} 
         />
       )}
     </div>
