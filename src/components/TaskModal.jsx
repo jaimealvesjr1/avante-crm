@@ -174,70 +174,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     }, 500);
   };
 
-  const toggleChecklist = (id) => {
-    const task = store.checklists.find(c => c.id === id);
-    const isCompleting = !task.feita;
-
-    if (isCompleting && (task.executingStatus === 'playing' || task.executingStatus === 'paused') && broadcastTaskFocus) {
-       broadcastTaskFocus('', 'clear');
-    }
-    
-    const nowTime = new Date().getTime();
-    let updatedChecklists = [...store.checklists];
-
-    if (isCompleting && task.recorrencia && task.recorrencia !== 'none') {
-      const currentIndex = updatedChecklists.findIndex(t => t.id === id);
-      
-      const [year, month, day] = task.data.split('-').map(Number);
-      let nextDateObj = new Date(year, month - 1, day);
-      if (task.recorrencia === 'daily') nextDateObj.setDate(nextDateObj.getDate() + 1);
-      if (task.recorrencia === 'weekly') nextDateObj.setDate(nextDateObj.getDate() + 7);
-      if (task.recorrencia === 'monthly') nextDateObj.setMonth(nextDateObj.getMonth() + 1);
-
-      const nextDateStr = `${nextDateObj.getFullYear()}-${String(nextDateObj.getMonth() + 1).padStart(2, '0')}-${String(nextDateObj.getDate()).padStart(2, '0')}`;
-      
-      const sessionTime = task.startedAt && task.executingStatus === 'playing' ? nowTime - new Date(task.startedAt).getTime() : 0;
-
-      updatedChecklists[currentIndex] = { 
-        ...task, feita: false, data: nextDateStr, startedAt: null, completedAt: null, completedAtFull: null, completedBy: null, accumulatedTimeMs: 0, executingStatus: 'none'
-      };
-
-      const deadCopy = {
-          ...task, id: Date.now() + Math.random(), feita: true, recorrencia: 'ghost', completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username, accumulatedTimeMs: (task.accumulatedTimeMs || 0) + sessionTime
-      };
-      updatedChecklists.push(deadCopy);
-      toast.success('Tarefa renovada para o próximo ciclo!');
-      
-    } else {
-      updatedChecklists = updatedChecklists.map(c => {
-        if (c.id === id) {
-          if (isCompleting) {
-            const sessionTime = c.startedAt && c.executingStatus === 'playing' ? nowTime - new Date(c.startedAt).getTime() : 0;
-            return { 
-              ...c, feita: true, completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username, accumulatedTimeMs: (c.accumulatedTimeMs || 0) + sessionTime, executingStatus: 'completed'
-            };
-          } else {
-            // Reabrindo a tarefa (zera os status)
-            const { completedAt, completedAtFull, completedBy, startedAt, accumulatedTimeMs, executingStatus, ...rest } = c;
-            return { ...rest, feita: false };
-          }
-        }
-        return c;
-      });
-      toast.success(isCompleting ? '✅ Tarefa concluída!' : 'Tarefa reaberta!');
-    }
-
-    let updatedLogs = store.taskLogs || [];
-    if (isCompleting) updatedLogs = [...updatedLogs, { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `✅ Tarefa concluída: "${task.texto}"`, author: username }];
-
-    const newNextAccess = autoScheduleStore(updatedChecklists);
-    let finalNextAccess = newNextAccess;
-    if (!newNextAccess && isCompleting && task.data) finalNextAccess = '';
-    else if (!newNextAccess) finalNextAccess = store.dataProximoAcesso || '';
-
-    saveChanges({ ...store, checklists: updatedChecklists, taskLogs: updatedLogs, dataUltimoAcesso: new Date().toISOString(), dataProximoAcesso: finalNextAccess });
-  };
-
   const deleteChecklist = (id) => {
     const task = store.checklists.find(c => c.id === id);
     
@@ -336,10 +272,9 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
   const executeStart = (taskId, taskText) => {
     if (broadcastTaskFocus) {
-      broadcastTaskFocus(`▶️ Executando: ${taskText} | ${store.store}`);
+      broadcastTaskFocus(`▶️ Executando: ${taskText} | ${store.store}`, 'set', store.id);
     }
     const updatedChecklists = store.checklists.map(c => 
-      // Ao invés de preservar o startedAt antigo, a gente renova ele toda vez que dá Play
       c.id === taskId ? { ...c, startedAt: new Date().toISOString(), executingStatus: 'playing', startedBy: username } : c
     );
     const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `▶️ Iniciou a tarefa: "${taskText}"`, author: username };
@@ -348,18 +283,17 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
   const handlePauseTask = (taskId, taskText) => {
     if (broadcastTaskFocus) {
-      broadcastTaskFocus(`⏸️ Pausada: ${taskText} | ${store.store}`);
+      broadcastTaskFocus(`⏸️ Pausada: ${taskText} | ${store.store}`, 'set', store.id);
     }
     const nowTime = new Date().getTime();
     const updatedChecklists = store.checklists.map(c => {
       if (c.id === taskId) {
-        // Pega o tempo da sessão atual e soma no acumulador
         const sessionTime = c.startedAt ? nowTime - new Date(c.startedAt).getTime() : 0;
         return { 
             ...c, 
             executingStatus: 'paused', 
             accumulatedTimeMs: (c.accumulatedTimeMs || 0) + sessionTime, 
-            startedAt: null // Limpa para o relógio parar de contar
+            startedAt: null 
         };
       }
       return c;
@@ -367,6 +301,69 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `⏸️ Pausou a tarefa: "${taskText}"`, author: username };
     saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() });
     toast.success("Tarefa pausada.");
+  };
+
+  const toggleChecklist = (id) => {
+    const task = store.checklists.find(c => c.id === id);
+    const isCompleting = !task.feita;
+
+    if (isCompleting && (task.executingStatus === 'playing' || task.executingStatus === 'paused') && broadcastTaskFocus) {
+       broadcastTaskFocus('', 'clear');
+    }
+    
+    const nowTime = new Date().getTime();
+    let updatedChecklists = [...store.checklists];
+
+    if (isCompleting && task.recorrencia && task.recorrencia !== 'none') {
+      const currentIndex = updatedChecklists.findIndex(t => t.id === id);
+      
+      const [year, month, day] = task.data.split('-').map(Number);
+      let nextDateObj = new Date(year, month - 1, day);
+      if (task.recorrencia === 'daily') nextDateObj.setDate(nextDateObj.getDate() + 1);
+      if (task.recorrencia === 'weekly') nextDateObj.setDate(nextDateObj.getDate() + 7);
+      if (task.recorrencia === 'monthly') nextDateObj.setMonth(nextDateObj.getMonth() + 1);
+
+      const nextDateStr = `${nextDateObj.getFullYear()}-${String(nextDateObj.getMonth() + 1).padStart(2, '0')}-${String(nextDateObj.getDate()).padStart(2, '0')}`;
+      
+      const sessionTime = task.startedAt && task.executingStatus === 'playing' ? nowTime - new Date(task.startedAt).getTime() : 0;
+
+      updatedChecklists[currentIndex] = { 
+        ...task, feita: false, data: nextDateStr, startedAt: null, completedAt: null, completedAtFull: null, completedBy: null, accumulatedTimeMs: 0, executingStatus: 'none'
+      };
+
+      const deadCopy = {
+          ...task, id: Date.now() + Math.random(), feita: true, recorrencia: 'ghost', completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username, accumulatedTimeMs: (task.accumulatedTimeMs || 0) + sessionTime
+      };
+      updatedChecklists.push(deadCopy);
+      toast.success('Tarefa renovada para o próximo ciclo!');
+      
+    } else {
+      updatedChecklists = updatedChecklists.map(c => {
+        if (c.id === id) {
+          if (isCompleting) {
+            const sessionTime = c.startedAt && c.executingStatus === 'playing' ? nowTime - new Date(c.startedAt).getTime() : 0;
+            return { 
+              ...c, feita: true, completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username, accumulatedTimeMs: (c.accumulatedTimeMs || 0) + sessionTime, executingStatus: 'completed'
+            };
+          } else {
+            const { completedAt, completedAtFull, completedBy, startedAt, accumulatedTimeMs, executingStatus, ...rest } = c;
+            return { ...rest, feita: false };
+          }
+        }
+        return c;
+      });
+      toast.success(isCompleting ? '✅ Tarefa concluída!' : 'Tarefa reaberta!');
+    }
+
+    let updatedLogs = store.taskLogs || [];
+    if (isCompleting) updatedLogs = [...updatedLogs, { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `✅ Tarefa concluída: "${task.texto}"`, author: username }];
+
+    const newNextAccess = autoScheduleStore(updatedChecklists);
+    let finalNextAccess = newNextAccess;
+    if (!newNextAccess && isCompleting && task.data) finalNextAccess = '';
+    else if (!newNextAccess) finalNextAccess = store.dataProximoAcesso || '';
+
+    saveChanges({ ...store, checklists: updatedChecklists, taskLogs: updatedLogs, dataUltimoAcesso: new Date().toISOString(), dataProximoAcesso: finalNextAccess });
   };
 
   const resolveConflictAndStart = async (action) => {
@@ -423,13 +420,11 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       updateStoreInCloud(finalStoreObj);
       setStores(prev => prev.map(s => s.id === store.id ? finalStoreObj : s));
 
-      if (broadcastTaskFocus) {
-        broadcastTaskFocus(`▶️ Executando: ${currentTaskText} | ${store.store}`);
+      broadcastTaskFocus(`▶️ Executando: ${currentTaskText} | ${store.store}`, 'set', store.id);
       }
     }
     setPendingStartInfo(null);
     toast.success(action === 'complete' ? "Anterior concluída e nova iniciada!" : "Anterior pausada e nova iniciada!");
-  };
 
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
@@ -763,4 +758,4 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       )}
     </div>
   );
-}
+};

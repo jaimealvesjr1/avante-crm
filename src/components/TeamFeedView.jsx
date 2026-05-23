@@ -140,8 +140,15 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         return (
                         <div key={userName} 
                             onClick={() => {
-                                const parts = data.texto.split(' | ');
-                                if (parts.length > 1) handleOpenStore(parts[1]);
+                                // 🔥 CORREÇÃO: Usa o ID se existir (método infalível)
+                                if (data.storeId) {
+                                    const targetStore = stores.find(s => s.id === data.storeId);
+                                    if (targetStore && openTaskModal) openTaskModal(targetStore);
+                                } else {
+                                    // Fallback para tarefas antigas que ainda não tinham o ID salvo
+                                    const parts = data.texto?.split(' | ');
+                                    if (parts && parts.length > 1) handleOpenStore(parts[1]);
+                                }
                             }}
                             className={`bg-gray-900/80 p-3.5 rounded-lg border flex items-start gap-3 relative overflow-hidden cursor-pointer transition-colors ${
                                 isPaused ? 'border-amber-500/30 hover:border-amber-500' : 'border-gray-700 hover:border-emerald-500'

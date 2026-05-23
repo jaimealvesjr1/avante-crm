@@ -141,7 +141,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
                 <p className="text-sm font-bold text-emerald-300">{dashboardData.totalOrders}</p>
               </div>
               <div>
-                <p className="text-[9px] text-gray-500 uppercase font-bold tracking-wider mb-0.5">Produtos</p>
+                <p className="text-[9px] text-gray-500 uppercase font-bold tracking-wider mb-0.5">Pedidos</p>
                 <p className="text-sm font-bold text-gray-300">{dashboardData.totalUnits}</p>
               </div>
             </div>

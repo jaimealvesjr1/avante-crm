@@ -307,11 +307,7 @@ useEffect(() => {
   const handleStoreChange = (id, field, value) => {
     let finalValue = value;
     if (typeof value === 'string' && (field === 'currentRevenue' || field === 'adsInvestment' || field === 'gmvBase' || field === 'customGrowth')) {
-      let str = value.trim();
-      if (str.includes(',')) {
-        str = str.replace(/\./g, '').replace(',', '.');
-      }
-      finalValue = str;
+      finalValue = value.trim().replace(',', '.');
     }
     
     const numericValue = finalValue !== '' ? Number(finalValue) : 0;
@@ -389,15 +385,12 @@ useEffect(() => {
       const parseSafeNumber = (val) => {
         if (typeof val === 'number') return val;
         if (!val) return 0;
-        let str = String(val).trim();
-        if (str.includes(',')) str = str.replace(/\./g, '').replace(',', '.');
-        return Number(str) || 0;
+        return Number(String(val).trim().replace(',', '.')) || 0;
       };
 
       const parseSafeInt = (val) => {
          if (!val) return 0;
-         const cleanStr = String(val).replace(/\./g, '');
-         return parseInt(cleanStr, 10) || 0;
+         return parseInt(String(val).trim(), 10) || 0;
       };
 
       const storeIndex = localStores.findIndex(s => s.id === storeId);
@@ -609,13 +602,19 @@ useEffect(() => {
   const saveClientEdit = async (oldName) => {
     const upperNewName = clientEditData.name.toUpperCase();
     const batch = writeBatch(db);
-    const updatedStores = stores.map(s => {
-      if(s.client === oldName) {
-         const updatedStore = { ...s, client: upperNewName, feeType: clientEditData.feeType, feePercent: Number(clientEditData.feePercent), fixedFee: Number(clientEditData.fixedFee) };
-         batch.set(doc(db, "stores", s.id.toString()), updatedStore);
+    const updatedStores = stores.map(storeObj => {
+      if(storeObj.client === oldName) {
+         const updatedStore = { 
+           ...storeObj, 
+           client: upperNewName, 
+           feeType: clientEditData.feeType, 
+           feePercent: Number(clientEditData.feePercent) || 0, 
+           fixedFee: clientEditData.feeType === 'percent' ? 0 : (Number(clientEditData.fixedFee) || 0) 
+         };
+         batch.set(doc(db, "stores", storeObj.id.toString()), updatedStore);
          return updatedStore;
       }
-      return s;
+      return storeObj;
     });
     await batch.commit().catch(e => { console.error(e); toast.error('Erro ao atualizar cliente.'); });
     setStores(updatedStores);
@@ -790,7 +789,7 @@ useEffect(() => {
   
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || '';
 
-  const broadcastTaskFocus = async (taskText, action = 'set') => {
+  const broadcastTaskFocus = async (taskText, action = 'set', storeId = null) => {
     if (!myName) return;
     const updatedStatus = {};
     
@@ -799,12 +798,12 @@ useEffect(() => {
     } else {
       updatedStatus[myName] = { 
         texto: taskText, 
+        storeId: storeId,
         timestamp: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}) 
       };
     }
 
     await setDoc(doc(db, "settings", "atividades_equipe"), updatedStatus, { merge: true });
-    // Só exibe o toast se não for uma ação silenciosa de limpar
     if (action !== 'clear' && !taskText.includes('Pausada')) {
       toast.success(`Sinalizado: ${taskText.replace('▶️ Executando: ', '')}`);
     }
@@ -1122,17 +1121,12 @@ useEffect(() => {
                         const parseSafeNumber = (val) => {
                           if (typeof val === 'number') return val;
                           if (!val) return 0;
-                          let str = String(val).trim();
-                          if (str.includes(',')) {
-                            str = str.replace(/\./g, '').replace(',', '.');
-                          }
-                          return Number(str) || 0;
+                          return Number(String(val).trim().replace(',', '.')) || 0;
                         };
 
                         const parseSafeInt = (val) => {
                            if (!val) return 0;
-                           const cleanStr = String(val).replace(/\./g, '');
-                           return parseInt(cleanStr, 10) || 0;
+                           return parseInt(String(val).trim(), 10) || 0;
                         };
 
                         let prevRev = 0, prevAds = 0, prevOrd = 0, prevUni = 0;
