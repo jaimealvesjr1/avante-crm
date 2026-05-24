@@ -10,6 +10,14 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [newTaskTime, setNewTaskTime] = useState('');
   const [newTaskRecurrence, setNewTaskRecurrence] = useState('none');
 
+  const myName = currentUserData?.nomeCompleto || currentUserData?.nome;
+  const isVisitante = currentUserData?.role === 'Visitante';
+  const isAdmin = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager';
+
+  const canEditOrDeleteTask = (task) => {
+    return isAdmin || task.responsavel === myName || task.criadoPor === myName;
+  };
+
   const [nextDate, setNextDate] = useState(store.dataProximoAcesso ? store.dataProximoAcesso.split('T')[0] : '');
   const [storeResp, setStoreResp] = useState(store.responsavel || '');
   const [fixedNotes, setFixedNotes] = useState(store.notasFixas || '');
@@ -453,8 +461,13 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               
               <div className="space-y-2 mb-4 max-h-[40vh] overflow-y-auto pr-1 custom-scrollbar">
                 {(() => {
-                  const pendingTasks = store.checklists?.filter(t => !t.feita) || [];
-                  const completedTasks = store.checklists?.filter(t => t.feita && t.recorrencia !== 'ghost') || [];
+                  let baseTasks = store.checklists || [];
+                  if (isVisitante) {
+                    baseTasks = baseTasks.filter(t => t.responsavel === myName);
+                  }
+
+                  const pendingTasks = baseTasks.filter(t => !t.feita);
+                  const completedTasks = baseTasks.filter(t => t.feita && t.recorrencia !== 'ghost');
                   
                   pendingTasks.sort((a, b) => {
                     if (a.data && b.data) {
@@ -482,12 +495,23 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     const isEditing = editingTaskId === item.id;
                     const canEditTask = isManager || item.criadoPor === username;
                     
+                    const now = new Date();
+                    const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                    const isOverdue = !item.feita && item.data && item.data < todayStr;
+                    const isToday = !item.feita && item.data === todayStr;
+
+                    const taskStyles = item.feita 
+                        ? 'bg-gray-800/40 border-gray-800 border-l-4 border-l-gray-700' 
+                        : isOverdue
+                            ? 'bg-red-500/10 border-red-500/30 hover:border-red-400 border-l-4 border-l-red-500'
+                            : isToday
+                                ? 'bg-purple-500/10 border-purple-500/30 hover:border-purple-400 border-l-4 border-l-purple-500'
+                                : 'bg-gray-800 border-gray-700 hover:border-gray-600 border-l-4 border-l-transparent';
+                    
                     return (
                       <div 
                         key={item.id} 
-                        className={`flex flex-col p-2.5 rounded-lg border group shadow-sm transition-all ${
-                          item.feita ? 'bg-gray-800/40 border-gray-800' : 'bg-gray-800 border-gray-700 hover:border-gray-600'
-                        }`}
+                        className={`flex flex-col p-2.5 rounded-r-lg group shadow-sm transition-all ${taskStyles}`}
                       >
                         {isEditing ? (
                           <div className="flex flex-col gap-2 w-full animate-in fade-in duration-200">
@@ -551,10 +575,16 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                                 </button>
                               )}
 
-                              {canEditTask && !item.feita && (
-                                <button type="button" onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1.5 bg-gray-900 hover:bg-white/10 rounded transition-colors"><Edit2 size={14}/></button>
+                              {canEditOrDeleteTask(item) && !item.feita && (
+                                <>
+                                  <button type="button" onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1.5 bg-gray-900 hover:bg-white/10 rounded transition-colors">
+                                    <Edit2 size={14}/>
+                                  </button>
+                                  <button type="button" onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 p-1.5 bg-gray-900 hover:bg-red-500/10 rounded transition-colors">
+                                    <Trash2 size={14}/>
+                                  </button>
+                                </>
                               )}
-                              <button type="button" onClick={() => deleteChecklist(item.id)} className="text-gray-500 hover:text-red-400 p-1.5 bg-gray-900 hover:bg-red-500/10 rounded transition-colors"><Trash2 size={14}/></button>
                             </div>
                           </div>
                         )}
@@ -599,39 +629,41 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
             </div>
 
             {/* 2. HISTÓRICO DE AÇÕES */}
-            <div>
-              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Timeline de Ações</h4>
-              <div className="flex gap-2">
-                <textarea value={newLog} onChange={e => setNewLog(e.target.value)} placeholder="Descreva o que você fez hoje nesta conta..." className="flex-1 bg-black/20 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-indigo-500 min-h-[60px] max-h-[120px] custom-scrollbar resize-none" />
-                <button onClick={addLog} className="bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-300 px-4 rounded-xl flex flex-col items-center justify-center gap-1 transition-all shadow-sm"><Send size={16}/> <span className="text-[10px] font-bold uppercase tracking-wider">Lançar</span></button>
-              </div>
-              
-              <div className="space-y-4 border-l border-white/10 ml-3 pl-5 mt-6 relative">
-                {store.taskLogs?.slice().reverse().map((log, i) => (
-                  <div key={log.id} className="relative group/log">
-                    <div className="absolute -left-[25px] top-1.5 w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] border border-indigo-300"></div>
-                    
-                    <div className="flex justify-between items-start mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <Avatar name={log.author} size="sm" />
-                        <span className="text-[11px] text-gray-400 font-medium">
-                          <strong className="text-gray-300">{log.author}</strong> • {log.data}
-                        </span>
+            {!isVisitante && (
+              <div>
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Timeline de Ações</h4>
+                <div className="flex gap-2">
+                  <textarea value={newLog} onChange={e => setNewLog(e.target.value)} placeholder="Descreva o que você fez hoje nesta conta..." className="flex-1 bg-black/20 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-indigo-500 min-h-[60px] max-h-[120px] custom-scrollbar resize-none" />
+                  <button onClick={addLog} className="bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-300 px-4 rounded-xl flex flex-col items-center justify-center gap-1 transition-all shadow-sm"><Send size={16}/> <span className="text-[10px] font-bold uppercase tracking-wider">Lançar</span></button>
+                </div>
+                
+                <div className="space-y-4 border-l border-white/10 ml-3 pl-5 mt-6 relative">
+                  {store.taskLogs?.slice().reverse().map((log, i) => (
+                    <div key={log.id} className="relative group/log">
+                      <div className="absolute -left-[25px] top-1.5 w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] border border-indigo-300"></div>
+                      
+                      <div className="flex justify-between items-start mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <Avatar name={log.author} size="sm" />
+                          <span className="text-[11px] text-gray-400 font-medium">
+                            <strong className="text-gray-300">{log.author}</strong> • {log.data}
+                          </span>
+                        </div>
+                        {isManager && (
+                          <button onClick={() => deleteLog(log.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity p-1">
+                            <Trash2 size={12}/>
+                          </button>
+                        )}
                       </div>
-                      {isManager && (
-                        <button onClick={() => deleteLog(log.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity p-1">
-                          <Trash2 size={12}/>
-                        </button>
-                      )}
+                      <div className="bg-white/[0.02] p-3.5 rounded-2xl border border-white/5 text-sm text-gray-300 shadow-sm leading-relaxed inline-block max-w-full">
+                        {log.texto}
+                      </div>
                     </div>
-                    <div className="bg-white/[0.02] p-3.5 rounded-2xl border border-white/5 text-sm text-gray-300 shadow-sm leading-relaxed inline-block max-w-full">
-                      {log.texto}
-                    </div>
-                  </div>
-                ))}
-                {(!store.taskLogs || store.taskLogs.length === 0) && <div className="text-xs text-gray-500 italic py-2">Nenhum log registrado na timeline.</div>}
+                  ))}
+                  {(!store.taskLogs || store.taskLogs.length === 0) && <div className="text-xs text-gray-500 italic py-2">Nenhum log registrado na timeline.</div>}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -685,21 +717,23 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
             </div>
 
             {/* PRÓXIMO ACESSO */}
-            <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/10 shrink-0 shadow-sm">
-              <h4 className="text-xs font-bold text-amber-400 uppercase flex items-center gap-2 mb-4">
-                <CalendarDays size={14} /> Próximo Acesso
-              </h4>
-              <input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-amber-500/50 font-bold transition-colors cursor-pointer" />
-              
-              <div className="flex gap-2 mt-3">
-                <button onClick={saveNextDate} disabled={isScheduling} className="flex-1 bg-amber-500/20 border border-amber-500/30 hover:bg-amber-500/30 text-amber-400 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-sm">
-                  {isScheduling ? <Loader2 size={14} className="animate-spin" /> : 'Agendar'}
-                </button>
-                <button onClick={clearNextDate} className="px-4 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 font-bold rounded-xl transition-all flex items-center justify-center shadow-sm" title="Limpar">
-                  <Eraser size={14} />
-                </button>
+            {!isVisitante && (
+              <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/10 shrink-0 shadow-sm">
+                <h4 className="text-xs font-bold text-amber-400 uppercase flex items-center gap-2 mb-4">
+                  <CalendarDays size={14} /> Próximo Acesso
+                </h4>
+                <input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-amber-500/50 font-bold transition-colors cursor-pointer" />
+                
+                <div className="flex gap-2 mt-3">
+                  <button onClick={saveNextDate} disabled={isScheduling} className="flex-1 bg-amber-500/20 border border-amber-500/30 hover:bg-amber-500/30 text-amber-400 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-sm">
+                    {isScheduling ? <Loader2 size={14} className="animate-spin" /> : 'Agendar'}
+                  </button>
+                  <button onClick={clearNextDate} className="px-4 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 font-bold rounded-xl transition-all flex items-center justify-center shadow-sm" title="Limpar">
+                    <Eraser size={14} />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

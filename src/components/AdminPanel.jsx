@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { UserPlus, Shield, Users, Mail, Clock, Edit2, Check, X, Palette } from 'lucide-react';
+import { UserPlus, Shield, Users, Mail, Clock, Edit2, Check, X, Palette, Eye, Flame, Trash2 } from 'lucide-react';
+import { getVisualRole } from '../App';
 
-// Paleta de cores disponíveis para os Avatares
 const AVATAR_COLORS = [
   'from-indigo-500 to-purple-600',
   'from-blue-500 to-cyan-600',
@@ -18,9 +18,12 @@ export default function AdminPanel({
   newUserPassword, setNewUserPassword,
   newUserName, setNewUserName,
   teamMembers,
+  handleDeleteUser,
   handleUpdateUser,
   handleToggleRole,
-  stores, closeMonth
+  stores, closeMonth,
+  startSimulation, 
+  isSimulating
 }) {
   const [editingUser, setEditingUser] = useState(null);
   const [editName, setEditName] = useState('');
@@ -63,9 +66,9 @@ export default function AdminPanel({
       <div className="flex justify-end mb-4">
           <button 
             onClick={closeMonth} 
-            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all"
+            className="bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all"
           >
-            Encerrar Competência
+            <Flame size={16} /> Fechar Mês
           </button>
       </div>
 
@@ -154,9 +157,25 @@ export default function AdminPanel({
                         ) : (
                           <div className="flex items-center gap-2 group mb-0.5">
                             <p className="text-sm font-bold text-white leading-none">{member.nomeCompleto || member.nome || 'Sem Nome'}</p>
-                            <button onClick={() => startEditing(member)} className="text-gray-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Editar Usuário">
+
+                            <button 
+                              onClick={() => startSimulation(member)}
+                              disabled={isSimulating}
+                              className="text-gray-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md"
+                              title="Ver o sistema como este usuário"
+                            >
+                              <Eye size={12} /> <span className="hidden md:inline"></span>
+                            </button>
+
+                            <button onClick={() => startEditing(member)} className="text-gray-500 hover:text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Editar Usuário">
                               <Edit2 size={12} />
                             </button>
+
+                            {!isEditing && (
+                              <button onClick={() => handleDeleteUser(member.email)} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Excluir Usuário permanentemente">
+                                <Trash2 size={12} />
+                              </button>
+                            )}                   
                           </div>
                         )}
                         
@@ -171,15 +190,16 @@ export default function AdminPanel({
                     <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center w-full sm:w-auto border-t sm:border-t-0 border-white/5 pt-3 sm:pt-0 mt-2 sm:mt-0">
                       
                       <button 
-                        onClick={() => handleToggleRole(member.email, displayRole)}
+                        onClick={() => handleToggleRole(member.email, member.role)}
                         title="Clique para alternar o nível de acesso"
                         className={`text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider cursor-pointer hover:scale-105 transition-all shadow-sm ${
-                          displayRole === 'Admin' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 
-                          displayRole === 'Supervisor' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 
+                          member.role === 'Admin' || member.role === 'admin' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 
+                          member.role === 'Supervisor' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 
+                          member.role === 'Visitante' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
                           'bg-white/5 text-gray-300 border border-white/10'
                         }`}
                       >
-                        {displayRole}
+                        {getVisualRole(member.role)}
                       </button>
 
                       <span className="text-[10px] text-gray-500 flex items-center gap-1.5 mt-2">

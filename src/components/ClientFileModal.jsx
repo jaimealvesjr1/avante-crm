@@ -3,17 +3,17 @@ import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
-import StoreManagementModal from './StoreManagementModal'; // <-- NOVO IMPORT
+import StoreManagementModal from './StoreManagementModal';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
 
 export default function ClientFileModal({ 
-  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore
+  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, addNewStoreToClient
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
-  const [isStoreManagementModalOpen, setIsStoreManagementModalOpen] = useState(false); // <-- NOVO ESTADO
+  const [isStoreManagementModalOpen, setIsStoreManagementModalOpen] = useState(false);
   
   const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
@@ -579,6 +579,8 @@ export default function ClientFileModal({
         stores={stores}
         setStores={setStores}
         updateStoreInCloud={updateStoreInCloud}
+        currentUserData={currentUserData}
+        onAddNewStore={addNewStoreToClient}
       />
     </div>
   );

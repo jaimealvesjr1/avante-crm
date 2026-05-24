@@ -1,11 +1,29 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, Bell, Clock, CheckCircle } from 'lucide-react';
-import { doc, onSnapshot } from "firebase/firestore";
+import { Activity, Bell, Clock, CheckCircle, AlertCircle, SquareStack, X } from 'lucide-react';
+import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
 
 export default function TeamFeedView({ currentUserData, user, stores, openTaskModal }) {
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
+    
+    const isAdmin = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager' || currentUserData?.role === 'Analista';
+
+    const handleClearGhostTask = async (ghostUserName, e) => {
+        e.stopPropagation();
+        if (window.confirm(`Forçar a remoção da tarefa de ${ghostUserName} do radar?`)) {
+            try {
+                const docRef = doc(db, "settings", "atividades_equipe");
+                await updateDoc(docRef, {
+                    [ghostUserName]: deleteField()
+                });
+                toast.success("Tarefa fantasma removida com sucesso!");
+            } catch (error) {
+                console.error("Erro ao limpar fantasma:", error);
+                toast.error("Erro ao remover do radar.");
+            }
+        }
+    };
     const [feedClearedAt, setFeedClearedAt] = useState(() => Number(localStorage.getItem('avante_feed_cleared_at')) || 0);
     const [liveStatus, setLiveStatus] = useState({});
     const [feedFilter, setFeedFilter] = useState('all');
@@ -102,6 +120,39 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         });
         return Object.values(groups).sort((a, b) => new Date(a.lastAccess || 0) - new Date(b.lastAccess || 0));
     }, [stores, myName]);
+
+    const isVisitante = currentUserData?.role === 'Visitante';
+
+    // RADAR DE ATRASOS
+    const groupedOverdue = useMemo(() => {
+        const groups = {};
+        const now = new Date();
+        const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+
+        stores.forEach(store => {
+            // Se for visitante, pega só as tarefas dele. Se não, pega todas.
+            let storeTasks = store.checklists || [];
+            if (isVisitante) {
+                storeTasks = storeTasks.filter(t => t.responsavel === myName);
+            }
+
+            // Conta quantas tarefas têm data menor que hoje e não estão feitas
+            const overdueTasks = storeTasks.filter(c => !c.feita && c.data && c.data < todayStr);
+            
+            // Verifica se a loja em si está com o acesso atrasado (Visitante ignora isso)
+            const isStoreOverdue = !isVisitante && store.dataProximoAcesso && store.dataProximoAcesso.split('T')[0] < todayStr;
+            
+            const reasons = [];
+            if (overdueTasks.length > 0) reasons.push(`${overdueTasks.length} tarefa(s) atrasada(s)`);
+            else if (isStoreOverdue) reasons.push(`Acesso atrasado`);
+
+            if (reasons.length > 0) {
+                if (!groups[store.client]) groups[store.client] = { clientName: store.client, stores: [] };
+                groups[store.client].stores.push({ ...store, highlightMessages: reasons });
+            }
+        });
+        return Object.values(groups).sort((a, b) => a.clientName.localeCompare(b.clientName));
+    }, [stores, currentUserData]);
     
     const visibleLogs = useMemo(() => {
         return allLogs
@@ -117,38 +168,63 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
             
-            {/* COLUNA ESQUERDA (Principal: Radar de Atenção + Timeline) */}
             <div className="lg:col-span-2 flex flex-col gap-6">
-
-                {/* RADAR DE ATENÇÃO (LARGURA TOTAL DA COLUNA) */}
-                <div className="bg-indigo-500/10 border border-indigo-500/30 p-6 rounded-2xl shadow-lg relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
-                    <h3 className="text-lg font-bold tracking-wide text-indigo-300 uppercase flex items-center gap-2 mb-4">
-                        <Bell size={18} className="animate-pulse" /> Radar de Atenção ({groupedInbox.length} Clientes)
-                    </h3>
+                
+                {/* CONTAINER DOS RADARES (Lado a lado em telas grandes) */}
+                <div className="flex flex-col xl:flex-row gap-6 w-full">
                     
-                    {groupedInbox && groupedInbox.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
-                            {groupedInbox.map(group => (
-                                <div key={group.clientName} className="bg-gray-900/60 border border-indigo-500/20 rounded-xl p-4">
-                                    <h4 className="font-bold text-white text-sm mb-3 truncate">{group.clientName}</h4>
-                                    <div className="space-y-2.5">
-                                        {group.stores.map(store => (
-                                            <div key={store.id} onClick={() => openTaskModal && openTaskModal(store)} className="bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/30 cursor-pointer hover:bg-indigo-500/30 hover:border-indigo-400 transition-colors group/radar">
-                                                <p className="text-xs font-bold text-indigo-200 truncate group-hover/radar:text-white transition-colors">{store.store}</p>
-                                                {store.highlightMessages?.map((msg, i) => (
-                                                    <span key={i} className="text-[11px] text-indigo-400 block mt-1 group-hover/radar:text-indigo-300">{msg}</span>
-                                                ))}
-                                            </div>
-                                        ))}
+                    {/* RADAR DE ATENÇÃO */}
+                    {groupedInbox && groupedInbox.length > 0 && (
+                        <div className="flex-1 bg-indigo-500/10 border border-indigo-500/30 p-5 rounded-xl shadow-lg relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
+                            <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2 mb-4">
+                                <Bell size={16} className="animate-pulse" /> Radar de Atenção ({groupedInbox.length} Clientes)
+                            </h3>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                                {groupedInbox.map(group => (
+                                    <div key={group.clientName} className="bg-gray-900/60 border border-indigo-500/20 rounded-xl p-4">
+                                        <h4 className="font-bold text-white text-sm mb-3 truncate">{group.clientName}</h4>
+                                        <div className="space-y-2.5">
+                                            {group.stores.map(store => (
+                                                <div key={store.id} onClick={() => openTaskModal && openTaskModal(store)} className="bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/30 cursor-pointer hover:bg-indigo-500/30 hover:border-indigo-400 transition-colors group/radar">
+                                                    <p className="text-xs font-bold text-indigo-200 truncate group-hover/radar:text-white transition-colors">{store.store}</p>
+                                                    {store.highlightMessages?.map((msg, i) => (
+                                                        <span key={i} className="text-[11px] text-indigo-400 block mt-1 group-hover/radar:text-indigo-300">{msg}</span>
+                                                    ))}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center p-6 border border-dashed border-indigo-500/30 rounded-xl bg-indigo-900/10 h-32">
-                            <CheckCircle size={28} className="text-indigo-400/50 mb-2" />
-                            <p className="text-sm text-indigo-300/80 font-medium italic">Caixa de entrada limpa! Nenhum alerta pendente.</p>
+                    )}
+
+                    {/* RADAR DE ATRASOS */}
+                    {groupedOverdue && groupedOverdue.length > 0 && (
+                        <div className="flex-1 bg-red-500/10 border border-red-500/30 p-5 rounded-xl shadow-lg relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]"></div>
+                            <h3 className="text-sm font-bold text-red-400 uppercase tracking-wider flex items-center gap-2 mb-4">
+                                <AlertCircle size={16} className="animate-pulse" /> Radar de Atrasos ({groupedOverdue.length} Clientes)
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                                {groupedOverdue.map(group => (
+                                    <div key={group.clientName} className="bg-gray-900/60 border border-red-500/20 rounded-xl p-4">
+                                        <h4 className="font-bold text-white text-sm mb-3 truncate">{group.clientName}</h4>
+                                        <div className="space-y-2.5">
+                                            {group.stores.map(store => (
+                                                <div key={store.id} onClick={() => openTaskModal && openTaskModal(store)} className="bg-red-500/10 p-3 rounded-lg border border-red-500/30 cursor-pointer hover:bg-red-500/30 hover:border-red-400 transition-colors group/radar">
+                                                    <p className="text-xs font-bold text-red-200 truncate group-hover/radar:text-white transition-colors">{store.store}</p>
+                                                    {store.highlightMessages?.map((msg, i) => (
+                                                        <span key={i} className="text-[11px] text-red-400 block mt-1 group-hover/radar:text-red-300">{msg}</span>
+                                                    ))}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </div>
@@ -157,6 +233,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                 <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col flex-1 min-h-[50vh]">
                     <div className="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
                         <h3 className="text-lg font-bold tracking-wide text-gray-300 uppercase flex items-center gap-2">
+                            <SquareStack size={28}/>
                             Timeline <span className="text-xs bg-gray-700 text-gray-300 px-2.5 py-0.5 rounded-full">{visibleLogs.length}</span>
                         </h3>
                         <div className="flex items-center gap-3">
@@ -197,7 +274,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                 {/* RADAR DA EQUIPE */}
                 <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg">
                     <h3 className="text-lg font-bold tracking-wide text-emerald-400 uppercase flex items-center gap-2 mb-5">
-                        <Activity size={18} /> Radar da Equipe (Agora)
+                        <Activity size={18} /> trabalhando agora
                     </h3>
                     
                     {Object.keys(liveStatus).length > 0 ? (
@@ -223,10 +300,23 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                         }`}></div>
                                         <div className="flex-1">
                                             <p className="text-sm font-bold text-white flex items-center justify-between mb-1">
-                                                <span className="uppercase tracking-wider">{userName}</span>
+                                                <span className="uppercase tracking-wider flex items-center gap-2">
+                                                    {userName}
+                                                </span>
                                                 <span className={`text-[10px] px-2 py-0.5 rounded font-bold transition-all ${
                                                     isPaused ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-500/70 bg-emerald-500/10'
-                                                }`}>{data.timestamp}</span>
+                                                }`}>
+                                                    {data.timestamp}
+                                                    {isAdmin && (
+                                                        <button 
+                                                            onClick={(e) => handleClearGhostTask(userName, e)}
+                                                            className="text-red-400 hover:text-red-300 hover:bg-red-500/20 p-0.5 rounded transition-colors"
+                                                            title="Forçar parada (Apenas Admin)"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    )}
+                                                </span>
                                             </p>
                                             <p className="text-sm text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
                                         </div>

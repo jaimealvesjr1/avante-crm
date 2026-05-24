@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search, Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays,
-  Eraser, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, Check, Bell } from 'lucide-react';
+import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search,
+  Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays,
+  Eraser, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, Check, Bell, Eye } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
@@ -25,10 +26,20 @@ import TeamFeedView from './components/TeamFeedView';
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
 
+export const getVisualRole = (role) => {
+  if (role === 'Admin' || role === 'admin' || role === 'manager') return 'Analista';
+  if (role === 'Supervisor') return 'Gestor';
+  if (role === 'Visitante') return 'Visitante';
+  return 'Estrategista';
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
-  const [currentUserData, setCurrentUserData] = useState(null); // Movemos para cima
+  const [currentUserData, setCurrentUserData] = useState(null);
+
+  const [realUserData, setRealUserData] = useState(null);
+  const [isSimulating, setIsSimulating] = useState(false);
   
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
   const [activeView, setActiveView] = useState(() => {
@@ -99,6 +110,13 @@ export default function App() {
 
   const isManager = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager';
   const canUseBatchEntry = isManager || currentUserData?.role === 'Supervisor';
+  const isVisitante = currentUserData?.role === 'Visitante';
+
+  useEffect(() => {
+    if (isVisitante && ['dashboard', 'operacional', 'admin'].includes(activeView)) {
+      setActiveView('rotinas');
+    }
+  }, [isVisitante, activeView]);
 
   const now = new Date();
   const localToday = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -137,8 +155,12 @@ export default function App() {
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
             const data = docSnap.data();
-            setUserRole(data.role === 'Visualizador' ? 'Operacional' : (data.role || 'Operacional'));
-            setCurrentUserData(data); 
+            
+            if (!isSimulating) {
+              setUserRole(data.role === 'Visualizador' ? 'Operacional' : (data.role || 'Operacional'));
+              setCurrentUserData(data); 
+              setRealUserData(data);
+            }
           }
         } catch (e) { console.error("Erro ao buscar cargo", e); }
       }
@@ -146,6 +168,22 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  const startSimulation = (member) => {
+    setCurrentUserData(member);
+    setUserRole(member.role === 'Visualizador' ? 'Operacional' : (member.role || 'Operacional'));
+    setIsSimulating(true);
+    toast.success(`Modo simulação ativado! Vendo como ${member.nomeCompleto || member.nome}`);
+  };
+
+  const stopSimulation = () => {
+    if (realUserData) {
+      setCurrentUserData(realUserData);
+      setUserRole(realUserData.role === 'Visualizador' ? 'Operacional' : (realUserData.role || 'Operacional'));
+      setIsSimulating(false);
+      toast.success('Simulação encerrada. Bem-vindo de volta, Admin!');
+    }
+  };
 
   const isAdmin = user?.email === 'jaimejunior.ide@gmail.com';
   const canEdit = userRole === 'Admin' || isAdmin;
@@ -293,17 +331,34 @@ useEffect(() => {
   };
 
   const handleToggleRole = async (email, currentRole) => {
-    let newRole = 'Operacional';
-    if (currentRole === 'Operacional' || currentRole === 'Visualizador') newRole = 'Supervisor';
-    else if (currentRole === 'Supervisor') newRole = 'Admin';
-    else if (currentRole === 'Admin') newRole = 'Operacional';
+    let newRole = 'Operacional'; // Estrategista
+    if (currentRole === 'Operacional' || currentRole === 'Visualizador') newRole = 'Supervisor'; // Gestor
+    else if (currentRole === 'Supervisor') newRole = 'Admin'; // Analista
+    else if (currentRole === 'Admin') newRole = 'Visitante'; // Visitante
+    else if (currentRole === 'Visitante') newRole = 'Operacional';
 
     try {
       const userDocRef = doc(db, "equipe", email.toLowerCase());
       await setDoc(userDocRef, { role: newRole }, { merge: true });
       setTeamMembers(prevMembers => prevMembers.map(member => member.email === email ? { ...member, role: newRole } : member));
-      toast.success(`Cargo atualizado para ${newRole}!`);
+      toast.success(`Cargo atualizado para ${getVisualRole(newRole)}!`);
     } catch (error) { toast.error("Erro ao atualizar cargo. Verifique o console."); }
+  };
+
+  const handleDeleteUser = async (emailToDelete) => {
+    if (!canEdit) return;
+
+    if (!window.confirm(`🚨 Tem certeza que deseja remover permanentemente o usuário ${emailToDelete} da equipe?\n\nEle perderá o acesso aos dados da plataforma imediatamente.`)) return;
+    
+    try {
+      await deleteDoc(doc(db, "equipe", emailToDelete.toLowerCase()));
+      
+      setTeamMembers(prevMembers => prevMembers.filter(m => m.email !== emailToDelete));
+      toast.success(`Usuário ${emailToDelete} removido com sucesso!`);
+    } catch (error) {
+      toast.error("Erro ao excluir usuário. Verifique sua conexão.");
+      console.error(error);
+    }
   };
 
   const handleStoreChange = (id, field, value) => {
@@ -829,6 +884,20 @@ useEffect(() => {
     <div className="min-h-screen bg-[#0B0F19] font-sans text-gray-200 flex flex-col">
       <Toaster position="top-right" />
       
+      {isSimulating && (
+        <div className="bg-amber-500 text-black py-2 px-4 flex items-center justify-center gap-4 z-[999] relative font-bold shadow-[0_4px_10px_rgba(245,158,11,0.3)]">
+          <span className="text-sm flex items-center gap-2">
+            <AlertTriangle size={18} /> MODO SIMULAÇÃO: Você está vendo o sistema como <b>{currentUserData?.nomeCompleto}</b> ({userRole}).
+          </span>
+          <button 
+            onClick={stopSimulation} 
+            className="bg-black hover:bg-gray-800 text-white px-4 py-1.5 rounded-lg text-xs transition-colors shadow-sm flex items-center gap-2"
+          >
+            Encerrar Simulação
+          </button>
+        </div>
+      )}      
+      
       {/* 🌟 NAVEGAÇÃO PRINCIPAL (HEADER) */}
       <header className="sticky top-0 z-40 bg-[#0B0F19]/50 backdrop-blur-xl border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.3)]">
         <div className="w-full px-4 md:px-8 2xl:px-12 mx-auto h-16 flex items-center justify-between">
@@ -838,25 +907,31 @@ useEffect(() => {
               <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-yellow-500">HUB</span></span>
             </div>
           </div>
-          <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
+
+<nav className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
             <button onClick={() => setActiveView('feed_equipe')} className={`relative px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'feed_equipe' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <Activity size={16} /> Feed
               {globalPendingTasks > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-lg border border-red-400/50">
-                  {globalPendingTasks}
-                </span>
+                <span className="absolute top-1 right-2 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)] border border-red-400/50"></span>
               )}
             </button>
             <button onClick={() => setActiveView('rotinas')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'rotinas' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <CalendarDays size={16} /> <span className="hidden md:inline">Workflow</span>
             </button>
-            <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'operacional' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-              <Briefcase size={16} /> <span className="hidden md:inline">Portfólio</span>
-            </button>
-           <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'dashboard' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-              <PieChartIcon size={16} /> <span className="hidden md:inline">Dashboard</span>
-            </button>
-            {canEdit && (
+            
+            {!isVisitante && (
+              <>
+                <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'operacional' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                  <Briefcase size={16} /> <span className="hidden md:inline">Portfólio</span>
+                </button>
+                <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'dashboard' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                  <PieChartIcon size={16} /> <span className="hidden md:inline">Dashboard</span>
+                </button>
+              </>
+            )}
+
+            {/* Bloqueio Duplo: Precisa poder editar E NÃO PODE ser visitante */}
+            {(canEdit && !isVisitante) && (
               <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                 <Shield size={16} /> <span className="hidden md:inline">Equipe</span>
               </button>
@@ -880,7 +955,7 @@ useEffect(() => {
                     {currentUserData?.nomeCompleto || 'Usuário'}
                   </p>
                   <p className="text-[9px] text-indigo-300 uppercase tracking-widest leading-tight">
-                    {currentUserData?.role || 'Operacional'}
+                    {getVisualRole(currentUserData?.role)}
                   </p>
                 </div>
               </div>
@@ -941,7 +1016,7 @@ useEffect(() => {
               </div>
               
               <div className="flex w-full md:w-auto">
-                {canEdit && (
+                {currentUserData?.role !== 'Operacional' && !isVisitante && (
                   <button onClick={addNewStore} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 px-6 rounded-xl text-sm font-bold flex justify-center items-center gap-2 transition-all shadow-md">
                     <Plus size={16} /> Novo Cliente
                   </button>
@@ -987,7 +1062,10 @@ useEffect(() => {
             teamMembers={teamMembers}
             handleUpdateUser={handleUpdateUser}
             handleToggleRole={handleToggleRole}
+            handleDeleteUser={handleDeleteUser}
             closeMonth={closeMonth}
+            startSimulation={startSimulation}
+            isSimulating={isSimulating}
           />
         )}
 
@@ -1024,9 +1102,16 @@ useEffect(() => {
           />
         )}
 
-        {activeView === 'rotinas' && (
+{activeView === 'rotinas' && (
           <TaskView 
-            stores={dashboardData.flatFilteredStores} 
+            stores={
+              isVisitante 
+                ? dashboardData.flatFilteredStores.map(store => ({
+                    ...store,
+                    checklists: (store.checklists || []).filter(task => task.responsavel === myName)
+                  })).filter(store => store.checklists?.length > 0)
+                : dashboardData.flatFilteredStores
+            } 
             openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
             openBulkTaskModal={() => setBulkTaskModalOpen(true)}
             currentUserData={currentUserData}
@@ -1084,244 +1169,6 @@ useEffect(() => {
         />
       )}
 
-      {historyModalOpen && activeStore && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 w-full max-w-4xl 2xl:max-w-6xl uw:max-w-[80vw] overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
-              <div className="flex items-center gap-6">
-                <div><h3 className="text-lg font-bold text-white">Dashboard Analítico</h3><p className="text-xs text-gray-400 mt-1">{activeStore.client} - {activeStore.store}</p></div>
-                <div className="flex bg-gray-800 rounded-lg p-1 border border-gray-700 ml-4">
-                  <button onClick={() => setChartTab('pacing')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${chartTab === 'pacing' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Pacing</button>
-                  <button onClick={() => setChartTab('monthly')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${chartTab === 'monthly' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>Mensal</button>
-                  <button onClick={() => setChartTab('notes')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors flex items-center gap-1 ${chartTab === 'notes' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'}`}>
-                    Histórico {activeStore.taskLogs?.length > 0 && `(${activeStore.taskLogs.length})`}
-                  </button>
-                </div>
-              </div>
-              <button onClick={() => setHistoryModalOpen(false)} className="p-1 hover:bg-gray-700 rounded-lg transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button>
-            </div>
-            <div className="p-5">
-              {chartTab === 'pacing' && (
-                <div className="flex flex-col md:flex-row gap-5">
-                  <div className="flex-1 flex flex-col">
-                    <h4 className="text-sm font-semibold text-gray-300 mb-3 flex justify-between"><span>Curva de Velocidade</span></h4>
-                    <div className="h-64 w-full bg-gray-900 rounded-lg p-3 border border-gray-700">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={activeStorePacingData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                          <XAxis dataKey="day" stroke="#9CA3AF" fontSize={10} tickMargin={10} />
-                          <YAxis stroke="#9CA3AF" fontSize={10} tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
-                          <RechartsTooltip contentStyle={{ backgroundColor: '#1F2937', borderColor: '#374151', borderRadius: '8px' }} itemStyle={{ color: '#fff', fontSize: '12px' }} formatter={(value) => formatCurrency(value)} />
-                          <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                          <Line type="monotone" dataKey="ideal" name="Meta Ideal" stroke="#6B7280" strokeWidth={2} dot={false} strokeDasharray="5 5" />
-                          <Line type="monotone" dataKey="actual" name="Realizado" stroke="#10B981" strokeWidth={3} dot={{ r: 3, fill: '#10B981' }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                  
-                  {/* LANÇAMENTO DIRETO (DIÁRIO) */}
-                  <div className="w-full md:w-72 flex flex-col gap-4">
-                    <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
-                      <h4 className="text-sm font-semibold text-gray-300 mb-3">Lançamento Direto (Valores do Dia)</h4>
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        <div>
-                          <label className="text-[10px] text-gray-500 mb-1 block uppercase font-bold">Dia do Mês</label>
-                          <input type="number" value={newHistoryDay} onChange={e => setNewHistoryDay(e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-white outline-none text-sm font-bold" />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-blue-400 mb-1 block uppercase font-bold">Fat. do Dia (R$)</label>
-                          <input type="number" value={newHistoryRevenue} onChange={e => setNewHistoryRevenue(e.target.value)} className="w-full bg-blue-900/20 border border-blue-800 rounded p-1.5 text-blue-100 outline-none text-sm font-bold" />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-amber-400 mb-1 block uppercase font-bold">Ads do Dia (R$)</label>
-                          <input type="number" value={newHistoryAds} onChange={e => setNewHistoryAds(e.target.value)} className="w-full bg-amber-900/20 border border-amber-800 rounded p-1.5 text-amber-100 outline-none text-sm font-bold" />
-                        </div>
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <label className="text-[10px] text-green-400 mb-1 block uppercase font-bold">Ped. Dia</label>
-                            <input type="number" value={newHistoryOrders} onChange={e => setNewHistoryOrders(e.target.value)} className="w-full bg-green-900/20 border border-green-800 rounded p-1.5 text-green-100 outline-none text-sm font-bold" />
-                          </div>
-                          <div className="flex-1">
-                            <label className="text-[10px] text-purple-400 mb-1 block uppercase font-bold">Unid. Dia</label>
-                            <input type="number" value={newHistoryUnits} onChange={e => setNewHistoryUnits(e.target.value)} className="w-full bg-purple-900/20 border border-purple-800 rounded p-1.5 text-purple-100 outline-none text-sm font-bold" />
-                          </div>
-                        </div>
-                      </div>
-                      <button onClick={() => {
-                        const entryDay = Number(newHistoryDay);
-                        
-                        const parseSafeNumber = (val) => {
-                          if (typeof val === 'number') return val;
-                          if (!val) return 0;
-                          return Number(String(val).trim().replace(',', '.')) || 0;
-                        };
-
-                        const parseSafeInt = (val) => {
-                           if (!val) return 0;
-                           return parseInt(String(val).trim(), 10) || 0;
-                        };
-
-                        let prevRev = 0, prevAds = 0, prevOrd = 0, prevUni = 0;
-                        const pastEntries = [...(activeStore.history || [])].filter(h => h.day < entryDay).sort((a,b) => b.day - a.day);
-                        if(pastEntries.length > 0) {
-                            prevRev = pastEntries[0].revenue || 0;
-                            prevAds = pastEntries[0].ads || 0;
-                            prevOrd = pastEntries[0].orders || 0;
-                            prevUni = pastEntries[0].units || 0;
-                        }
-
-                        const cumRev = prevRev + parseSafeNumber(newHistoryRevenue);
-                        const cumAds = prevAds + parseSafeNumber(newHistoryAds);
-                        const cumOrd = prevOrd + parseSafeInt(newHistoryOrders);
-                        const cumUni = prevUni + parseSafeInt(newHistoryUnits);
-
-                        const entry = {
-                          id: Date.now() + Math.random(),
-                          day: entryDay,
-                          dailyRevenue: parseSafeNumber(newHistoryRevenue),
-                          revenue: cumRev,
-                          ads: cumAds,
-                          orders: cumOrd,
-                          units: cumUni,
-                          date: new Date().toLocaleDateString('pt-BR')
-                        };
-
-                        let updatedHistory = [...(activeStore.history || [])];
-                        const existingIndex = updatedHistory.findIndex(h => h.day === entryDay);
-                        
-                        if(existingIndex >= 0) {
-                          entry.id = updatedHistory[existingIndex].id; 
-                          updatedHistory[existingIndex] = entry;
-                        } else {
-                          updatedHistory.push(entry);
-                        }
-
-                        const finalStore = {
-                          ...activeStore,
-                          history: updatedHistory.sort((a,b) => a.day - b.day)
-                        };
-
-                        if(entryDay === currentDay) {
-                          finalStore.currentRevenue = entry.revenue;
-                          finalStore.adsInvestment = entry.ads;
-                          finalStore.orders = entry.orders;
-                          finalStore.units = entry.units;
-                        }
-
-                        updateStoreInCloud(finalStore);
-                        setStores(stores.map(s => s.id === activeStore.id ? finalStore : s));
-                        toast.success(`Lançamento diário salvo com sucesso!`);
-                        
-                        setNewHistoryRevenue('');
-                        setNewHistoryAds('');
-                        setNewHistoryOrders('');
-                        setNewHistoryUnits('');
-                      }} className="bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm w-full flex items-center justify-center gap-2 font-bold transition-all shadow-md"><Save size={16}/> Salvar Registro Diário</button>
-                    </div>
-
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                      <h4 className="text-sm font-semibold text-gray-300 mb-2">Arquivo</h4>
-                      <div className="flex-1 overflow-y-auto pr-1 space-y-2 max-h-40 custom-scrollbar">
-                        {activeStore.history?.length > 0 ? activeStore.history.map(h => (
-                          <div key={h.id} className="flex justify-between items-center bg-gray-700/30 p-2 rounded border border-gray-700">
-                            <div className="font-bold text-gray-200 text-xs">Dia {h.day}</div>
-                            <div className="flex items-center gap-4">
-                              <div className="text-right">
-                                <span className="font-bold text-blue-400 text-xs block">Acumulado: {formatCurrency(h.revenue)}</span>
-                                <span className="text-[9px] text-amber-400 block">Ads Acumulado: {formatCurrency(h.ads || 0)}</span>
-                                {h.dailyRevenue !== undefined && <span className="text-[9px] text-green-400 block mt-1">Fat. Dia: {formatCurrency(h.dailyRevenue)}</span>}
-                              </div>
-                              {canEdit && (
-                                <button onClick={() => {
-                                  if(window.confirm("Apagar este registro?")) {
-                                    const updatedStore = { ...activeStore, history: activeStore.history.filter(x => x.id !== h.id) };
-                                    updateStoreInCloud(updatedStore);
-                                    setStores(stores.map(s => s.id === activeStore.id ? updatedStore : s));
-                                    toast.success('Lançamento apagado!');
-                                  }
-                                }} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button>
-                              )}
-                            </div>
-                          </div>
-                        )) : <div className="text-center p-4 border border-dashed border-gray-700 rounded text-gray-500 text-xs">Nenhum histórico registrado.</div>}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {chartTab === 'monthly' && (
-                <div className="h-72 w-full bg-gray-900 rounded-lg p-4 border border-gray-700 flex flex-col justify-center items-center">
-                  {activeStoreMonthlyData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={activeStoreMonthlyData} margin={{ top: 20, right: 20, left: -10, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                        <XAxis dataKey="month" stroke="#9CA3AF" tickMargin={10} />
-                        <YAxis stroke="#9CA3AF" tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
-                        <RechartsTooltip cursor={{ fill: '#374151', opacity: 0.4 }} contentStyle={{ backgroundColor: '#1F2937', borderColor: '#374151', borderRadius: '8px', color: '#fff' }} formatter={(value) => [formatCurrency(value), 'Faturamento']} />
-                        <Bar dataKey="revenue" fill="#8B5CF6" radius={[4, 4, 0, 0]} barSize={50} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : <div className="text-gray-500 text-center"><ArchiveRestore size={32} className="opacity-50 mx-auto" /><p>Nenhum histórico.</p></div>}
-                </div>
-              )}
-              
-              {chartTab === 'notes' && (
-                <div className="flex flex-col h-72">
-                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 mb-4 custom-scrollbar border-l-2 border-gray-700 ml-2 pl-4 mt-2">
-                    {activeStore.taskLogs && activeStore.taskLogs.length > 0 ? activeStore.taskLogs.slice().reverse().map(log => (
-                      <div key={log.id} className="relative group/log">
-                        <div className="absolute -left-[21px] top-1.5 w-2 h-2 bg-blue-500 rounded-full"></div>
-                        <div className="flex justify-between items-center mb-0.5">
-                          <div className="text-[10px] text-blue-400 font-bold">
-                            {log.data} <span className="text-gray-500 font-normal ml-1">por {log.author}</span>
-                          </div>
-                          {canEdit && (
-                            <button onClick={() => {
-                              if(window.confirm("Apagar este registro?")) {
-                                const newStore = { ...activeStore, taskLogs: activeStore.taskLogs.filter(n => n.id !== log.id) };
-                                updateStoreInCloud(newStore);
-                                setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
-                                toast.success('Registro apagado!');
-                              }
-                            }} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity mr-2"><Trash2 size={12}/></button>
-                          )}
-                        </div>
-                        <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 text-sm text-gray-300 shadow-sm">{log.texto}</div>
-                      </div>
-                    )) : <div className="h-full flex items-center justify-center text-gray-500 text-sm border border-dashed border-gray-700 rounded-lg">Nenhum histórico registrado.</div>}
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <input type="text" value={newNoteText} onChange={e => setNewNoteText(e.target.value)} onKeyDown={e => {
-                        if(e.key === 'Enter' && newNoteText.trim()) {
-                            const username = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
-                            const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: newNoteText, author: username };
-                            const newStore = { ...activeStore, taskLogs: [...(activeStore.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() };
-                            updateStoreInCloud(newStore);
-                            setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
-                            setNewNoteText('');
-                            toast.success('Registro adicionado ao histórico!');
-                        }
-                    }} placeholder="Descreva a ação realizada..." className="flex-1 bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white outline-none focus:border-indigo-500" />
-                    <button onClick={() => {
-                        if(!newNoteText.trim()) return;
-                        const username = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
-                        const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: newNoteText, author: username };
-                        const newStore = { ...activeStore, taskLogs: [...(activeStore.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() };
-                        updateStoreInCloud(newStore);
-                        setStores(stores.map(s => s.id === activeStore.id ? newStore : s));
-                        setNewNoteText('');
-                        toast.success('Registro adicionado ao histórico!');
-                    }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg font-bold">Lançar</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       <CreateStoreModal 
         isOpen={createModalOpen} 
         onClose={() => setCreateModalOpen(false)} 
@@ -1352,7 +1199,8 @@ useEffect(() => {
           user={user}
           canUseBatchEntry={canUseBatchEntry}
           canEdit={canEdit}
-          teamMembers={teamMembers} 
+          teamMembers={teamMembers}
+          addNewStoreToClient={addNewStoreToClient}
         />
       )}
     </div>

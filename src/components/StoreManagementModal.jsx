@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Archive, GitMerge, Save, Briefcase, Store, Check, AlertTriangle } from 'lucide-react';
+import { X, Archive, GitMerge, Save, Briefcase, Store, Check, AlertTriangle, Plus } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 
-// 🌟 LISTA PADRONIZADA DE MARKETPLACES (IGUAL AO RADAR DE EXPANSÃO)
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
 
 export default function StoreManagementModal({ 
@@ -13,26 +12,27 @@ export default function StoreManagementModal({
   clientGroup, 
   stores, 
   setStores, 
-  updateStoreInCloud 
+  updateStoreInCloud,
+  currentUserData, 
+  onAddNewStore 
 }) {
-  // ==========================================
   // ESTADOS: EDIÇÃO DE CLIENTE
-  // ==========================================
   const [clientName, setClientName] = useState('');
   const [feeType, setFeeType] = useState('percent');
   const [feePercent, setFeePercent] = useState('');
   const [fixedFee, setFixedFee] = useState('');
 
-  // ==========================================
   // ESTADOS: EDIÇÃO DE LOJAS
-  // ==========================================
   const [storeEdits, setStoreEdits] = useState({});
   
-  // Estados para o fluxo de Mesclagem (Merge) inline
   const [mergeSourceId, setMergeSourceId] = useState(null);
   const [mergeTargetId, setMergeTargetId] = useState('');
 
   const activeStores = stores.filter(s => s.client === clientGroup?.client && !s.arquivada);
+
+  const userRole = currentUserData?.role || 'Operacional';
+  const isOperacional = userRole === 'Operacional' || userRole === 'Visualizador';
+  const isSupervisor = userRole === 'Supervisor';
 
   // Carrega os dados sempre que o modal abre ou sofre mutações externas
   useEffect(() => {
@@ -112,7 +112,7 @@ export default function StoreManagementModal({
        ...store,
        store: edits.store.trim().toUpperCase(),
        marketplace: edits.marketplace.trim().toUpperCase(),
-       gmvBase: Number(edits.gmvBase) || 0,
+       gmvBase: isOperacional || isSupervisor ? store.gmvBase : (Number(edits.gmvBase) || 0),
     };
     
     if (edits.customGrowth !== '') {
@@ -173,7 +173,7 @@ export default function StoreManagementModal({
     setMergeTargetId('');
   };
 
-  return (
+return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[110] p-4 animate-in fade-in">
       <div className="bg-[#111827] border border-white/10 rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
         
@@ -183,28 +183,43 @@ export default function StoreManagementModal({
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               Central de Configurações do Cliente
             </h2>
-            <p className="text-sm text-gray-400 mt-1">Gerencie os metadados do grupo e todas as lojas vinculadas.</p>
+            <p className="text-sm text-gray-400 mt-1">Gerencie os metadados do cliente e todas as lojas vinculadas.</p>
           </div>
-          <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-xl text-gray-400 transition-colors"><X size={20}/></button>
+
+          <div className="flex items-center gap-3">
+            {!isOperacional && (
+              <button 
+                onClick={() => { onClose(); onAddNewStore(clientGroup.client); }} 
+                className="px-4 py-2 bg-green-600 hover:bg-green-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-md"
+              >
+                <Plus size={14} /> Adicionar Loja
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-xl text-gray-400 transition-colors"><X size={20}/></button>
+          </div>
+
+
+
         </div>
 
-        {/* CORPO DO MODAL (DUAS COLUNAS) */}
+        {/* CORPO DO MODAL */}
         <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
           
-          {/* COLUNA 1: INFORMAÇÕES DO CLIENTE (Grupo) */}
+          {/* COLUNA 1: INFORMAÇÕES DO CLIENTE */}
           <div className="w-full lg:w-1/3 border-r border-white/5 p-6 overflow-y-auto bg-black/10">
             <div className="flex items-center gap-2 mb-6">
               <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
                 <Briefcase size={18} />
               </div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Dados do Grupo</h3>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Dados do Cliente</h3>
             </div>
 
             <div className="space-y-5">
               <div className="space-y-2">
-                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Nome do Grupo</label>
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Nome do Cliente</label>
                 <input 
                   type="text" value={clientName} onChange={e => setClientName(e.target.value)} 
+                  disabled={false} /* Todos editam */
                   className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 text-sm font-bold transition-all shadow-inner"
                 />
               </div>
@@ -213,7 +228,8 @@ export default function StoreManagementModal({
                 <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Modelo de Fee</label>
                 <select 
                   value={feeType} onChange={e => setFeeType(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 text-sm transition-all shadow-inner"
+                  disabled={isOperacional}
+                  className={`w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 text-sm transition-all shadow-inner ${isOperacional ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <option value="percent" className="bg-gray-900 text-white">Porcentagem (%)</option>
                   <option value="fixed" className="bg-gray-900 text-white">Fixo Mensal (R$)</option>
@@ -224,13 +240,13 @@ export default function StoreManagementModal({
                 <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Valor da Taxa</label>
                 {feeType === 'percent' ? (
                   <div className="relative">
-                    <input type="number" step="0.1" value={feePercent} onChange={e => setFeePercent(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 pr-8 outline-none focus:border-emerald-500 text-sm font-bold shadow-inner" placeholder="Ex: 3" />
+                    <input type="number" step="0.1" value={feePercent} onChange={e => setFeePercent(e.target.value)} disabled={isOperacional} className={`w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 pr-8 outline-none focus:border-emerald-500 text-sm font-bold shadow-inner ${isOperacional ? 'opacity-50 cursor-not-allowed' : ''}`} placeholder="Ex: 3" />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold">%</span>
                   </div>
                 ) : (
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold">R$</span>
-                    <input type="number" value={fixedFee} onChange={e => setFixedFee(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 pl-9 outline-none focus:border-emerald-500 text-sm font-bold shadow-inner" placeholder="Ex: 1500" />
+                    <input type="number" value={fixedFee} onChange={e => setFixedFee(e.target.value)} disabled={isOperacional} className={`w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 pl-9 outline-none focus:border-emerald-500 text-sm font-bold shadow-inner ${isOperacional ? 'opacity-50 cursor-not-allowed' : ''}`} placeholder="Ex: 1500" />
                   </div>
                 )}
               </div>
@@ -243,12 +259,6 @@ export default function StoreManagementModal({
 
           {/* COLUNA 2: LISTAGEM E EDIÇÃO DAS LOJAS */}
           <div className="w-full lg:w-2/3 p-6 overflow-y-auto custom-scrollbar bg-transparent">
-            <div className="flex items-center gap-2 mb-6">
-              <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg border border-indigo-500/20">
-                <Store size={18} />
-              </div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Lojas Ativas ({activeStores.length})</h3>
-            </div>
 
             <div className="space-y-4">
               {activeStores.map(store => {
@@ -258,7 +268,7 @@ export default function StoreManagementModal({
                 return (
                   <div key={store.id} className="bg-white/[0.03] p-4 rounded-2xl border border-white/10 hover:border-white/20 transition-colors shadow-sm">
                     
-                    {/* INTERFACE DE MESCLAGEM ATIVA (INLINE) */}
+                    {/* INTERFACE DE MESCLAGEM */}
                     {isMerging ? (
                       <div className="bg-rose-500/10 p-4 rounded-xl border border-rose-500/20 animate-in fade-in">
                         <div className="flex items-center gap-2 mb-3">
@@ -266,7 +276,7 @@ export default function StoreManagementModal({
                           <h4 className="text-sm font-bold text-rose-300">Migração de Dados</h4>
                         </div>
                         <p className="text-xs text-rose-200/80 mb-3">
-                          Selecione a loja de destino. Todos os históricos, notas e checklists de <strong>{store.store}</strong> serão transferidos para ela. Esta loja de origem será arquivada automaticamente.
+                          Selecione a loja de destino. Todos os históricos de <strong>{store.store}</strong> serão transferidos para ela. Esta loja de origem será arquivada.
                         </p>
                         <select 
                           value={mergeTargetId} 
@@ -286,20 +296,19 @@ export default function StoreManagementModal({
                         </div>
                       </div>
                     ) : (
-                      // INTERFACE REGULAR DE EDIÇÃO DE CAMPOS DA LOJA
                       <div className="space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-gray-500 uppercase">Nome da Loja</label>
-                            <input type="text" value={edits.store || ''} onChange={e => handleStoreEditChange(store.id, 'store', e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-indigo-500 text-sm font-bold" />
+                            <input type="text" value={edits.store || ''} onChange={e => handleStoreEditChange(store.id, 'store', e.target.value)} disabled={false} className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-indigo-500 text-sm font-bold" />
                           </div>
                           
-                          {/* 🛍️ CAMPO ALTERADO: AGORA É UM SELECT DE OPÇÕES FIXAS */}
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-gray-500 uppercase">Marketplace</label>
                             <select 
                               value={edits.marketplace?.toLowerCase() || ''} 
                               onChange={e => handleStoreEditChange(store.id, 'marketplace', e.target.value.toUpperCase())} 
+                              disabled={false}
                               className="w-full bg-black/40 border border-white/10 text-indigo-300 rounded-lg p-2 outline-none focus:border-indigo-500 text-sm font-bold uppercase cursor-pointer"
                             >
                               <option value="" className="bg-gray-900 text-gray-400">Selecione...</option>
@@ -315,11 +324,24 @@ export default function StoreManagementModal({
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-gray-500 uppercase">GMV Base (R$)</label>
-                            <input type="number" value={activeStores.find(as => as.id === store.id) ? edits.gmvBase : ''} onChange={e => handleStoreEditChange(store.id, 'gmvBase', e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-indigo-500 text-sm font-bold" />
+                            <input 
+                              type="number" 
+                              value={activeStores.find(as => as.id === store.id) ? edits.gmvBase : ''} 
+                              onChange={e => handleStoreEditChange(store.id, 'gmvBase', e.target.value)} 
+                              disabled={isOperacional || isSupervisor} // Somente Admins podem alterar!
+                              className={`w-full bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-indigo-500 text-sm font-bold ${(isOperacional || isSupervisor) ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                            />
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-gray-500 uppercase">Cresc. (%) Opcional</label>
-                            <input type="number" value={edits.customGrowth !== undefined ? edits.customGrowth : ''} onChange={e => handleStoreEditChange(store.id, 'customGrowth', e.target.value)} className="w-full bg-black/40 border border-white/10 text-emerald-400 rounded-lg p-2 outline-none focus:border-indigo-500 text-sm font-bold" placeholder="Padrão Global" />
+                            <input 
+                              type="number" 
+                              value={edits.customGrowth !== undefined ? edits.customGrowth : ''} 
+                              onChange={e => handleStoreEditChange(store.id, 'customGrowth', e.target.value)} 
+                              disabled={isOperacional} // Apenas operacionais são bloqueados
+                              className={`w-full bg-black/40 border border-white/10 text-emerald-400 rounded-lg p-2 outline-none focus:border-indigo-500 text-sm font-bold ${isOperacional ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                              placeholder="Padrão Global" 
+                            />
                           </div>
                         </div>
 
@@ -329,14 +351,17 @@ export default function StoreManagementModal({
                             <Save size={14} /> Salvar Edição
                           </button>
                           
-                          <div className="w-px h-5 bg-white/10 mx-1"></div>
-                          
-                          <button onClick={() => setMergeSourceId(store.id)} className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5" title="Transferir dados para outra conta e arquivar esta.">
-                            <GitMerge size={14} /> Mesclar
-                          </button>
-                          <button onClick={() => handleArchiveStore(store.id, store.store)} className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5" title="Remover dos cálculos gerais e ocultar de leituras operacionais.">
-                            <Archive size={14} /> Arquivar
-                          </button>
+                          {!isOperacional && (
+                            <>
+                              <div className="w-px h-5 bg-white/10 mx-1"></div>
+                              <button onClick={() => setMergeSourceId(store.id)} className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5" title="Transferir dados para outra conta e arquivar esta.">
+                                <GitMerge size={14} /> Mesclar
+                              </button>
+                              <button onClick={() => handleArchiveStore(store.id, store.store)} className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5" title="Remover dos cálculos gerais e ocultar de leituras operacionais.">
+                                <Archive size={14} /> Arquivar
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     )}
