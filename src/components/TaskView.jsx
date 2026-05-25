@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 
 export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores }) {
   const [menuOpenId, setMenuOpenId] = useState(null);
+  const isManager = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager';
 
   const groupedTasks = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -60,15 +61,17 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
             <h4 className={`font-bold text-sm ${isHighlighted ? 'text-indigo-100' : 'text-gray-200'} flex items-center gap-2 truncate`}>{store.store}</h4>
             <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mt-0.5 truncate">{store.client} {store.marketplace && `• ${store.marketplace}`}</p>
           </div>
-          <div className="relative ml-2 shrink-0 flex items-center gap-2">
-            <button onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === store.id ? null : store.id); }} className="p-1 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors"><MoreHorizontal size={16} /></button>
-            {menuOpenId === store.id && (
-              <div className="absolute right-0 top-6 mt-1 w-44 bg-gray-900 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in zoom-in-95 duration-100">
-                <button onClick={(e) => handleQuickAction(e, store, 'accessed')} className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 flex items-center gap-2 transition-colors"><Check size={14} className="text-emerald-500" /> Marcar Acesso</button>
-                <button onClick={(e) => handleQuickAction(e, store, 'delay')} className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 flex items-center gap-2 transition-colors border-t border-white/5"><CalendarClock size={14} className="text-amber-500" /> Adiar P/ Amanhã</button>
+          {isManager && (
+              <div className="relative ml-2 shrink-0 flex items-center gap-2">
+                <button onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === store.id ? null : store.id); }} className="p-1 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors"><MoreHorizontal size={16} /></button>
+                {menuOpenId === store.id && (
+                  <div className="absolute right-0 top-6 mt-1 w-44 bg-gray-900 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in zoom-in-95 duration-100">
+                    <button onClick={(e) => handleQuickAction(e, store, 'accessed')} className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 flex items-center gap-2 transition-colors"><Check size={14} className="text-emerald-500" /> Marcar Acesso</button>
+                    <button onClick={(e) => handleQuickAction(e, store, 'delay')} className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 flex items-center gap-2 transition-colors border-t border-white/5"><CalendarClock size={14} className="text-amber-500" /> Adiar P/ Amanhã</button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+          )}
         </div>
         {isHighlighted && highlightMessages.length > 0 && (
           <div className="flex flex-col gap-1.5 mb-3">

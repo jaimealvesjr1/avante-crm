@@ -48,25 +48,69 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         const stats = {};
         const localTodayStr = localToday; 
 
+        // 1. CALCULADORA DE MÉDIAS HISTÓRICAS
+        // O sistema descobre quanto tempo a equipa costuma levar em cada complexidade.
+        const globalAverages = {
+            baixa: { totalTime: 0, count: 0, avg: 15 * 60000 }, // Padrão base se não houver histórico
+            media: { totalTime: 0, count: 0, avg: 30 * 60000 },
+            alta:  { totalTime: 0, count: 0, avg: 60 * 60000 }
+        };
+
+        stores.forEach(store => {
+            (store.checklists || []).forEach(task => {
+                if (task.feita) {
+                    let duration = task.accumulatedTimeMs || 0;
+                    if (!duration && task.startedAt && task.completedAtFull) {
+                        duration = new Date(task.completedAtFull) - new Date(task.startedAt);
+                    }
+                    if (duration > 60000 && duration < 86400000) { // Conta tarefas entre 1 min e 24h
+                        const weight = task.peso || 'media';
+                        if (globalAverages[weight]) {
+                            globalAverages[weight].totalTime += duration;
+                            globalAverages[weight].count += 1;
+                        }
+                    }
+                }
+            });
+        });
+
+        // Define a média real baseada nos dados encontrados
+        Object.keys(globalAverages).forEach(w => {
+            if (globalAverages[w].count > 0) {
+                globalAverages[w].avg = globalAverages[w].totalTime / globalAverages[w].count;
+            }
+        });
+
+        // 2. APLICAÇÃO DE PONTOS PARA HOJE
         stores.forEach(store => {
             (store.checklists || []).forEach(task => {
                 if (task.feita && task.completedAt === localTodayStr) {
                     const author = task.completedBy || 'Sistema';
-                    if (!stats[author]) stats[author] = { name: author, tasks: 0, points: 0, totalTimeMs: 0, trackedTasks: 0 };
+                    
+                    // Inicializa o utilizador com os tempos separados
+                    if (!stats[author]) {
+                        stats[author] = { 
+                            name: author, tasks: 0, points: 0, 
+                            times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } } 
+                        };
+                    }
                     
                     stats[author].tasks += 1;
+                    const weight = task.peso || 'media';
                     
+                    // XP Base
                     let earnedPoints = 10;
-                    if (task.peso === 'baixa') earnedPoints = 10;
-                    else if (task.peso === 'media') earnedPoints = 20;
-                    else if (task.peso === 'alta') earnedPoints = 30;
+                    if (weight === 'baixa') earnedPoints = 10;
+                    else if (weight === 'media') earnedPoints = 20;
+                    else if (weight === 'alta') earnedPoints = 30;
 
+                    // XP Pontualidade
                     if (task.data) {
                         if (task.data >= localTodayStr) earnedPoints += 5;
                         else earnedPoints = Math.max(5, earnedPoints - 10);
                     }
-                    stats[author].points += earnedPoints;
 
+                    // Bónus de Agilidade Inteligente e Registo de Tempo
                     let taskDuration = 0;
                     if (task.accumulatedTimeMs) {
                         taskDuration = task.accumulatedTimeMs;
@@ -75,16 +119,32 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     }
 
                     if (taskDuration > 0 && taskDuration < 86400000) {
-                        stats[author].totalTimeMs += taskDuration;
-                        stats[author].trackedTasks += 1;
+                        const expectedTimeMs = globalAverages[weight].avg;
+                        const tolerance = 60000; 
+
+                        if (taskDuration < (expectedTimeMs - tolerance)) {
+                            earnedPoints += 5; 
+                        } else if (taskDuration > (expectedTimeMs + tolerance)) {
+                            earnedPoints = Math.max(0, earnedPoints - 5); 
+                        } 
+
+                        // Guarda o tempo na "caixa" da complexidade correta
+                        stats[author].times[weight].t += taskDuration;
+                        stats[author].times[weight].c += 1;
                     }
+
+                    stats[author].points += earnedPoints;
                 }
             });
         });
 
+        // Converte os milissegundos em minutos para o visual
         return Object.values(stats).map(r => {
-            const avgMinutes = r.trackedTasks > 0 ? Math.round((r.totalTimeMs / r.trackedTasks) / 60000) : 0;
-            return { ...r, avgMinutes };
+            const avgBaixa = r.times.baixa.c > 0 ? Math.round(r.times.baixa.t / r.times.baixa.c / 60000) : 0;
+            const avgMedia = r.times.media.c > 0 ? Math.round(r.times.media.t / r.times.media.c / 60000) : 0;
+            const avgAlta = r.times.alta.c > 0 ? Math.round(r.times.alta.t / r.times.alta.c / 60000) : 0;
+            
+            return { ...r, avgBaixa, avgMedia, avgAlta };
         }).sort((a, b) => b.points - a.points);
     }, [stores, localToday]);
     
@@ -173,12 +233,12 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                 {/* CONTAINER DOS RADARES (Lado a lado em telas grandes) */}
                 <div className="flex flex-col xl:flex-row gap-6 w-full">
                     
-                    {/* RADAR DE ATENÇÃO */}
+                    {/* NOVO NOME: FOCO IMEDIATO */}
                     {groupedInbox && groupedInbox.length > 0 && (
                         <div className="flex-1 bg-indigo-500/10 border border-indigo-500/30 p-5 rounded-xl shadow-lg relative overflow-hidden">
                             <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
                             <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2 mb-4">
-                                <Bell size={16} className="animate-pulse" /> Radar de Atenção ({groupedInbox.length} Clientes)
+                                <Bell size={16} className="animate-pulse" /> Foco Imediato ({groupedInbox.length} Clientes)
                             </h3>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
@@ -201,12 +261,12 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         </div>
                     )}
 
-                    {/* RADAR DE ATRASOS */}
+                    {/* NOVO NOME: ALERTAS DE ATRASO */}
                     {groupedOverdue && groupedOverdue.length > 0 && (
                         <div className="flex-1 bg-red-500/10 border border-red-500/30 p-5 rounded-xl shadow-lg relative overflow-hidden">
                             <div className="absolute top-0 left-0 w-1 h-full bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]"></div>
                             <h3 className="text-sm font-bold text-red-400 uppercase tracking-wider flex items-center gap-2 mb-4">
-                                <AlertCircle size={16} className="animate-pulse" /> Radar de Atrasos ({groupedOverdue.length} Clientes)
+                                <AlertCircle size={16} className="animate-pulse" /> Alertas de Atraso ({groupedOverdue.length} Clientes)
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
                                 {groupedOverdue.map(group => (
@@ -332,13 +392,13 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     )}
                 </div>
 
-                {/* RANKING DE EXECUÇÃO */}
-                <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col flex-1 min-h-[40vh]">
+                {/* RANKING DE EXECUÇÃO - ALTURA CORRIGIDA PARA H-FIT */}
+                <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
                     <div className="mb-4 border-b border-gray-700 pb-4">
                         <h3 className="text-lg font-bold tracking-wide text-amber-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
                     </div>
                     
-                    <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-2">
+                    <div className="space-y-3 pr-2">
                         {rankingDiario.map((rank, i) => (
                             <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2 hover:border-gray-500 transition-colors">
                                 <div className="flex items-center justify-between">
@@ -359,14 +419,29 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                 </div>
                                 
                                 <div className="bg-black/40 rounded-lg px-3 py-2 flex justify-between items-center mt-1">
-                                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempo Méd/Tarefa</span>
-                                    <span className={`text-xs font-bold ${rank.avgMinutes > 0 && rank.avgMinutes < 15 ? 'text-emerald-400' : rank.avgMinutes >= 30 ? 'text-amber-400' : 'text-gray-300'}`}>
-                                        {rank.avgMinutes > 0 ? `${rank.avgMinutes}m` : '--'}
-                                    </span>
+                                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempos Médios</span>
+                                    <div className="flex gap-2 text-[10px] font-bold">
+                                        <span className={rank.avgBaixa > 0 ? 'text-emerald-400' : 'text-gray-600'} title="Tarefas Rápidas">
+                                            🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}
+                                        </span>
+                                        <span className={rank.avgMedia > 0 ? 'text-amber-400' : 'text-gray-600'} title="Tarefas Médias">
+                                            🟡 {rank.avgMedia > 0 ? `${rank.avgMedia}m` : '--'}
+                                        </span>
+                                        <span className={rank.avgAlta > 0 ? 'text-red-400' : 'text-gray-600'} title="Tarefas Demoradas">
+                                            🔴 {rank.avgAlta > 0 ? `${rank.avgAlta}m` : '--'}
+                                        </span>
+                                    </div>
                                 </div>
                             </div> 
                         ))}
                         {rankingDiario.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada hoje.</div>}
+                    </div>
+
+                    {/* RODAPÉ DE REGRAS DE XP EM PT-BR */}
+                    <div className="mt-4 pt-4 border-t border-gray-700/50 text-[10px] text-gray-400 text-center leading-relaxed">
+                        <strong>XP Base:</strong> Baixa (+10) • Média (+20) • Alta (+30)<br/>
+                        <strong>Prazos:</strong> No prazo (+5) • Atrasada (-10)<br/>
+                        <strong>Agilidade:</strong> Rápida (+5) • Na média (0) • Lenta (-5) comparado ao histórico geral.
                     </div>
                 </div>
             </div>

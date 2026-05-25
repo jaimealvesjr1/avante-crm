@@ -467,7 +467,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   }
 
                   const pendingTasks = baseTasks.filter(t => !t.feita);
-                  const completedTasks = baseTasks.filter(t => t.feita && t.recorrencia !== 'ghost');
+                  const completedTasks = baseTasks.filter(t => t.feita && (!t.recorrencia || t.recorrencia === 'none'));
                   
                   pendingTasks.sort((a, b) => {
                     if (a.data && b.data) {
@@ -637,30 +637,44 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   <button onClick={addLog} className="bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-300 px-4 rounded-xl flex flex-col items-center justify-center gap-1 transition-all shadow-sm"><Send size={16}/> <span className="text-[10px] font-bold uppercase tracking-wider">Lançar</span></button>
                 </div>
                 
-                <div className="space-y-4 border-l border-white/10 ml-3 pl-5 mt-6 relative">
-                  {store.taskLogs?.slice().reverse().map((log, i) => (
-                    <div key={log.id} className="relative group/log">
-                      <div className="absolute -left-[25px] top-1.5 w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] border border-indigo-300"></div>
-                      
-                      <div className="flex justify-between items-start mb-1.5">
-                        <div className="flex items-center gap-2">
+                <div className="space-y-4 relative mt-6 px-2">
+                  {store.taskLogs?.slice().reverse().map((log, i) => {
+                    const isMine = log.author === username; // Verifica se fui eu que escrevi
+                    
+                    return (
+                      <div key={log.id} className={`relative flex flex-col group/log ${isMine ? 'items-end' : 'items-start'}`}>
+                        
+                        {/* Cabeçalho do Log (Autor e Data) */}
+                        <div className={`flex items-center gap-2 mb-1.5 ${isMine ? 'flex-row-reverse' : ''}`}>
                           <Avatar name={log.author} size="sm" />
-                          <span className="text-[11px] text-gray-400 font-medium">
-                            <strong className="text-gray-300">{log.author}</strong> • {log.data}
+                          <span className="text-[11px] text-gray-400 font-medium flex items-center gap-1.5">
+                            <strong className={isMine ? "text-indigo-400" : "text-gray-300"}>
+                              {isMine ? 'Você' : log.author}
+                            </strong> 
+                            <span className="text-gray-600">•</span> {log.data}
                           </span>
+                          
+                          {isManager && (
+                            <button onClick={() => deleteLog(log.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity p-1">
+                              <Trash2 size={12}/>
+                            </button>
+                          )}
                         </div>
-                        {isManager && (
-                          <button onClick={() => deleteLog(log.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover/log:opacity-100 transition-opacity p-1">
-                            <Trash2 size={12}/>
-                          </button>
-                        )}
+
+                        {/* Balão de Mensagem */}
+                        <div className={`p-3.5 rounded-2xl border text-sm shadow-sm leading-relaxed inline-block max-w-[90%] sm:max-w-[80%] ${
+                          isMine 
+                            ? 'bg-indigo-600/10 border-indigo-500/30 text-indigo-100 rounded-tr-none' 
+                            : 'bg-white/[0.03] border-white/10 text-gray-300 rounded-tl-none'
+                        }`}>
+                          {log.texto}
+                        </div>
                       </div>
-                      <div className="bg-white/[0.02] p-3.5 rounded-2xl border border-white/5 text-sm text-gray-300 shadow-sm leading-relaxed inline-block max-w-full">
-                        {log.texto}
-                      </div>
-                    </div>
-                  ))}
-                  {(!store.taskLogs || store.taskLogs.length === 0) && <div className="text-xs text-gray-500 italic py-2">Nenhum log registrado na timeline.</div>}
+                    );
+                  })}
+                  {(!store.taskLogs || store.taskLogs.length === 0) && (
+                    <div className="text-xs text-gray-500 italic py-2 text-center">Nenhum log registrado na timeline.</div>
+                  )}
                 </div>
               </div>
             )}
