@@ -34,6 +34,8 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
+  const CURRENT_VERSION = '2.1.6';
+  
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
   const [currentUserData, setCurrentUserData] = useState(null);
@@ -199,6 +201,42 @@ export default function App() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if(data.globalGrowth !== undefined) setGlobalGrowth(data.globalGrowth);
+        
+        // --- SISTEMA INTELIGENTE DE VERIFICAÇÃO DE ATUALIZAÇÃO ---
+        if (data.versao && data.versao !== CURRENT_VERSION) {
+          // Detecta se o CRM está rodando como Aplicativo Instalado (Área de Trabalho ou Celular)
+          const isPWA = window.matchMedia('(display-mode: standalone)').matches;
+
+          if (isPWA) {
+            // Se for o App instalado, o cache é rígido. Mostramos um alerta fixo para forçar o reload puro.
+            toast((t) => (
+              <div className="flex flex-col gap-2 p-1">
+                <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                  🚀 Nova versão disponível: <span className="text-yellow-400 font-black">{data.versao}</span>
+                </p>
+                <p className="text-[10px] text-gray-400 leading-tight">
+                  Atualize para garantir que os painéis e o ranking diário sincronizem corretamente.
+                </p>
+                <button 
+                  onClick={() => {
+                    toast.dismiss(t.id);
+                    // Força a limpeza de cache local e recarrega o app instalado do zero
+                    window.location.reload(true);
+                  }}
+                  className="w-full mt-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold py-2 px-3 rounded-xl shadow-md transition-colors"
+                >
+                  Atualizar Agora
+                </button>
+              </div>
+            ), { duration: Infinity, id: 'pwa-update-toast', icon: '🔄' });
+          } else {
+            // Se for no navegador comum, apenas avisamos discretamente com um toast temporário
+            toast.success(`Uma nova atualização (${data.versao}) foi lançada! Recarregue a página caso note instabilidades.`, {
+              duration: 10000,
+              id: 'web-update-toast'
+            });
+          }
+        }
       }
     });
 
@@ -907,7 +945,7 @@ useEffect(() => {
               <div className="hidden sm:flex items-center gap-2">
                 <span className="text-xl font-bold text-white tracking-tight">Avante<span className="text-yellow-500">HUB</span></span>
                 <span className="text-[10px] bg-white/5 border border-white/10 text-gray-400 px-2 py-0.5 rounded-full font-bold tracking-widest shadow-inner">
-                  v2.1.6
+                  v{CURRENT_VERSION}
                 </span>
               </div>
             </div>
