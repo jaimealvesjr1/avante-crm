@@ -84,15 +84,30 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         // 2. APLICAÇÃO DE PONTOS PARA HOJE
         stores.forEach(store => {
             (store.checklists || []).forEach(task => {
+                
+                // --- NOVO: PONTOS POR CRIAÇÃO DE TAREFA (+2 XP) ---
+                if (task.id && task.criadoPor && task.recorrencia !== 'ghost') {
+                    const timestamp = Math.floor(task.id);
+                    // Garante que o ID é um timestamp válido
+                    if (timestamp > 1600000000000) { 
+                        const creationDate = new Date(timestamp - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                        
+                        if (creationDate === localTodayStr) {
+                            const creator = task.criadoPor;
+                            if (!stats[creator]) {
+                                stats[creator] = { name: creator, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } } };
+                            }
+                            stats[creator].points += 2; // +2 XP por criar a tarefa hoje
+                        }
+                    }
+                }
+
+                // --- PONTOS POR CONCLUSÃO ---
                 if (task.feita && task.completedAt === localTodayStr) {
                     const author = task.completedBy || 'Sistema';
                     
-                    // Inicializa o utilizador com os tempos separados
                     if (!stats[author]) {
-                        stats[author] = { 
-                            name: author, tasks: 0, points: 0, 
-                            times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } } 
-                        };
+                        stats[author] = { name: author, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } } };
                     }
                     
                     stats[author].tasks += 1;
@@ -110,7 +125,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         else earnedPoints = Math.max(5, earnedPoints - 10);
                     }
 
-                    // Bónus de Agilidade Inteligente e Registo de Tempo
+                    // Bónus de Agilidade Inteligente
                     let taskDuration = 0;
                     if (task.accumulatedTimeMs) {
                         taskDuration = task.accumulatedTimeMs;
@@ -128,7 +143,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                             earnedPoints = Math.max(0, earnedPoints - 5); 
                         } 
 
-                        // Guarda o tempo na "caixa" da complexidade correta
                         stats[author].times[weight].t += taskDuration;
                         stats[author].times[weight].c += 1;
                     }
@@ -158,21 +172,29 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         stores.forEach(store => {
             const notificationReasons = [];
 
-            const delegatedTasksCount = store.checklists?.filter(c => {
+            // 1. Puxa só as tarefas que o usuário precisa focar
+            const pendingForMe = store.checklists?.filter(c => {
                 if (c.feita) return false;
-                const isAssignedToMe = c.responsavel === myName;
-                if (!isAssignedToMe) return false;
+                if (c.responsavel !== myName) return false;
                 if (!c.data) return true;
                 if (c.data < todayStr) return true;
                 if (c.data === todayStr) return !c.hora || c.hora <= currentTimeStr;
                 return false;
-            }).length || 0;
+            }) || [];
 
-            if (delegatedTasksCount > 0) notificationReasons.push(`${delegatedTasksCount} tarefa(s) pendente(s)`);
+            // 2. Calcula a maior prioridade dentro do bolo
+            let highestPriority = 'baixa';
+            pendingForMe.forEach(t => {
+                if (t.peso === 'alta') highestPriority = 'alta';
+                else if (t.peso === 'media' && highestPriority !== 'alta') highestPriority = 'media';
+            });
+
+            if (pendingForMe.length > 0) notificationReasons.push(`${pendingForMe.length} tarefa(s) pendente(s)`);
 
             if (notificationReasons.length > 0) {
                 if (!groups[store.client]) groups[store.client] = { clientName: store.client, stores: [], lastAccess: store.dataUltimoAcesso || 0 };
-                groups[store.client].stores.push({ ...store, highlightMessages: notificationReasons });
+                // SALVA A PRIORIDADE AQUI ->
+                groups[store.client].stores.push({ ...store, highlightMessages: notificationReasons, priority: highestPriority });
                 const currentStoreAccess = new Date(store.dataUltimoAcesso || 0);
                 const groupOldestAccess = new Date(groups[store.client].lastAccess);
                 if (currentStoreAccess < groupOldestAccess) groups[store.client].lastAccess = store.dataUltimoAcesso;
@@ -190,25 +212,27 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
 
         stores.forEach(store => {
-            // Se for visitante, pega só as tarefas dele. Se não, pega todas.
             let storeTasks = store.checklists || [];
-            if (isVisitante) {
-                storeTasks = storeTasks.filter(t => t.responsavel === myName);
-            }
+            if (isVisitante) storeTasks = storeTasks.filter(t => t.responsavel === myName);
 
-            // Conta quantas tarefas têm data menor que hoje e não estão feitas
             const overdueTasks = storeTasks.filter(c => !c.feita && c.data && c.data < todayStr);
             
-            // Verifica se a loja em si está com o acesso atrasado (Visitante ignora isso)
+            // Calcula a maior prioridade dos atrasos
+            let highestPriority = 'baixa';
+            overdueTasks.forEach(t => {
+                if (t.peso === 'alta') highestPriority = 'alta';
+                else if (t.peso === 'media' && highestPriority !== 'alta') highestPriority = 'media';
+            });
+
             const isStoreOverdue = !isVisitante && store.dataProximoAcesso && store.dataProximoAcesso.split('T')[0] < todayStr;
-            
             const reasons = [];
             if (overdueTasks.length > 0) reasons.push(`${overdueTasks.length} tarefa(s) atrasada(s)`);
             else if (isStoreOverdue) reasons.push(`Acesso atrasado`);
 
             if (reasons.length > 0) {
                 if (!groups[store.client]) groups[store.client] = { clientName: store.client, stores: [] };
-                groups[store.client].stores.push({ ...store, highlightMessages: reasons });
+                // SALVA A PRIORIDADE AQUI ->
+                groups[store.client].stores.push({ ...store, highlightMessages: reasons, priority: highestPriority });
             }
         });
         return Object.values(groups).sort((a, b) => a.clientName.localeCompare(b.clientName));
@@ -247,8 +271,16 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                         <h4 className="font-bold text-white text-sm mb-3 truncate">{group.clientName}</h4>
                                         <div className="space-y-2.5">
                                             {group.stores.map(store => (
-                                                <div key={store.id} onClick={() => openTaskModal && openTaskModal(store)} className="bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/30 cursor-pointer hover:bg-indigo-500/30 hover:border-indigo-400 transition-colors group/radar">
-                                                    <p className="text-xs font-bold text-indigo-200 truncate group-hover/radar:text-white transition-colors">{store.store}</p>
+                                                <div key={store.id} onClick={() => openTaskModal && openTaskModal(store)} className="relative bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/30 cursor-pointer hover:bg-indigo-500/30 hover:border-indigo-400 transition-colors group/radar">
+                                                    
+                                                    {/* NOVA BOLINHA DE PRIORIDADE */}
+                                                    <div className="absolute top-2.5 right-2.5 flex gap-1">
+                                                        {store.priority === 'alta' && <span className="block w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" title="Prioridade Alta"></span>}
+                                                        {store.priority === 'media' && <span className="block w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.8)]" title="Prioridade Média"></span>}
+                                                        {store.priority === 'baixa' && <span className="block w-2.5 h-2.5 rounded-full bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.8)]" title="Prioridade Baixa"></span>}
+                                                    </div>
+
+                                                    <p className="text-xs font-bold text-indigo-200 truncate pr-4 group-hover/radar:text-white transition-colors">{store.store}</p>
                                                     {store.highlightMessages?.map((msg, i) => (
                                                         <span key={i} className="text-[11px] text-indigo-400 block mt-1 group-hover/radar:text-indigo-300">{msg}</span>
                                                     ))}
@@ -274,8 +306,15 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                         <h4 className="font-bold text-white text-sm mb-3 truncate">{group.clientName}</h4>
                                         <div className="space-y-2.5">
                                             {group.stores.map(store => (
-                                                <div key={store.id} onClick={() => openTaskModal && openTaskModal(store)} className="bg-red-500/10 p-3 rounded-lg border border-red-500/30 cursor-pointer hover:bg-red-500/30 hover:border-red-400 transition-colors group/radar">
-                                                    <p className="text-xs font-bold text-red-200 truncate group-hover/radar:text-white transition-colors">{store.store}</p>
+                                                <div key={store.id} onClick={() => openTaskModal && openTaskModal(store)} className="relative bg-red-500/10 p-3 rounded-lg border border-red-500/30 cursor-pointer hover:bg-red-500/30 hover:border-red-400 transition-colors group/radar">
+    
+                                                    <div className="absolute top-2.5 right-2.5 flex gap-1">
+                                                        {store.priority === 'alta' && <span className="block w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" title="Prioridade Alta"></span>}
+                                                        {store.priority === 'media' && <span className="block w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.8)]" title="Prioridade Média"></span>}
+                                                        {store.priority === 'baixa' && <span className="block w-2.5 h-2.5 rounded-full bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.8)]" title="Prioridade Baixa"></span>}
+                                                    </div>
+
+                                                    <p className="text-xs font-bold text-red-200 truncate pr-4 group-hover/radar:text-white transition-colors">{store.store}</p>
                                                     {store.highlightMessages?.map((msg, i) => (
                                                         <span key={i} className="text-[11px] text-red-400 block mt-1 group-hover/radar:text-red-300">{msg}</span>
                                                     ))}
@@ -439,7 +478,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
 
                     {/* RODAPÉ DE REGRAS DE XP EM PT-BR */}
                     <div className="mt-4 pt-4 border-t border-gray-700/50 text-[10px] text-gray-400 text-center leading-relaxed">
-                        <strong>XP Base:</strong> Baixa (+10) • Média (+20) • Alta (+30)<br/>
+                        <strong>XP Base:</strong> Baixa (+10) • Média (+20) • Alta (+30) | <strong>Criação:</strong> (+2 XP)<br/>
                         <strong>Prazos:</strong> No prazo (+5) • Atrasada (-10)<br/>
                         <strong>Agilidade:</strong> Rápida (+5) • Na média (0) • Lenta (-5) comparado ao histórico geral.
                     </div>

@@ -904,11 +904,16 @@ useEffect(() => {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
               <img src="/logo.jpg" alt="Avante HUB" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
-              <span className="text-xl font-bold text-white tracking-tight hidden sm:block">Avante<span className="text-yellow-500">HUB</span></span>
+              <div className="hidden sm:flex items-center gap-2">
+                <span className="text-xl font-bold text-white tracking-tight">Avante<span className="text-yellow-500">HUB</span></span>
+                <span className="text-[10px] bg-white/5 border border-white/10 text-gray-400 px-2 py-0.5 rounded-full font-bold tracking-widest shadow-inner">
+                  v2.1.6
+                </span>
+              </div>
             </div>
           </div>
 
-<nav className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
+          <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
             <button onClick={() => setActiveView('feed_equipe')} className={`relative px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'feed_equipe' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <Activity size={16} /> Feed
               {globalPendingTasks > 0 && (
