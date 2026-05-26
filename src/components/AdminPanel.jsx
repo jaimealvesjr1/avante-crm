@@ -28,6 +28,7 @@ export default function AdminPanel({
   const [editingUser, setEditingUser] = useState(null);
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
+  const [editAvatarUrl, setEditAvatarUrl] = useState('');
 
   // Lógica para Iniciais
   const getInitials = (name) => {
@@ -49,12 +50,13 @@ export default function AdminPanel({
     setEditingUser(member.email);
     setEditName(member.nomeCompleto || member.nome || '');
     setEditColor(member.avatarColor || getFallbackColor(member.nomeCompleto || member.nome));
+    setEditAvatarUrl(member.avatarUrl || '');
   };
 
   const saveEdit = (email) => {
     if(editName.trim()) {
       // Passamos agora a cor escolhida como 3º parâmetro
-      handleUpdateUser(email, editName, editColor);
+      handleUpdateUser(email, editName, editColor, editAvatarUrl);
     }
     setEditingUser(null);
   };
@@ -120,23 +122,37 @@ export default function AdminPanel({
                 return (
                   <div key={idx} className="bg-white/[0.03] hover:bg-white/[0.05] p-4 rounded-2xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors">
                     
-                    <div className="flex items-start sm:items-center gap-4">
-                      {/* AVATAR COM COR DINÂMICA */}
-                      <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${isEditing ? editColor : userColor} flex items-center justify-center font-bold text-white shadow-sm border border-white/20 shrink-0 text-lg transition-all`}>
-                        {getInitials(isEditing ? editName : (member.nomeCompleto || member.nome))}
+                    <div className="flex items-start sm:items-center gap-4 w-full">
+                      {/* AVATAR COM COR E IMAGEM DINÂMICA */}
+                      <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${isEditing ? editColor : userColor} flex items-center justify-center font-bold text-white shadow-sm border border-white/20 shrink-0 text-lg transition-all overflow-hidden`}>
+                        {member.avatarUrl && !isEditing ? (
+                          <img src={member.avatarUrl} alt="Perfil" className="w-full h-full object-cover" />
+                        ) : (
+                          getInitials(isEditing ? editName : (member.nomeCompleto || member.nome))
+                        )}
                       </div>
                       
-                      <div>
+                      <div className="flex-1">
                         {isEditing ? (
-                          <div className="flex flex-col gap-2 animate-in fade-in zoom-in-95">
+                          <div className="flex flex-col gap-2 animate-in fade-in zoom-in-95 w-full">
                             <input 
                               type="text" 
                               value={editName} 
                               onChange={e => setEditName(e.target.value)} 
-                              className="bg-black/40 border border-indigo-500/50 text-white text-sm font-bold rounded-lg px-3 py-1.5 outline-none w-full max-w-[200px]"
+                              className="bg-black/40 border border-indigo-500/50 text-white text-sm font-bold rounded-lg px-3 py-1.5 outline-none w-full max-w-[250px]"
                               placeholder="Nome completo"
                               autoFocus
                             />
+                            
+                            {/* NOVO CAMPO DE LINK DA FOTO */}
+                            <input 
+                              type="text" 
+                              value={editAvatarUrl} 
+                              onChange={e => setEditAvatarUrl(e.target.value)} 
+                              className="bg-black/40 border border-white/10 text-gray-300 text-xs rounded-lg px-3 py-1.5 outline-none w-full max-w-[250px] focus:border-indigo-500"
+                              placeholder="Link da foto (ImgBB, etc)"
+                            />
+
                             {/* PALETA DE CORES */}
                             <div className="flex items-center gap-1.5 bg-black/40 p-1.5 rounded-lg border border-white/10 w-max">
                               <Palette size={12} className="text-gray-500 mx-1" />
@@ -155,57 +171,59 @@ export default function AdminPanel({
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2 group mb-0.5">
-                            <p className="text-sm font-bold text-white leading-none">{member.nomeCompleto || member.nome || 'Sem Nome'}</p>
+                          <>
+                            <div className="flex items-center gap-2 group mb-0.5">
+                              <p className="text-sm font-bold text-white leading-none">{member.nomeCompleto || member.nome || 'Sem Nome'}</p>
 
-                            <button 
-                              onClick={() => startSimulation(member)}
-                              disabled={isSimulating}
-                              className="text-gray-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md"
-                              title="Ver o sistema como este usuário"
-                            >
-                              <Eye size={12} /> <span className="hidden md:inline"></span>
-                            </button>
-
-                            <button onClick={() => startEditing(member)} className="text-gray-500 hover:text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Editar Usuário">
-                              <Edit2 size={12} />
-                            </button>
-
-                            {!isEditing && (
-                              <button onClick={() => handleDeleteUser(member.email)} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Excluir Usuário permanentemente">
-                                <Trash2 size={12} />
+                              <button 
+                                onClick={() => startSimulation(member)}
+                                disabled={isSimulating}
+                                className="text-gray-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md"
+                                title="Ver o sistema como este usuário"
+                              >
+                                <Eye size={12} /> <span className="hidden md:inline"></span>
                               </button>
-                            )}                   
-                          </div>
-                        )}
-                        
-                        {!isEditing && (
-                          <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-1">
-                            <Mail size={12} /> {member.email}
-                          </p>
+
+                              <button onClick={() => startEditing(member)} className="text-gray-500 hover:text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Editar Usuário">
+                                <Edit2 size={12} />
+                              </button>
+
+                              {!isEditing && (
+                                <button onClick={() => handleDeleteUser(member.email)} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Excluir Usuário permanentemente">
+                                  <Trash2 size={12} />
+                                </button>
+                              )}                  
+                            </div>
+                            
+                            <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-1">
+                              <Mail size={12} /> {member.email}
+                            </p>
+                          </>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center w-full sm:w-auto border-t sm:border-t-0 border-white/5 pt-3 sm:pt-0 mt-2 sm:mt-0">
-                      
-                      <button 
-                        onClick={() => handleToggleRole(member.email, member.role)}
-                        title="Clique para alternar o nível de acesso"
-                        className={`text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider cursor-pointer hover:scale-105 transition-all shadow-sm ${
-                          member.role === 'Admin' || member.role === 'admin' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 
-                          member.role === 'Supervisor' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 
-                          member.role === 'Visitante' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
-                          'bg-white/5 text-gray-300 border border-white/10'
-                        }`}
-                      >
-                        {getVisualRole(member.role)}
-                      </button>
+                    {!isEditing && (
+                      <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center w-full sm:w-auto border-t sm:border-t-0 border-white/5 pt-3 sm:pt-0 mt-2 sm:mt-0 shrink-0">
+                        
+                        <button 
+                          onClick={() => handleToggleRole(member.email, member.role)}
+                          title="Clique para alternar o nível de acesso"
+                          className={`text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider cursor-pointer hover:scale-105 transition-all shadow-sm ${
+                            member.role === 'Admin' || member.role === 'admin' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 
+                            member.role === 'Supervisor' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 
+                            member.role === 'Visitante' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
+                            'bg-white/5 text-gray-300 border border-white/10'
+                          }`}
+                        >
+                          {getVisualRole(member.role)}
+                        </button>
 
-                      <span className="text-[10px] text-gray-500 flex items-center gap-1.5 mt-2">
-                        <Clock size={12}/> {member.createdAt || 'Membro Antigo'}
-                      </span>
-                    </div>
+                        <span className="text-[10px] text-gray-500 flex items-center gap-1.5 mt-2">
+                          <Clock size={12}/> {member.createdAt || 'Membro Antigo'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 );
               })}

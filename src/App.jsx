@@ -34,7 +34,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.1.6';
+  const CURRENT_VERSION = '2.1.7';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -356,13 +356,16 @@ useEffect(() => {
     } catch (error) { toast.error('❌ Erro ao criar acesso. Verifique a senha ou se o e-mail já existe.'); }
   };
 
-  const handleUpdateUser = async (emailToUpdate, newNameCompleto, newColor) => {
+  const handleUpdateUser = async (emailToUpdate, newNameCompleto, newColor, newAvatarUrl) => {
     if (!canEdit) return;
     try {
       const userDocRef = doc(db, "equipe", emailToUpdate.toLowerCase());
       const primeiroNome = newNameCompleto.trim().split(' ')[0];
       const updateData = { nome: primeiroNome, nomeCompleto: newNameCompleto.trim() };
+      
       if (newColor) updateData.avatarColor = newColor;
+      if (newAvatarUrl !== undefined) updateData.avatarUrl = newAvatarUrl; // Salva a foto
+
       await setDoc(userDocRef, updateData, { merge: true });
       toast.success('Usuário atualizado com sucesso!');
     } catch (error) { toast.error('Erro ao atualizar usuário.'); }
@@ -990,8 +993,12 @@ useEffect(() => {
             )}
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
               <div className="flex items-center gap-2 bg-white/5 py-1 pl-1 pr-4 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
-                <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${currentUserData?.avatarColor || 'from-indigo-500 to-purple-600'} flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/20`}>
-                  {(currentUserData?.nomeCompleto || 'U').charAt(0).toUpperCase()}
+                <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${currentUserData?.avatarColor || 'from-indigo-500 to-purple-600'} flex items-center justify-center text-sm font-bold text-white shadow-md border border-white/20 overflow-hidden shrink-0`}>
+                  {currentUserData?.avatarUrl ? (
+                    <img src={currentUserData.avatarUrl} alt="Perfil" className="w-full h-full object-cover" />
+                  ) : (
+                    (currentUserData?.nomeCompleto || 'U').charAt(0).toUpperCase()
+                  )}
                 </div>
                 <div>
                   <p className="text-[11px] font-bold text-white leading-tight">
@@ -1090,6 +1097,7 @@ useEffect(() => {
             currentUserData={currentUserData} 
             user={user} 
             stores={stores} 
+            teamMembers={teamMembers}
             openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
           />
         )}

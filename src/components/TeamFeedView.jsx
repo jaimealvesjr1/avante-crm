@@ -4,7 +4,7 @@ import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
 
-export default function TeamFeedView({ currentUserData, user, stores, openTaskModal }) {
+export default function TeamFeedView({ currentUserData, user, stores, openTaskModal, teamMembers }) {
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
     
     const isAdmin = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager' || currentUserData?.role === 'Analista';
@@ -380,41 +380,44 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         <div className="grid grid-cols-1 gap-3.5">
                             {Object.entries(liveStatus).map(([userName, data]) => {
                                 const isPaused = data.texto?.includes('⏸️');
+                                
+                                const memberData = teamMembers?.find(m => m.nomeCompleto === userName || m.nome === userName);
+                                const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
+                                const userPhoto = memberData?.avatarUrl || null;
+
                                 return (
                                     <div key={userName} 
                                         onClick={() => {
                                             if (data.storeId) {
                                                 const targetStore = stores.find(s => s.id === data.storeId);
                                                 if (targetStore && openTaskModal) openTaskModal(targetStore);
-                                            } else {
-                                                const parts = data.texto?.split(' | ');
-                                                if (parts && parts.length > 1) handleOpenStore(parts[1]);
                                             }
                                         }}
-                                        className={`bg-gray-900/80 p-4 rounded-xl border flex items-start gap-4 relative overflow-hidden cursor-pointer transition-colors ${
+                                        className={`bg-gray-900/80 p-4 rounded-xl border flex items-center gap-4 relative overflow-hidden cursor-pointer transition-colors ${
                                             isPaused ? 'border-amber-500/30 hover:border-amber-500' : 'border-gray-700 hover:border-emerald-500'
                                         }`}>
                                         <div className={`absolute top-0 left-0 h-full w-1.5 transition-all ${
                                             isPaused ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
                                         }`}></div>
+                                        
+                                        {/* AVATAR DO COLABORADOR ONLINE */}
+                                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
+                                            {userPhoto ? (
+                                                <img src={userPhoto} alt={userName} className="w-full h-full object-cover" />
+                                            ) : (
+                                                userName.charAt(0).toUpperCase()
+                                            )}
+                                        </div>
+
                                         <div className="flex-1">
                                             <p className="text-sm font-bold text-white flex items-center justify-between mb-1">
                                                 <span className="uppercase tracking-wider flex items-center gap-2">
                                                     {userName}
                                                 </span>
-                                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold transition-all ${
+                                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
                                                     isPaused ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-500/70 bg-emerald-500/10'
                                                 }`}>
                                                     {data.timestamp}
-                                                    {isAdmin && (
-                                                        <button 
-                                                            onClick={(e) => handleClearGhostTask(userName, e)}
-                                                            className="text-red-400 hover:text-red-300 hover:bg-red-500/20 p-0.5 rounded transition-colors"
-                                                            title="Forçar parada (Apenas Admin)"
-                                                        >
-                                                            <X size={12} />
-                                                        </button>
-                                                    )}
                                                 </span>
                                             </p>
                                             <p className="text-sm text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
@@ -438,41 +441,53 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     </div>
                     
                     <div className="space-y-3 pr-2">
-                        {rankingDiario.map((rank, i) => (
-                            <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2 hover:border-gray-500 transition-colors">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <span className={`w-7 h-7 rounded-full text-xs font-black flex items-center justify-center shadow-inner ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
-                                            {i + 1}
-                                        </span>
-                                        <div>
-                                            <p className="text-sm font-bold text-gray-200 leading-none">{rank.name}</p>
-                                            <p className="text-xs text-amber-500 font-bold mt-1">{rank.points} XP</p>
+                        {rankingDiario.map((rank, i) => {
+                            const memberData = teamMembers?.find(m => m.nomeCompleto === rank.name || m.nome === rank.name);
+                            const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
+                            const userPhoto = memberData?.avatarUrl || null;
+
+                            return (
+                                <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2 hover:border-gray-500 transition-colors">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            {/* Posição em pílula pequena */}
+                                            <span className={`w-6 h-6 rounded-full text-[10px] font-black flex items-center justify-center shadow-inner shrink-0 ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
+                                                {i + 1}
+                                            </span>
+                                            
+                                            {/* FOTO DO USUÁRIO NO RANKING */}
+                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
+                                                {userPhoto ? (
+                                                    <img src={userPhoto} alt={rank.name} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    rank.name.charAt(0).toUpperCase()
+                                                )}
+                                            </div>
+
+                                            <div>
+                                                <p className="text-sm font-bold text-gray-200 leading-none">{rank.name}</p>
+                                                <p className="text-xs text-amber-500 font-bold mt-1">{rank.points} XP</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="text-xs text-gray-300 font-bold bg-white/5 px-2.5 py-1 rounded-lg border border-white/5 flex items-center gap-1">
+                                                {rank.tasks} <CheckCircle size={14} className="text-emerald-500"/>
+                                            </span>
                                         </div>
                                     </div>
-                                    <div className="text-right">
-                                        <span className="text-xs text-gray-300 font-bold bg-white/5 px-2.5 py-1 rounded-lg border border-white/5 flex items-center gap-1">
-                                            {rank.tasks} <CheckCircle size={14} className="text-emerald-500"/>
-                                        </span>
+                                    
+                                    {/* Bloco de tempos médios continua igual abaixo */}
+                                    <div className="bg-black/40 rounded-lg px-3 py-2 flex justify-between items-center mt-1">
+                                        <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempos Médios</span>
+                                        <div className="flex gap-2 text-[10px] font-bold">
+                                            <span className={rank.projectedGmv > 0 ? 'text-emerald-400' : 'text-gray-600'}>🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}</span>
+                                            <span className={rank.avgMedia > 0 ? 'text-amber-400' : 'text-gray-600'}>🟡 {rank.avgMedia > 0 ? `${rank.avgMedia}m` : '--'}</span>
+                                            <span className={rank.avgAlta > 0 ? 'text-red-400' : 'text-gray-600'}>🔴 {rank.avgAlta > 0 ? `${rank.avgAlta}m` : '--'}</span>
+                                        </div>
                                     </div>
-                                </div>
-                                
-                                <div className="bg-black/40 rounded-lg px-3 py-2 flex justify-between items-center mt-1">
-                                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempos Médios</span>
-                                    <div className="flex gap-2 text-[10px] font-bold">
-                                        <span className={rank.avgBaixa > 0 ? 'text-emerald-400' : 'text-gray-600'} title="Tarefas Rápidas">
-                                            🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}
-                                        </span>
-                                        <span className={rank.avgMedia > 0 ? 'text-amber-400' : 'text-gray-600'} title="Tarefas Médias">
-                                            🟡 {rank.avgMedia > 0 ? `${rank.avgMedia}m` : '--'}
-                                        </span>
-                                        <span className={rank.avgAlta > 0 ? 'text-red-400' : 'text-gray-600'} title="Tarefas Demoradas">
-                                            🔴 {rank.avgAlta > 0 ? `${rank.avgAlta}m` : '--'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div> 
-                        ))}
+                                </div> 
+                            );
+                        })}
                         {rankingDiario.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada hoje.</div>}
                     </div>
 

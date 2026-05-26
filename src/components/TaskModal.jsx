@@ -171,7 +171,17 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const addChecklist = () => {
     if (!newChecklist.trim()) return;
     setIsAddingTask(true);
-    const item = { id: Date.now(), texto: newChecklist, feita: false, responsavel: newChecklistResp.trim(), criadoPor: username, data: newTaskDate, hora: newTaskTime, recorrencia: newTaskRecurrence };
+    const item = {
+      id: Date.now(), 
+      texto: newChecklist, 
+      feita: false, 
+      responsavel: newChecklistResp.trim(), 
+      criadoPor: username, 
+      data: newTaskDate, 
+      hora: newTaskTime, 
+      recorrencia: newTaskRecurrence,
+      peso: newTaskWeight
+    };
     const updatedChecklists = [...(store.checklists || []), item];
     const newNextAccess = autoScheduleStore(updatedChecklists);
 
@@ -639,14 +649,26 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 
                 <div className="space-y-4 relative mt-6 px-2">
                   {store.taskLogs?.slice().reverse().map((log, i) => {
-                    const isMine = log.author === username; // Verifica se fui eu que escrevi
+                    const isMine = log.author === username; 
+                    
+                    // --- ATUALIZAÇÃO SINCRO: BUSCA DADOS DO AUTOR NA LISTA DE MEMBROS ---
+                    const memberData = teamMembers?.find(m => m.nomeCompleto === log.author || m.nome === log.author);
+                    const authorColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
+                    const authorPhoto = memberData?.avatarUrl || null;
                     
                     return (
                       <div key={log.id} className={`relative flex flex-col group/log ${isMine ? 'items-end' : 'items-start'}`}>
                         
-                        {/* Cabeçalho do Log (Autor e Data) */}
                         <div className={`flex items-center gap-2 mb-1.5 ${isMine ? 'flex-row-reverse' : ''}`}>
-                          <Avatar name={log.author} size="sm" />
+                          
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${authorColor} overflow-hidden shrink-0`}>
+                            {authorPhoto ? (
+                              <img src={authorPhoto} alt={log.author} className="w-full h-full object-cover" />
+                            ) : (
+                              (log.author || 'U').charAt(0).toUpperCase()
+                            )}
+                          </div>
+
                           <span className="text-[11px] text-gray-400 font-medium flex items-center gap-1.5">
                             <strong className={isMine ? "text-indigo-400" : "text-gray-300"}>
                               {isMine ? 'Você' : log.author}
