@@ -341,7 +341,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                 <button onClick={() => setFeedFilter('tasks')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
                             </div>
                             {visibleLogs.length > 0 && (
-                                <button onClick={() => { setFeedClearedAt(Date.now()); localStorage.setItem('avante_feed_cleared_at', Date.now()); toast.success("Mural limpo!"); }} className="text-xs bg-gray-900 hover:bg-gray-700 text-gray-400 font-bold px-4 py-2 border border-gray-700 rounded-lg transition-colors">Limpar</button>
+                                <button onClick={() => { setFeedClearedAt(Date.now()); localStorage.setItem('avante_feed_cleared_at', Date.now()); toast.success("Mural limpo!"); }} className="text-xs bg-red-500 hover:bg-red-400 text-white font-bold px-4 py-2 border border-white rounded-lg transition-colors">Limpar</button>
                             )}
                         </div>
                     </div>

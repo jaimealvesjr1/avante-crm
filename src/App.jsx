@@ -9,6 +9,9 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWith
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, writeBatch, deleteField } from "firebase/firestore";
 import { Toaster, toast } from 'react-hot-toast';
 import ClientFileModal from './components/ClientFileModal';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 import ActionModal from './components/ActionModal';
 import ExecutiveDashboard from './components/ExecutiveDashboard';
@@ -22,6 +25,7 @@ import CreateStoreModal from './components/CreateStoreModal';
 import BulkTaskModal from './components/BulkTaskModal';
 import { useAvanteData } from './hooks/useAvanteData';
 import TeamFeedView from './components/TeamFeedView';
+import ExportModal from './components/ExportModal';
 
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
@@ -34,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.1.7';
+  const CURRENT_VERSION = '2.3.0';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -42,6 +46,7 @@ export default function App() {
 
   const [realUserData, setRealUserData] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
   const [activeView, setActiveView] = useState(() => {
@@ -211,7 +216,7 @@ export default function App() {
             // Se for o App instalado, o cache é rígido. Mostramos um alerta fixo para forçar o reload puro.
             toast((t) => (
               <div className="flex flex-col gap-2 p-1">
-                <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                <p className="text-xs font-bold text-slate-900  flex items-center gap-1.5">
                   🚀 Nova versão disponível: <span className="text-yellow-400 font-black">{data.versao}</span>
                 </p>
                 <p className="text-[10px] text-gray-400 leading-tight">
@@ -558,63 +563,64 @@ useEffect(() => {
   };
 
   const closeMonth = async () => {
-    const monthName = prompt("MÊS DE FECHAMENTO\n\nDigite a competência (Ex: Abr/26):");
-    if(!monthName) return;
+    const monthInput = prompt("FECHAMENTO OFICIAL DE MÊS\n\nDigite a competência que está sendo fechada (Ex: MAIO/2026):");
+    if (!monthInput) return;
 
-    if(!window.confirm(`⚠️ RISCO ALTO: Isso homologará a competência de ${monthName}.\n\nAs metas serão atualizadas, os Tiers re-ranqueados e o faturamento da agência será travado no histórico.\nDeseja continuar?`)) return;
+    if (!window.confirm(`ATENÇÃO! Tem certeza que deseja FECHAR O MÊS de ${monthInput.toUpperCase()}?\n\n1. Os relatórios em PDF e Excel serão baixados.\n2. O histórico financeiro será salvo.\n3. O faturamento de TODAS as lojas será zerado.`)) return;
 
-    setIsDbLoading(true);
+    toast.loading("Processando fechamento do mês e gravando histórico...", { id: 'close-month' });
+
     try {
+      // 1. Gera e baixa os relatórios baseando-se em TODAS as lojas
+      await generateReports(stores, monthInput, { pdf: true, excel: true });
+      
+      // 2. Grava o histórico oficial no Firebase e zera as lojas
       const batch = writeBatch(db);
+      stores.forEach(store => {
+        const storeRef = doc(db, 'lojas', store.id);
+        
+        const gmv = Number(store.currentRevenue) || 0;
+        const feePercent = Number(store.feePercent) || 0;
+        const fixedFee = Number(store.fixedFee) || 0;
+        const isFixed = store.feeType === 'fixed' || fixedFee > 0;
+        
+        const agencyRevenue = isFixed ? fixedFee : gmv * (feePercent / 100);
 
-      stores.forEach(s => {
-        const finalRevenue = s.currentRevenue || 0;
-
-        // 1. Snapshot da Receita da Agência (O Cofre)
-        let agencyCut = 0;
-        if (s.feeType === 'fixed' || s.fixedFee > 0) {
-          agencyCut = Number(s.fixedFee);
-        } else {
-          agencyCut = finalRevenue * (Number(s.feePercent) / 100);
-        }
-
-        // 2. Montagem do Histórico Blindado
-        const monthSnapshot = {
-          month: monthName,
-          gmv: finalRevenue,
-          agencyRevenue: agencyCut, // Trava o dinheiro que a agência fez
-          feeApplied: s.feeType === 'fixed' ? `Fixo R$${s.fixedFee}` : `${s.feePercent}%`,
+        // Snapshot salva o "retrato" da loja naquele mês
+        const snapshot = {
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+          month: monthInput.toUpperCase(),
+          gmv: gmv,
+          agencyRevenue: agencyRevenue,
+          feeType: store.feeType || 'percent',
+          feePercent: feePercent,
+          fixedFee: fixedFee,
           closedAt: new Date().toISOString()
         };
 
-        // 3. Atualização da Loja
-        const newGmvBase = finalRevenue > 0 ? finalRevenue : s.gmvBase;
+        const currentHistory = store.monthlyHistory || [];
+        const newMonthlyHistory = [...currentHistory, snapshot];
 
-        const storeRef = doc(db, "stores", s.id.toString());
         batch.update(storeRef, {
-          monthlyHistory: [...(s.monthlyHistory || []), monthSnapshot],
-          gmvBase: newGmvBase, // Isso força a atualização automática de Metas e Tiers
+          monthlyHistory: newMonthlyHistory, // Salva o novo mês no histórico
+          gmvBase: gmv, // O fechado de hoje vira a nova base para calcular evolução mês que vem
           currentRevenue: 0,
-          adsInvestment: 0,
           orders: 0,
           units: 0,
-          history: [] // Limpa o operacional diário para o novo mês
+          adsInvestment: 0,
+          history: [], // Zera o gráfico diário da tela da loja
+          updatedAt: new Date().toISOString()
         });
       });
 
       await batch.commit();
-      await updateGlobalSettings('day', 1);
-      toast.success("✅ Mês fechado! Tiers e Receitas homologados com sucesso.");
-      
+      toast.success("Mês fechado com sucesso! Relatórios baixados e histórico atualizado.", { id: 'close-month' });
     } catch (error) {
-      console.error("Erro no fechamento do mês:", error);
-      toast.error("Falha crítica ao fechar o mês. Contate o suporte.");
-    } finally {
-      setIsDbLoading(false);
+      console.error(error);
+      toast.error("Erro fatal ao fechar o mês: " + error.message, { id: 'close-month' });
     }
   };
 
-  // === NOVO SISTEMA DE EXPORTAÇÃO COMPLETA ===
   const exportBackup = () => {
     const backupData = {
       version: "2.0",
@@ -633,7 +639,189 @@ useEffect(() => {
     toast.success('Backup completo (Lojas e Equipe) exportado com sucesso!');
   };
 
-  // === NOVO SISTEMA DE IMPORTAÇÃO UNIVERSAL ===
+  // GERADOR CENTRAL DE RELATÓRIOS (V2.2.0)
+  const generateReports = async (targetStores, monthInput, formats = { pdf: true, excel: true }) => {
+    const periodoApurado = `1 a ${daysInMonth} de ${monthInput.toUpperCase()}`;
+    const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    
+    try {
+      const parseSafeNumber = (val) => Number(String(val || 0).trim().replace(',', '.')) || 0;
+      const formatMoney = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+      const formatPercent = (val) => (val > 0 ? '+' : '') + (val * 100).toFixed(2) + '%';
+      const formatRoas = (val) => val > 0 ? val.toFixed(2) + 'x' : '-';
+
+      const clientsGroup = {};
+      targetStores.forEach(s => {
+        const cName = s.client || 'Sem Cliente';
+        if (!clientsGroup[cName]) clientsGroup[cName] = [];
+        clientsGroup[cName].push(s);
+      });
+
+      const clientNames = Object.keys(clientsGroup).sort();
+
+      // EXCEL
+      if (formats.excel) {
+        const wb = XLSX.utils.book_new();
+        clientNames.forEach(clientName => {
+          const clientStores = clientsGroup[clientName].sort((a, b) => parseSafeNumber(b.currentRevenue) - parseSafeNumber(a.currentRevenue));
+          let totalGmv = 0, totalBase = 0, totalUnits = 0, totalOrders = 0, totalAds = 0;
+          let isFixed = false, avanteFixedFee = 0;
+          const canaisAtendidos = new Set();
+          
+          clientStores.forEach(s => {
+            totalGmv += parseSafeNumber(s.currentRevenue);
+            totalBase += parseSafeNumber(s.gmvBase);
+            totalUnits += parseSafeNumber(s.units);
+            totalOrders += parseSafeNumber(s.orders);
+            totalAds += parseSafeNumber(s.adsInvestment);
+            if (s.marketplace) canaisAtendidos.add(s.marketplace);
+            if (s.feeType === 'fixed' || parseSafeNumber(s.fixedFee) > 0) {
+              isFixed = true;
+              if (avanteFixedFee === 0) avanteFixedFee = parseSafeNumber(s.fixedFee);
+            }
+          });
+
+          const totalEvolucao = totalBase > 0 ? (totalGmv - totalBase) / totalBase : 0;
+          const totalRoas = totalAds > 0 ? totalGmv / totalAds : 0;
+          let avanteTotalFee = isFixed ? avanteFixedFee : clientStores.reduce((acc, s) => acc + (parseSafeNumber(s.currentRevenue) * (parseSafeNumber(s.feePercent) / 100)), 0);
+          const totalClientPays = avanteTotalFee * 2; 
+
+          const wsData = [
+            ['RESUMO FINANCEIRO E PERFORMANCE', clientName], [],
+            ['Marketplaces Atendidos', Array.from(canaisAtendidos).join(', ')],
+            ['Total Unidades / Pedidos', `${totalUnits} un. / ${totalOrders} ped.`],
+            ['Faturamento Base Anterior', totalBase],
+            ['Total Faturado Atual (GMV)', totalGmv],
+            ['Crescimento Geral (MoM)', formatPercent(totalEvolucao)],
+            ['Total ADS', totalAds],
+            ['ROAS Médio do Cliente', formatRoas(totalRoas)], [],
+            ['Total Faturado Cliente (100%)', totalClientPays],
+            ['Comissão B2X (50%)', avanteTotalFee],
+            ['Comissão Avante / Gestor (50%)', avanteTotalFee], [],
+            ['Rk', 'Loja', 'Canal', 'GMV Base', 'Faturamento (GMV)', 'Evolução', 'Pedidos', 'Unidades', 'Invest. ADS', 'ROAS', 'CPA (Pedido)', 'CPA (Unidade)']
+          ];
+
+          clientStores.forEach((s, idx) => {
+            const gmv = parseSafeNumber(s.currentRevenue);
+            const base = parseSafeNumber(s.gmvBase);
+            const ads = parseSafeNumber(s.adsInvestment);
+            const orders = parseSafeNumber(s.orders);
+            const units = parseSafeNumber(s.units);
+            wsData.push([ `${idx + 1}º`, s.store || '-', s.marketplace || '-', base, gmv, formatPercent(base > 0 ? (gmv - base) / base : 0), orders, units, ads, formatRoas(ads > 0 ? gmv / ads : 0), orders > 0 ? ads / orders : 0, units > 0 ? ads / units : 0 ]);
+          });
+
+          wsData.push(['-', 'TOTAL GERAL', '-', totalBase, totalGmv, formatPercent(totalEvolucao), totalOrders, totalUnits, totalAds, formatRoas(totalRoas), '-', '-']);
+          
+          const ws = XLSX.utils.aoa_to_sheet(wsData);
+          ws['!cols'] = [{wch: 32}, {wch: 25}, {wch: 15}, {wch: 15}, {wch: 20}, {wch: 12}, {wch: 10}, {wch: 10}, {wch: 15}, {wch: 10}, {wch: 15}, {wch: 15}];
+          XLSX.utils.book_append_sheet(wb, ws, clientName.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31) || 'Cliente');
+        });
+        XLSX.writeFile(wb, `Avante_Fechamento_${monthInput.replace('/', '-')}.xlsx`);
+      }
+
+      // PDF
+      if (formats.pdf) {
+        const docPdf = new jsPDF();
+        clientNames.forEach((clientName, index) => {
+          if (index > 0) docPdf.addPage();
+          const clientStores = clientsGroup[clientName].sort((a, b) => parseSafeNumber(b.currentRevenue) - parseSafeNumber(a.currentRevenue));
+          let totalGmv = 0, totalBase = 0, totalOrders = 0, totalUnits = 0, totalAds = 0;
+          let isFixed = false, avanteFixedFee = 0;
+          const canaisAtendidos = new Set();
+
+          clientStores.forEach(s => {
+            totalGmv += parseSafeNumber(s.currentRevenue);
+            totalBase += parseSafeNumber(s.gmvBase);
+            totalOrders += parseSafeNumber(s.orders);
+            totalUnits += parseSafeNumber(s.units);
+            totalAds += parseSafeNumber(s.adsInvestment);
+            if (s.marketplace) canaisAtendidos.add(s.marketplace);
+            if (s.feeType === 'fixed' || parseSafeNumber(s.fixedFee) > 0) { isFixed = true; if (avanteFixedFee === 0) avanteFixedFee = parseSafeNumber(s.fixedFee); }
+          });
+
+          const totalEvolucao = totalBase > 0 ? (totalGmv - totalBase) / totalBase : 0;
+          const totalRoas = totalAds > 0 ? totalGmv / totalAds : 0;
+          let avanteTotalFee = isFixed ? avanteFixedFee : clientStores.reduce((acc, s) => acc + (parseSafeNumber(s.currentRevenue) * (parseSafeNumber(s.feePercent) / 100)), 0);
+
+          docPdf.setFillColor(15, 23, 42); 
+          docPdf.rect(0, 0, 210, 40, 'F'); 
+          docPdf.setFontSize(24); docPdf.setTextColor(255, 255, 255); docPdf.text(clientName.toUpperCase(), 14, 22);
+          docPdf.setFontSize(10); docPdf.setTextColor(156, 163, 175); docPdf.text('RELATÓRIO DE PERFORMANCE B2X', 14, 30); docPdf.text(`Período Apurado: ${periodoApurado}`, 14, 35);
+          docPdf.setFontSize(8); docPdf.setTextColor(107, 114, 128); docPdf.text(`Gerado em: ${dataGeracao}`, 196, 35, { align: 'right' });
+
+          docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Faturamento Consolidado:', 14, 52);
+          docPdf.setFontSize(24); docPdf.setTextColor(16, 185, 129); docPdf.text(formatMoney(totalGmv), 14, 62);
+          docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Fatura da Assessoria (B2X):', 120, 52);
+          docPdf.setFontSize(24); docPdf.setTextColor(79, 70, 229); docPdf.text(formatMoney(avanteTotalFee * 2), 120, 62);
+
+          const storeRows = [];
+          clientStores.forEach((store, idx) => {
+            const gmv = parseSafeNumber(store.currentRevenue);
+            const ads = parseSafeNumber(store.adsInvestment);
+            const orders = parseSafeNumber(store.orders);
+            const base = parseSafeNumber(store.gmvBase);
+            storeRows.push([ `${idx + 1}º`, store.marketplace || '-', store.store || '-', formatMoney(gmv), formatPercent(base > 0 ? (gmv - base) / base : 0), `${orders} ped.`, formatMoney(ads), formatRoas(ads > 0 ? gmv / ads : 0), formatMoney(orders > 0 ? ads / orders : 0) ]);
+          });
+
+          autoTable(docPdf, {
+            startY: 75,
+            head: [['Rk', 'Canal', 'Loja', 'GMV', 'Evolução', 'Volume', 'ADS', 'ROAS', 'CPA Médio']],
+            body: storeRows, theme: 'grid',
+            headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
+            styles: { fontSize: 7, cellPadding: 4 },
+            columnStyles: { 0: { halign: 'center' }, 4: { halign: 'center' }, 7: { halign: 'center' } },
+            alternateRowStyles: { fillColor: [249, 250, 251] }
+          });
+
+          let finalY = docPdf.lastAutoTable.finalY + 10;
+          if (finalY + 55 > docPdf.internal.pageSize.height) { docPdf.addPage(); finalY = 20; }
+          
+          docPdf.setFillColor(243, 244, 246); docPdf.roundedRect(14, finalY, 182, 50, 3, 3, 'F');
+          docPdf.setFontSize(12); docPdf.setTextColor(31, 41, 55); docPdf.text('Resumo Executivo do Período', 20, finalY + 8);
+          docPdf.setFontSize(10); docPdf.setTextColor(75, 85, 99);
+          docPdf.text(`Canais Atendidos: ${Array.from(canaisAtendidos).join(', ')}`, 20, finalY + 18);
+          docPdf.text(`Crescimento do Faturamento (MoM): ${formatPercent(totalEvolucao)}`, 20, finalY + 26);
+          docPdf.text(`Total de Unidades Vendidas: ${totalUnits} unidades`, 20, finalY + 34);
+          docPdf.text(`Total de Pedidos Gerados: ${totalOrders} pedidos`, 20, finalY + 42);
+          docPdf.text(`Investimento Total em ADS: ${formatMoney(totalAds)}`, 110, finalY + 26);
+          docPdf.text(`ROAS Médio Consolidado: ${formatRoas(totalRoas)}`, 110, finalY + 34);
+          docPdf.text(`CPA Médio Consolidado: ${formatMoney(totalOrders > 0 ? totalAds / totalOrders : 0)} / pedido`, 110, finalY + 42);
+        });
+        docPdf.save(`Avante_Relatorios_${monthInput.replace('/', '-')}.pdf`);
+      }
+    } catch (error) {
+      console.error(error);
+      throw error; 
+    }
+  };
+
+  // GATILHO DA CENTRAL DE EXPORTAÇÃO
+  const handleCustomExport = async ({ json, pdf, excel, monthInput }) => {
+    toast.loading("Gerando arquivos solicitados...", { id: 'custom-export' });
+    try {
+      const dataToExport = dashboardData.flatFilteredStores;
+
+      if (json) {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToExport));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", `Avante_Backup_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.json`);
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+      }
+
+      if (pdf || excel) {
+        await generateReports(dataToExport, monthInput, { pdf, excel });
+      }
+      
+      toast.success("Arquivos gerados com sucesso!", { id: 'custom-export' });
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro durante a exportação: " + error.message, { id: 'custom-export' });
+    }
+  };
+
   const importBackup = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -983,14 +1171,33 @@ useEffect(() => {
               </button>
             )}
           </nav>
+
           <div className="flex items-center gap-4">
             {canEdit && (
-              <div className="hidden lg:flex gap-1">
-                <button onClick={exportBackup} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/5 transition-all" title="Exportar Backup"><Upload size={16} /></button>
+              <div className="hidden lg:flex gap-1 items-center">
+                {/* EXPORTAR (INDIGO) */}
+                <button 
+                  onClick={() => setIsExportModalOpen(true)} 
+                  className="text-orange-600 hover:text-orange-400 p-2 rounded-full hover:bg-orange-500/10 transition-all border border-transparent hover:border-orange-500/30" 
+                  title="Exportar Relatórios"
+                >
+                  <Download size={18} />
+                </button>
+
+                <div className="w-px h-4 bg-white/10 mx-1"></div> {/* Divisor visual */}
+
+                {/* IMPORTAR / RESTAURAR (NEUTRO) */}
                 <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
-                <button onClick={() => fileInputRef.current.click()} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/5 transition-all" title="Importar Backup"><Download size={16} /></button>
+                <button 
+                  onClick={() => fileInputRef.current.click()} 
+                  className="text-gray-400 hover:text-gray-200 p-2 rounded-full hover:bg-gray-700/50 transition-all border border-transparent hover:border-gray-600" 
+                  title="Restaurar Backup"
+                >
+                  <ArchiveRestore size={18} />
+                </button>
               </div>
             )}
+
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
               <div className="flex items-center gap-2 bg-white/5 py-1 pl-1 pr-4 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
                 <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${currentUserData?.avatarColor || 'from-indigo-500 to-purple-600'} flex items-center justify-center text-sm font-bold text-white shadow-md border border-white/20 overflow-hidden shrink-0`}>
@@ -1254,6 +1461,13 @@ useEffect(() => {
           addNewStoreToClient={addNewStoreToClient}
         />
       )}
+
+      <ExportModal 
+        isOpen={isExportModalOpen} 
+        onClose={() => setIsExportModalOpen(false)} 
+        onExport={handleCustomExport}
+        filterCount={dashboardData.flatFilteredStores.length}
+      />
     </div>
   );
 }
