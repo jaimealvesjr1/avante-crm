@@ -273,11 +273,9 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                             {group.stores.map(store => (
                                                 <div key={store.id} onClick={() => openTaskModal && openTaskModal(store)} className="relative bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/30 cursor-pointer hover:bg-indigo-500/30 hover:border-indigo-400 transition-colors group/radar">
                                                     
-                                                    {/* NOVA BOLINHA DE PRIORIDADE */}
                                                     <div className="absolute top-2.5 right-2.5 flex gap-1">
                                                         {store.priority === 'alta' && <span className="block w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" title="Prioridade Alta"></span>}
                                                         {store.priority === 'media' && <span className="block w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.8)]" title="Prioridade Média"></span>}
-                                                        {store.priority === 'baixa' && <span className="block w-2.5 h-2.5 rounded-full bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.8)]" title="Prioridade Baixa"></span>}
                                                     </div>
 
                                                     <p className="text-xs font-bold text-indigo-200 truncate pr-4 group-hover/radar:text-white transition-colors">{store.store}</p>
@@ -311,7 +309,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                                     <div className="absolute top-2.5 right-2.5 flex gap-1">
                                                         {store.priority === 'alta' && <span className="block w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" title="Prioridade Alta"></span>}
                                                         {store.priority === 'media' && <span className="block w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.8)]" title="Prioridade Média"></span>}
-                                                        {store.priority === 'baixa' && <span className="block w-2.5 h-2.5 rounded-full bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.8)]" title="Prioridade Baixa"></span>}
                                                     </div>
 
                                                     <p className="text-xs font-bold text-red-200 truncate pr-4 group-hover/radar:text-white transition-colors">{store.store}</p>
@@ -341,7 +338,17 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                 <button onClick={() => setFeedFilter('tasks')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
                             </div>
                             {visibleLogs.length > 0 && (
-                                <button onClick={() => { setFeedClearedAt(Date.now()); localStorage.setItem('avante_feed_cleared_at', Date.now()); toast.success("Mural limpo!"); }} className="text-xs bg-red-500 hover:bg-red-400 text-white font-bold px-4 py-2 border border-white rounded-lg transition-colors">Limpar</button>
+                                <button 
+                                    onClick={() => { 
+                                        setFeedClearedAt(Date.now()); 
+                                        localStorage.setItem('avante_feed_cleared_at', Date.now()); 
+                                        toast.success("Mural limpo!"); 
+                                    }} 
+                                    /* Classes Tailwind corrigidas para se adequar ao tema escuro */
+                                    className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 font-bold px-4 py-2 border border-red-500/20 hover:border-red-500/40 rounded-lg transition-colors"
+                                >
+                                    Limpar
+                                </button>
                             )}
                         </div>
                     </div>
