@@ -507,23 +507,39 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     const isEditing = editingTaskId === item.id;
                     const canEditTask = isManager || item.criadoPor === username;
                     
-                    const now = new Date();
-                    const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-                    const isOverdue = !item.feita && item.data && item.data < todayStr;
-                    const isToday = !item.feita && item.data === todayStr;
+                    // 1. NOVA LÓGICA DE SLA PARA AS CORES (Igual ao Radar do Feed)
+                    const rightNow = new Date();
+                    let isOverdue = false;
+                    let isWarning = false;
 
+                    // Só calcula prazos para tarefas que ainda não foram feitas e que têm data
+                    if (!item.feita && item.data) {
+                        const timeString = item.hora || '23:59';
+                        const deadlineDate = new Date(`${item.data}T${timeString}:00`);
+                        const timeDiff = deadlineDate.getTime() - rightNow.getTime();
+                        const hoursDiff = timeDiff / (1000 * 60 * 60);
+
+                        if (hoursDiff < 0) {
+                            isOverdue = true;
+                        } else if (hoursDiff <= 24) {
+                            isWarning = true;
+                        }
+                    }
+
+                    // 2. NOVAS CORES E HOVER (Apenas alteração de cor da borda)
                     const taskStyles = item.feita 
-                        ? 'bg-gray-800/40 border-gray-800 border-l-4 border-l-gray-700' 
+                        ? 'bg-gray-800/40 border-gray-800 hover:border-gray-600 border-l-4 border-l-gray-700' 
                         : isOverdue
-                            ? 'bg-red-500/10 border-red-500/30 hover:border-red-400 border-l-4 border-l-red-500'
-                            : isToday
-                                ? 'bg-purple-500/10 border-purple-500/30 hover:border-purple-400 border-l-4 border-l-purple-500'
-                                : 'bg-gray-800 border-gray-700 hover:border-gray-600 border-l-4 border-l-transparent';
+                            ? 'bg-red-500/10 border-red-500/30 hover:border-red-500 border-l-4 border-l-red-500'
+                            : isWarning
+                                ? 'bg-orange-500/10 border-orange-500/30 hover:border-orange-500 border-l-4 border-l-orange-500'
+                                : 'bg-blue-500/5 border-blue-500/20 hover:border-blue-500 border-l-4 border-l-blue-500';
                     
                     return (
                       <div 
                         key={item.id} 
-                        className={`flex flex-col p-2.5 rounded-r-lg group shadow-sm transition-all ${taskStyles}`}
+                        // 3. REMOVIDO O 'transition-all', ADICIONADO 'transition-colors duration-200'
+                        className={`flex flex-col p-2.5 rounded-r-lg group shadow-sm transition-colors duration-200 ${taskStyles}`}
                       >
                         {isEditing ? (
                           <div className="flex flex-col gap-2 w-full animate-in fade-in duration-200">

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, Bell, Clock, CheckCircle, AlertCircle, SquareStack, X } from 'lucide-react';
+import { Activity, Bell, Clock, CheckCircle, AlertCircle, SquareStack, Play, Search, CalendarClock } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
 
 export default function TeamFeedView({ currentUserData, user, stores, openTaskModal, teamMembers }) {
+    // 1. Definição do usuário logado
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
     
     const isAdmin = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager' || currentUserData?.role === 'Analista';
@@ -24,9 +25,13 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
             }
         }
     };
+    
     const [feedClearedAt, setFeedClearedAt] = useState(() => Number(localStorage.getItem('avante_feed_cleared_at')) || 0);
     const [liveStatus, setLiveStatus] = useState({});
     const [feedFilter, setFeedFilter] = useState('all');
+    
+    // Estado que controla a aba ativa no Radar SLA
+    const [deadlineTab, setDeadlineTab] = useState('mine');
     
     useEffect(() => {
         const unsubFocus = onSnapshot(doc(db, "settings", "atividades_equipe"), (docSnap) => {
@@ -44,14 +49,13 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
     const localToday = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     const allLogs = stores.flatMap(s => (s.taskLogs || []).map(l => ({ ...l, storeName: s.store, clientName: s.client })));
     
+    // Lógica do Ranking (Intacta)
     const rankingDiario = useMemo(() => {
         const stats = {};
         const localTodayStr = localToday; 
 
-        // 1. CALCULADORA DE MÉDIAS HISTÓRICAS
-        // O sistema descobre quanto tempo a equipa costuma levar em cada complexidade.
         const globalAverages = {
-            baixa: { totalTime: 0, count: 0, avg: 15 * 60000 }, // Padrão base se não houver histórico
+            baixa: { totalTime: 0, count: 0, avg: 15 * 60000 }, 
             media: { totalTime: 0, count: 0, avg: 30 * 60000 },
             alta:  { totalTime: 0, count: 0, avg: 60 * 60000 }
         };
@@ -63,7 +67,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     if (!duration && task.startedAt && task.completedAtFull) {
                         duration = new Date(task.completedAtFull) - new Date(task.startedAt);
                     }
-                    if (duration > 60000 && duration < 86400000) { // Conta tarefas entre 1 min e 24h
+                    if (duration > 60000 && duration < 86400000) { 
                         const weight = task.peso || 'media';
                         if (globalAverages[weight]) {
                             globalAverages[weight].totalTime += duration;
@@ -74,38 +78,30 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
             });
         });
 
-        // Define a média real baseada nos dados encontrados
         Object.keys(globalAverages).forEach(w => {
             if (globalAverages[w].count > 0) {
                 globalAverages[w].avg = globalAverages[w].totalTime / globalAverages[w].count;
             }
         });
 
-        // 2. APLICAÇÃO DE PONTOS PARA HOJE
         stores.forEach(store => {
             (store.checklists || []).forEach(task => {
-                
-                // --- NOVO: PONTOS POR CRIAÇÃO DE TAREFA (+2 XP) ---
                 if (task.id && task.criadoPor && task.recorrencia !== 'ghost') {
                     const timestamp = Math.floor(task.id);
-                    // Garante que o ID é um timestamp válido
                     if (timestamp > 1600000000000) { 
                         const creationDate = new Date(timestamp - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-                        
                         if (creationDate === localTodayStr) {
                             const creator = task.criadoPor;
                             if (!stats[creator]) {
                                 stats[creator] = { name: creator, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } } };
                             }
-                            stats[creator].points += 2; // +2 XP por criar a tarefa hoje
+                            stats[creator].points += 2; 
                         }
                     }
                 }
 
-                // --- PONTOS POR CONCLUSÃO ---
                 if (task.feita && task.completedAt === localTodayStr) {
                     const author = task.completedBy || 'Sistema';
-                    
                     if (!stats[author]) {
                         stats[author] = { name: author, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } } };
                     }
@@ -113,19 +109,16 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     stats[author].tasks += 1;
                     const weight = task.peso || 'media';
                     
-                    // XP Base
                     let earnedPoints = 10;
                     if (weight === 'baixa') earnedPoints = 10;
                     else if (weight === 'media') earnedPoints = 20;
                     else if (weight === 'alta') earnedPoints = 30;
 
-                    // XP Pontualidade
                     if (task.data) {
                         if (task.data >= localTodayStr) earnedPoints += 5;
                         else earnedPoints = Math.max(5, earnedPoints - 10);
                     }
 
-                    // Bónus de Agilidade Inteligente
                     let taskDuration = 0;
                     if (task.accumulatedTimeMs) {
                         taskDuration = task.accumulatedTimeMs;
@@ -146,13 +139,11 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         stats[author].times[weight].t += taskDuration;
                         stats[author].times[weight].c += 1;
                     }
-
                     stats[author].points += earnedPoints;
                 }
             });
         });
 
-        // Converte os milissegundos em minutos para o visual
         return Object.values(stats).map(r => {
             const avgBaixa = r.times.baixa.c > 0 ? Math.round(r.times.baixa.t / r.times.baixa.c / 60000) : 0;
             const avgMedia = r.times.media.c > 0 ? Math.round(r.times.media.t / r.times.media.c / 60000) : 0;
@@ -161,82 +152,108 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
             return { ...r, avgBaixa, avgMedia, avgAlta };
         }).sort((a, b) => b.points - a.points);
     }, [stores, localToday]);
-    
-    const groupedInbox = useMemo(() => {
-        if (!myName) return [];
-        const groups = {};
-        const now = new Date();
-        const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-        const currentTimeStr = now.toTimeString().substring(0, 5);
+
+    // MOTOR DO RADAR SLA ATUALIZADO (Com horas/minutos precisos)
+    const deadlinesData = useMemo(() => {
+        const items = [];
+        const rightNow = new Date();
 
         stores.forEach(store => {
-            const notificationReasons = [];
+            const isBeingWorkedOn = Object.values(liveStatus).some(status => status.storeId === store.id && !status.texto?.includes('⏸️'));
+            let hasPendingTasks = false;
 
-            // 1. Puxa só as tarefas que o usuário precisa focar
-            const pendingForMe = store.checklists?.filter(c => {
-                if (c.feita) return false;
-                if (c.responsavel !== myName) return false;
-                if (!c.data) return true;
-                if (c.data < todayStr) return true;
-                if (c.data === todayStr) return !c.hora || c.hora <= currentTimeStr;
-                return false;
-            }) || [];
+            if (store.checklists && store.checklists.length > 0) {
+                store.checklists.filter(t => !t.feita).forEach(task => {
+                    hasPendingTasks = true;
+                    let timeDiff = null; 
+                    let statusColor = 'blue'; 
+                    let timeLabel = 'Sem Prazo';
 
-            // 2. Calcula a maior prioridade dentro do bolo
-            let highestPriority = 'baixa';
-            pendingForMe.forEach(t => {
-                if (t.peso === 'alta') highestPriority = 'alta';
-                else if (t.peso === 'media' && highestPriority !== 'alta') highestPriority = 'media';
-            });
+                    if (task.data) {
+                        const timeString = task.hora || '23:59';
+                        const deadlineDate = new Date(`${task.data}T${timeString}:00`);
+                        timeDiff = deadlineDate.getTime() - rightNow.getTime();
+                        
+                        // Cálculo preciso de Horas e Minutos
+                        const isPast = timeDiff < 0;
+                        const absDiff = Math.abs(timeDiff);
+                        const hours = Math.floor(absDiff / (1000 * 60 * 60));
+                        const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
 
-            if (pendingForMe.length > 0) notificationReasons.push(`${pendingForMe.length} tarefa(s) pendente(s)`);
+                        if (isPast) {
+                            statusColor = 'red'; 
+                            timeLabel = `Atraso: ${hours}h ${minutes}m`;
+                        } else if (hours < 24) {
+                            statusColor = 'orange'; 
+                            timeLabel = `Vence em: ${hours}h ${minutes}m`;
+                        } else {
+                            const days = Math.floor(hours / 24);
+                            statusColor = 'blue'; 
+                            timeLabel = `Vence em: ${days} dias`;
+                        }
+                    }
 
-            if (notificationReasons.length > 0) {
-                if (!groups[store.client]) groups[store.client] = { clientName: store.client, stores: [], lastAccess: store.dataUltimoAcesso || 0 };
-                // SALVA A PRIORIDADE AQUI ->
-                groups[store.client].stores.push({ ...store, highlightMessages: notificationReasons, priority: highestPriority });
-                const currentStoreAccess = new Date(store.dataUltimoAcesso || 0);
-                const groupOldestAccess = new Date(groups[store.client].lastAccess);
-                if (currentStoreAccess < groupOldestAccess) groups[store.client].lastAccess = store.dataUltimoAcesso;
+                    items.push({
+                        id: task.id,
+                        storeId: store.id,
+                        storeName: store.store,
+                        clientName: store.client,
+                        type: 'task',
+                        title: task.texto,
+                        responsavel: task.responsavel || '',
+                        statusColor,
+                        timeLabel,
+                        timeDiff: timeDiff !== null ? timeDiff : Infinity,
+                        isBeingWorkedOn
+                    });
+                });
+            }
+
+            if (!hasPendingTasks && store.dataProximoAcesso) {
+                const nextAccessDate = new Date(store.dataProximoAcesso);
+                const timeDiff = nextAccessDate.getTime() - rightNow.getTime();
+                
+                // Cálculo preciso para Rotinas
+                const isPast = timeDiff < 0;
+                const absDiff = Math.abs(timeDiff);
+                const hours = Math.floor(absDiff / (1000 * 60 * 60));
+                const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
+
+                if (hours <= 24 || isPast) {
+                    items.push({
+                        id: `routine-${store.id}`,
+                        storeId: store.id,
+                        storeName: store.store,
+                        clientName: store.client,
+                        type: 'routine',
+                        title: 'Visita de Rotina',
+                        responsavel: store.responsavel || '',
+                        statusColor: isPast ? 'red' : 'orange',
+                        timeLabel: isPast ? `Atraso: ${hours}h ${minutes}m` : `Vence em: ${hours}h ${minutes}m`,
+                        timeDiff: timeDiff,
+                        isBeingWorkedOn
+                    });
+                }
             }
         });
-        return Object.values(groups).sort((a, b) => new Date(a.lastAccess || 0) - new Date(b.lastAccess || 0));
-    }, [stores, myName]);
 
-    const isVisitante = currentUserData?.role === 'Visitante';
-
-    // RADAR DE ATRASOS
-    const groupedOverdue = useMemo(() => {
-        const groups = {};
-        const now = new Date();
-        const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-
-        stores.forEach(store => {
-            let storeTasks = store.checklists || [];
-            if (isVisitante) storeTasks = storeTasks.filter(t => t.responsavel === myName);
-
-            const overdueTasks = storeTasks.filter(c => !c.feita && c.data && c.data < todayStr);
-            
-            // Calcula a maior prioridade dos atrasos
-            let highestPriority = 'baixa';
-            overdueTasks.forEach(t => {
-                if (t.peso === 'alta') highestPriority = 'alta';
-                else if (t.peso === 'media' && highestPriority !== 'alta') highestPriority = 'media';
+        // 3. FILTRO BLINDADO: Apenas minhas tarefas ou vazias
+        let filteredItems = items;
+        if (deadlineTab === 'mine') {
+            filteredItems = items.filter(item => {
+                // Remove espaços e transforma tudo em letras minúsculas para evitar erros de digitação
+                const resp = (item.responsavel || '').toLowerCase().trim();
+                const me = (myName || '').toLowerCase().trim();
+                
+                // Só passa se o responsável for EXATAMENTE o usuário atual OU se estiver completamente vazio.
+                // Adicionamos 'sem resp.' caso algum campo antigo tenha salvo essa string.
+                return resp === me || resp === '' || resp === 'sem resp.'; 
             });
+        }
 
-            const isStoreOverdue = !isVisitante && store.dataProximoAcesso && store.dataProximoAcesso.split('T')[0] < todayStr;
-            const reasons = [];
-            if (overdueTasks.length > 0) reasons.push(`${overdueTasks.length} tarefa(s) atrasada(s)`);
-            else if (isStoreOverdue) reasons.push(`Acesso atrasado`);
+        return filteredItems.sort((a, b) => a.timeDiff - b.timeDiff);
 
-            if (reasons.length > 0) {
-                if (!groups[store.client]) groups[store.client] = { clientName: store.client, stores: [] };
-                // SALVA A PRIORIDADE AQUI ->
-                groups[store.client].stores.push({ ...store, highlightMessages: reasons, priority: highestPriority });
-            }
-        });
-        return Object.values(groups).sort((a, b) => a.clientName.localeCompare(b.clientName));
-    }, [stores, currentUserData]);
+    }, [stores, myName, deadlineTab, liveStatus]);
     
     const visibleLogs = useMemo(() => {
         return allLogs
@@ -254,75 +271,99 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
             
             <div className="lg:col-span-2 flex flex-col gap-6">
                 
-                {/* CONTAINER DOS RADARES (Lado a lado em telas grandes) */}
-                <div className="flex flex-col xl:flex-row gap-6 w-full">
+                {/* RADAR DE PRAZOS (SLA) */}
+                <div className="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-lg relative overflow-hidden flex flex-col max-h-[500px]">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-orange-500 to-blue-500"></div>
                     
-                    {/* NOVO NOME: FOCO IMEDIATO */}
-                    {groupedInbox && groupedInbox.length > 0 && (
-                        <div className="flex-1 bg-indigo-500/10 border border-indigo-500/30 p-5 rounded-xl shadow-lg relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
-                            <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2 mb-4">
-                                <Bell size={16} className="animate-pulse" /> Foco Imediato ({groupedInbox.length} Clientes)
-                            </h3>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
-                                {groupedInbox.map(group => (
-                                    <div key={group.clientName} className="bg-gray-900/60 border border-indigo-500/20 rounded-xl p-4">
-                                        <h4 className="font-bold text-white text-sm mb-3 truncate">{group.clientName}</h4>
-                                        <div className="space-y-2.5">
-                                            {group.stores.map(store => (
-                                                <div key={store.id} onClick={() => openTaskModal && openTaskModal(store)} className="relative bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/30 cursor-pointer hover:bg-indigo-500/30 hover:border-indigo-400 transition-colors group/radar">
-                                                    
-                                                    <div className="absolute top-2.5 right-2.5 flex gap-1">
-                                                        {store.priority === 'alta' && <span className="block w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" title="Prioridade Alta"></span>}
-                                                        {store.priority === 'media' && <span className="block w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.8)]" title="Prioridade Média"></span>}
-                                                    </div>
+                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-5 border-b border-gray-700 pb-4 mt-2">
+                        <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                            <Clock size={18} className="text-indigo-400" />
+                            Radar de Prazos SLA
+                            <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">{deadlinesData.length}</span>
+                        </h3>
+                        
+                        <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 w-full sm:w-auto">
+                            <button 
+                                onClick={() => setDeadlineTab('mine')} 
+                                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${deadlineTab === 'mine' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                            >
+                                Meu Foco / Livres
+                            </button>
+                            <button 
+                                onClick={() => setDeadlineTab('all')} 
+                                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${deadlineTab === 'all' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                            >
+                                Visão Global
+                            </button>
+                        </div>
+                    </div>
 
-                                                    <p className="text-xs font-bold text-indigo-200 truncate pr-4 group-hover/radar:text-white transition-colors">{store.store}</p>
-                                                    {store.highlightMessages?.map((msg, i) => (
-                                                        <span key={i} className="text-[11px] text-indigo-400 block mt-1 group-hover/radar:text-indigo-300">{msg}</span>
-                                                    ))}
-                                                </div>
-                                            ))}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+                            {deadlinesData.map(item => {
+                                const isOverdue = item.statusColor === 'red';
+                                const isWarning = item.statusColor === 'orange';
+                                const isRoutine = item.type === 'routine';
+
+                                return (
+                                    <div 
+                                        key={item.id} 
+                                        onClick={() => handleOpenStore(item.storeName)}
+                                        className={`relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${
+                                        isOverdue ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50' : 
+                                        isWarning ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20 hover:border-orange-500/50' : 
+                                        'bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40'
+                                        }`}
+                                    >
+                                        {item.isBeingWorkedOn && (
+                                            <div className="absolute -top-1 -right-1 flex h-3 w-3">
+                                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-gray-900"></span>
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-start gap-2.5">
+                                            <div className={`p-1.5 rounded-md shrink-0 ${
+                                                isOverdue ? 'bg-red-500/20 text-red-400' : 
+                                                isWarning ? 'bg-orange-500/20 text-orange-400' : 
+                                                'bg-blue-500/20 text-blue-400'
+                                            }`}>
+                                                {isRoutine ? <CalendarClock size={14} /> : <AlertCircle size={14} />}
+                                            </div>
+                                            <div className="flex-1 overflow-hidden">
+                                                <h4 className="font-bold text-white text-xs truncate" title={item.storeName}>{item.storeName}</h4>
+                                                <span className="text-[9px] text-gray-500 font-medium uppercase tracking-wider truncate block" title={item.clientName}>{item.clientName}</span>
+                                            </div>
+                                        </div>
+
+                                        <p className={`text-[11px] font-medium leading-tight line-clamp-2 ${isRoutine ? 'italic text-gray-400' : 'text-gray-300'}`} title={item.title}>
+                                            {item.title}
+                                        </p>
+
+                                        <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-auto">
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shadow-sm truncate max-w-[60%] ${
+                                                isOverdue ? 'bg-red-500/20 text-red-400 border-red-500/30' : 
+                                                isWarning ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : 
+                                                'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                                            }`}>
+                                                ⏱️ {item.timeLabel}
+                                            </span>
+                                            <span className="text-[9px] text-gray-500 truncate max-w-[40%]" title={item.responsavel || 'Equipe'}>
+                                                Resp: <strong className="text-gray-300">{item.responsavel || 'Equipe'}</strong>
+                                            </span>
                                         </div>
                                     </div>
-                                ))}
-                            </div>
+                                );
+                            })}
                         </div>
-                    )}
 
-                    {/* NOVO NOME: ALERTAS DE ATRASO */}
-                    {groupedOverdue && groupedOverdue.length > 0 && (
-                        <div className="flex-1 bg-red-500/10 border border-red-500/30 p-5 rounded-xl shadow-lg relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]"></div>
-                            <h3 className="text-sm font-bold text-red-400 uppercase tracking-wider flex items-center gap-2 mb-4">
-                                <AlertCircle size={16} className="animate-pulse" /> Alertas de Atraso ({groupedOverdue.length} Clientes)
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
-                                {groupedOverdue.map(group => (
-                                    <div key={group.clientName} className="bg-gray-900/60 border border-red-500/20 rounded-xl p-4">
-                                        <h4 className="font-bold text-white text-sm mb-3 truncate">{group.clientName}</h4>
-                                        <div className="space-y-2.5">
-                                            {group.stores.map(store => (
-                                                <div key={store.id} onClick={() => openTaskModal && openTaskModal(store)} className="relative bg-red-500/10 p-3 rounded-lg border border-red-500/30 cursor-pointer hover:bg-red-500/30 hover:border-red-400 transition-colors group/radar">
-    
-                                                    <div className="absolute top-2.5 right-2.5 flex gap-1">
-                                                        {store.priority === 'alta' && <span className="block w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" title="Prioridade Alta"></span>}
-                                                        {store.priority === 'media' && <span className="block w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.8)]" title="Prioridade Média"></span>}
-                                                    </div>
-
-                                                    <p className="text-xs font-bold text-red-200 truncate pr-4 group-hover/radar:text-white transition-colors">{store.store}</p>
-                                                    {store.highlightMessages?.map((msg, i) => (
-                                                        <span key={i} className="text-[11px] text-red-400 block mt-1 group-hover/radar:text-red-300">{msg}</span>
-                                                    ))}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
+                        {deadlinesData.length === 0 && (
+                            <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-700 rounded-xl bg-gray-900/30 h-full text-emerald-400 text-sm font-medium">
+                                <CheckCircle size={32} className="opacity-50 mb-2" /> 
+                                <span>Excelente! Nenhum prazo pendente nesta visão.</span>
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
 
                 {/* TIMELINE */}
@@ -344,7 +385,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                         localStorage.setItem('avante_feed_cleared_at', Date.now()); 
                                         toast.success("Mural limpo!"); 
                                     }} 
-                                    /* Classes Tailwind corrigidas para se adequar ao tema escuro */
                                     className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 font-bold px-4 py-2 border border-red-500/20 hover:border-red-500/40 rounded-lg transition-colors"
                                 >
                                     Limpar
@@ -407,7 +447,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                             isPaused ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
                                         }`}></div>
                                         
-                                        {/* AVATAR DO COLABORADOR ONLINE */}
                                         <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
                                             {userPhoto ? (
                                                 <img src={userPhoto} alt={userName} className="w-full h-full object-cover" />
@@ -441,7 +480,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     )}
                 </div>
 
-                {/* RANKING DE EXECUÇÃO - ALTURA CORRIGIDA PARA H-FIT */}
+                {/* RANKING DE EXECUÇÃO */}
                 <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
                     <div className="mb-4 border-b border-gray-700 pb-4">
                         <h3 className="text-lg font-bold tracking-wide text-amber-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
@@ -457,12 +496,10 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                 <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2 hover:border-gray-500 transition-colors">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-3">
-                                            {/* Posição em pílula pequena */}
                                             <span className={`w-6 h-6 rounded-full text-[10px] font-black flex items-center justify-center shadow-inner shrink-0 ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
                                                 {i + 1}
                                             </span>
                                             
-                                            {/* FOTO DO USUÁRIO NO RANKING */}
                                             <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
                                                 {userPhoto ? (
                                                     <img src={userPhoto} alt={rank.name} className="w-full h-full object-cover" />
@@ -483,7 +520,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                         </div>
                                     </div>
                                     
-                                    {/* Bloco de tempos médios continua igual abaixo */}
                                     <div className="bg-black/40 rounded-lg px-3 py-2 flex justify-between items-center mt-1">
                                         <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempos Médios</span>
                                         <div className="flex gap-2 text-[10px] font-bold">
@@ -498,7 +534,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         {rankingDiario.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada hoje.</div>}
                     </div>
 
-                    {/* RODAPÉ DE REGRAS DE XP EM PT-BR */}
                     <div className="mt-4 pt-4 border-t border-gray-700/50 text-[10px] text-gray-400 text-center leading-relaxed">
                         <strong>XP Base:</strong> Baixa (+10) • Média (+20) • Alta (+30) | <strong>Criação:</strong> (+2 XP)<br/>
                         <strong>Prazos:</strong> No prazo (+5) • Atrasada (-10)<br/>
