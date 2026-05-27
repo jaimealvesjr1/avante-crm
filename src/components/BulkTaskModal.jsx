@@ -6,10 +6,11 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
   const [taskText, setTaskText] = useState('');
   const [taskResp, setTaskResp] = useState('');
   
-  // Novos Estados
   const [taskDate, setTaskDate] = useState('');
   const [taskTime, setTaskTime] = useState('');
   const [taskRecurrence, setTaskRecurrence] = useState('none');
+  const [bulkPriority, setBulkPriority] = useState('media');
+  const [bulkWeight, setBulkWeight] = useState('media');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [clientFilter, setClientFilter] = useState('');
@@ -55,21 +56,23 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
     if (!taskText.trim()) return toast.error('A tarefa precisa de uma descrição.');
     if (selectedStores.length === 0) return toast.error('Selecione pelo menos uma loja para receber a tarefa.');
 
-    // Envia agora como objeto
     onSave(selectedStores, {
       text: taskText,
       resp: taskResp,
       data: taskDate,
       hora: taskTime,
-      recorrencia: taskRecurrence
+      recorrencia: taskRecurrence,
+      peso: bulkWeight,
+      prioridade: bulkPriority
     });
     
-    // Limpar e fechar
     setTaskText('');
     setTaskResp('');
     setTaskDate('');
     setTaskTime('');
     setTaskRecurrence('none');
+    setBulkPriority('media');
+    setBulkWeight('media');
     setSelectedStores([]);
     setSearchTerm('');
     setClientFilter('');
@@ -94,8 +97,9 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
           
           {/* CONFIGURAÇÃO DA TAREFA */}
           <div className="mb-6 bg-gray-900/50 p-4 rounded-xl border border-gray-700 space-y-3">
-            <h4 className="text-xs font-bold text-gray-400 uppercase">1. O que precisa ser feito?</h4>
+            <h4 className="text-xs font-bold text-gray-400 uppercase">1. Configurações da Tarefa</h4>
             
+            {/* LINHA 1: Texto e Responsável */}
             <div className="flex flex-col md:flex-row gap-3">
               <input 
                 type="text" 
@@ -107,29 +111,71 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               <select 
                 value={taskResp} 
                 onChange={e => setTaskResp(e.target.value)} 
-                className="bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer flex-1"
+                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer"
               >
-                <option value="">Sem Resp.</option>
+                <option value="">Sem Responsável</option>
                 {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <input type="date" value={taskDate} onChange={(e) => setTaskDate(e.target.value)} className="bg-gray-800 border border-gray-600 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" title="Data da Tarefa" />
-              <input type="time" value={taskTime} onChange={(e) => setTaskTime(e.target.value)} className="bg-gray-800 border border-gray-600 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" title="Hora" />
-              <select value={taskRecurrence} onChange={(e) => setTaskRecurrence(e.target.value)} className="bg-gray-800 border border-gray-600 rounded-lg p-2 text-xs text-white outline-none cursor-pointer flex-1 min-w-[130px]">
+            {/* LINHA 2: Data, Hora e Recorrência */}
+            <div className="flex flex-col md:flex-row gap-3">
+              <input 
+                type="date" 
+                value={taskDate} 
+                onChange={(e) => setTaskDate(e.target.value)} 
+                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" 
+                title="Data da Tarefa" 
+              />
+              <input 
+                type="time" 
+                value={taskTime} 
+                onChange={(e) => setTaskTime(e.target.value)} 
+                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" 
+                title="Hora" 
+              />
+              <select 
+                value={taskRecurrence} 
+                onChange={(e) => setTaskRecurrence(e.target.value)} 
+                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
+              >
                 <option value="none">S/ Repetição</option>
                 <option value="daily">🔁 Diário</option>
                 <option value="weekly">🔁 Semanal</option>
                 <option value="monthly">🔁 Mensal</option>
               </select>
+            </div>
+
+            {/* LINHA 3: Urgência, Complexidade e Botão Limpar */}
+            <div className="flex flex-col md:flex-row gap-3">
+              <select 
+                value={bulkPriority} 
+                onChange={e => setBulkPriority(e.target.value)} 
+                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
+                title="Urgência (Define a cor nos radares)"
+              >
+                <option value="baixa">🟡 Baixa Urgência</option>
+                <option value="media">🟠 Média Urgência</option>
+                <option value="alta">🔴 Alta Urgência</option>
+              </select>
+
+              <select 
+                value={bulkWeight} 
+                onChange={e => setBulkWeight(e.target.value)} 
+                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
+                title="Tempo Médio Estimado"
+              >
+                <option value="baixa">🟢 Tarefa Rápida</option>
+                <option value="media">🟡 Tarefa Média</option>
+                <option value="alta">🔴 Tarefa Demorada</option>
+              </select>
               
               <button 
-                onClick={() => { setTaskDate(''); setTaskTime(''); setTaskRecurrence('none'); }} 
-                className="bg-gray-800 hover:bg-gray-700 text-gray-400 p-2 rounded-lg transition-colors border border-gray-600" 
-                title="Limpar Datas"
+                onClick={() => { setTaskDate(''); setTaskTime(''); setTaskRecurrence('none'); setBulkPriority('media'); setBulkWeight('media'); }} 
+                className="bg-gray-800 hover:bg-gray-700 text-gray-400 p-2.5 rounded-lg transition-colors border border-gray-600 flex items-center justify-center gap-2 md:w-auto px-4 w-full md:flex-none shrink-0" 
+                title="Restaurar Configurações Padrão"
               >
-                <Eraser size={14}/>
+                <Eraser size={16}/> <span className="text-xs font-bold md:hidden">Limpar Configurações</span>
               </button>
             </div>
           </div>

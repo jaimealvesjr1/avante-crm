@@ -9,6 +9,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [newTaskDate, setNewTaskDate] = useState('');
   const [newTaskTime, setNewTaskTime] = useState('');
   const [newTaskRecurrence, setNewTaskRecurrence] = useState('none');
+  const [newTaskPriority, setNewTaskPriority] = useState('media');
+  const [newTaskWeight, setNewTaskWeight] = useState('media');
 
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome;
   const isVisitante = currentUserData?.role === 'Visitante';
@@ -28,7 +30,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editTaskData, setEditTaskData] = useState({});
-  const [newTaskWeight, setNewTaskWeight] = useState('media');
 
   const [dailyGMV, setDailyGMV] = useState('');
   const [dailyAds, setDailyAds] = useState('');
@@ -180,7 +181,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       data: newTaskDate, 
       hora: newTaskTime, 
       recorrencia: newTaskRecurrence,
-      peso: newTaskWeight
+      peso: newTaskWeight,
+      prioridade: newTaskPriority
     };
     const updatedChecklists = [...(store.checklists || []), item];
     const newNextAccess = autoScheduleStore(updatedChecklists);
@@ -617,10 +619,26 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Data da Tarefa" />
                   <input type="time" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Hora" />
 
-                  <select value={newTaskWeight} onChange={e => setNewTaskWeight(e.target.value)} className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
-                    <option value="baixa">🟢 Rápida</option>
-                    <option value="media">🟡 Média</option>
-                    <option value="alta">🔴 Demorada</option>
+                  <select 
+                    value={newTaskPriority} 
+                    onChange={e => setNewTaskPriority(e.target.value)} 
+                    className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
+                    title="Urgência (Define a cor nos radares)"
+                  >
+                    <option value="baixa">🟡 Baixa Urgência</option>
+                    <option value="media">🟠 Média Urgência</option>
+                    <option value="alta">🔴 Alta Urgência</option>
+                  </select>
+
+                  <select 
+                    value={newTaskWeight} 
+                    onChange={e => setNewTaskWeight(e.target.value)} 
+                    className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
+                    title="Tempo Médio Estimado"
+                  >
+                    <option value="baixa">🟢 Tarefa Rápida</option>
+                    <option value="media">🟡 Tarefa Média</option>
+                    <option value="alta">🔴 Tarefa Demorada</option>
                   </select>
 
                   <select value={newTaskRecurrence} onChange={e => setNewTaskRecurrence(e.target.value)} className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">

@@ -38,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.3.1';
+  const CURRENT_VERSION = '2.3.3';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -193,7 +193,7 @@ export default function App() {
   };
 
   const isAdmin = user?.email === 'jaimejunior.ide@gmail.com';
-  const canEdit = userRole === 'Admin' || isAdmin;
+  const canEdit = userRole === 'Admin' || userRole === 'Supervisor' || (isAdmin && !isSimulating);
 
   useEffect(() => {
     if (!user) return;
