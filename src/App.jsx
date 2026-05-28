@@ -38,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.4.3';
+  const CURRENT_VERSION = '2.4.4';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -640,8 +640,8 @@ useEffect(() => {
   };
 
   // GERADOR CENTRAL DE RELATÓRIOS (V2.2.0)
-  const generateReports = async (targetStores, monthInput, formats = { pdf: true, excel: true }) => {
-    const periodoApurado = `1 a ${daysInMonth} de ${monthInput.toUpperCase()}`;
+  const generateReports = async (targetStores, monthInput, formats = { pdf: true, excel: true }, options = { showAgencyFee: true }) => {
+    const periodoApurado = `1 a ${currentDay} de ${monthInput.toUpperCase()}`;
     const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     
     try {
@@ -751,8 +751,11 @@ useEffect(() => {
 
           docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Faturamento Consolidado:', 14, 52);
           docPdf.setFontSize(24); docPdf.setTextColor(16, 185, 129); docPdf.text(formatMoney(totalGmv), 14, 62);
-          docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Fatura da Assessoria (B2X):', 120, 52);
-          docPdf.setFontSize(24); docPdf.setTextColor(79, 70, 229); docPdf.text(formatMoney(avanteTotalFee * 2), 120, 62);
+          
+          if (options.showAgencyFee) {
+            docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Fatura da Assessoria (B2X):', 120, 52);
+            docPdf.setFontSize(24); docPdf.setTextColor(79, 70, 229); docPdf.text(formatMoney(avanteTotalFee * 2), 120, 62);
+          }
 
           const storeRows = [];
           clientStores.forEach((store, idx) => {
@@ -796,7 +799,7 @@ useEffect(() => {
   };
 
   // GATILHO DA CENTRAL DE EXPORTAÇÃO
-  const handleCustomExport = async ({ json, pdf, excel, monthInput }) => {
+  const handleCustomExport = async ({ json, pdf, excel, monthInput, showAgencyFee }) => {
     toast.loading("Gerando arquivos solicitados...", { id: 'custom-export' });
     try {
       const dataToExport = dashboardData.flatFilteredStores;
@@ -812,7 +815,7 @@ useEffect(() => {
       }
 
       if (pdf || excel) {
-        await generateReports(dataToExport, monthInput, { pdf, excel });
+        await generateReports(dataToExport, monthInput, { pdf, excel }, { showAgencyFee });
       }
       
       toast.success("Arquivos gerados com sucesso!", { id: 'custom-export' });

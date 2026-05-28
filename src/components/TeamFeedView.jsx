@@ -37,14 +37,17 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         return () => unsubFocus();
     }, []);
     
-    const handleOpenStore = (storeName) => {
-        const targetStore = stores.find(s => s.store === storeName);
+    // 1. ATUALIZAÇÃO: Busca 100% blindada via ID
+    const handleOpenStoreById = (storeId) => {
+        const targetStore = stores.find(s => s.id === storeId);
         if (targetStore && openTaskModal) openTaskModal(targetStore);
     };
     
     const now = new Date();
     const localToday = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-    const allLogs = stores.flatMap(s => (s.taskLogs || []).map(l => ({ ...l, storeName: s.store, clientName: s.client })));
+    
+    // 2. ATUALIZAÇÃO: Adicionado o storeId no log
+    const allLogs = stores.flatMap(s => (s.taskLogs || []).map(l => ({ ...l, storeName: s.store, clientName: s.client, storeId: s.id })));
     
     const rankingDiario = useMemo(() => {
         const stats = {};
@@ -230,32 +233,23 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
             }
         });
 
-        // CRUZAMENTO INTELIGENTE DE IDENTIDADE
+        // CRUZAMENTO DE IDENTIDADE SIMPLIFICADO
         const me = (myName || '').toLowerCase().trim();
 
-        // 1. Filtramos as tarefas da lista
         const filteredItems = items.filter(item => {
-            // Pegamos o responsável pela tarefa e deixamos em letras minúsculas
             let resp = (item.responsavel || '').toLowerCase().trim();
-            
-            // 2. Se a tarefa foi assinada com um termo genérico, tratamos como "sem responsável"
             const termosGenericos = ['equipe', 'equipa', 'sem resp.', 'sem responsavel'];
             if (termosGenericos.includes(resp)) resp = '';
 
-            // 3. Documentação: A tarefa É MINHA apenas se tiver um responsável, eu estiver logado, e os nomes baterem.
             const isMyTask = resp !== '' && me !== '' && (resp === me || resp.includes(me) || me.includes(resp));
 
-            // 4. Documentação: Separação exata das abas
             if (deadlineTab === 'mine') {
-                // MEU FOCO: Retorna ESTRITAMENTE as minhas tarefas
                 return isMyTask; 
             } else {
-                // GLOBAL: Retorna tudo que NÃO é meu (tarefas de outros e tarefas vazias/sem dono)
                 return !isMyTask; 
             }
         });
 
-        // Retorna as tarefas filtradas e organizadas pelas mais urgentes (menor tempo primeiro)
         return filteredItems.sort((a, b) => a.timeDiff - b.timeDiff);
 
     }, [stores, myName, deadlineTab, liveStatus]);
@@ -303,7 +297,8 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2">
+                    {/* Espaçamento extra do scroll consertado no passo anterior */}
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pr-2 pb-2 pt-2 pl-1">
                         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
                             {deadlinesData.map(item => {
                                 const isOverdue = item.statusColor === 'red';
@@ -313,7 +308,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                 return (
                                     <div 
                                         key={item.id} 
-                                        onClick={() => handleOpenStore(item.storeName)}
+                                        onClick={() => handleOpenStoreById(item.storeId)} // <-- ATUALIZADO AQUI
                                         className={`relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${
                                             isOverdue ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50' : 
                                             isWarning ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20 hover:border-orange-500/50' : 
@@ -402,7 +397,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         {visibleLogs.map(log => {
                             const isTask = log.texto?.includes('✅ Tarefa concluída');
                             return (
-                                <div key={log.id} onClick={() => handleOpenStore(log.storeName)} className="relative group cursor-pointer">
+                                <div key={log.id} onClick={() => handleOpenStoreById(log.storeId)} className="relative group cursor-pointer"> {/* <-- ATUALIZADO AQUI */}
                                     <div className={`absolute -left-[27px] top-2 w-3 h-3 rounded-full border-[3px] border-gray-800 ${isTask ? 'bg-emerald-500' : 'bg-indigo-500'}`}></div>
                                     <div className={`p-4 rounded-xl border flex flex-col gap-1.5 transition-colors hover:brightness-125 ${isTask ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-gray-900/50 border-gray-700'}`}>
                                         <div className="flex justify-between items-start">
@@ -419,7 +414,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                 </div>
             </div>
 
-            {/* COLUNA DIREITA (Secundária: Equipe + Ranking) */}
             <div className="lg:col-span-1 flex flex-col gap-6">
 
                 {/* RADAR DA EQUIPE */}
@@ -441,8 +435,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                     <div key={userName} 
                                         onClick={() => {
                                             if (data.storeId) {
-                                                const targetStore = stores.find(s => s.id === data.storeId);
-                                                if (targetStore && openTaskModal) openTaskModal(targetStore);
+                                                handleOpenStoreById(data.storeId); // <-- ATUALIZADO AQUI
                                             }
                                         }}
                                         className={`bg-gray-900/80 p-4 rounded-xl border flex items-center gap-4 relative overflow-hidden cursor-pointer transition-colors ${
