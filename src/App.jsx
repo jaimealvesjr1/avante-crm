@@ -38,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.4.5';
+  const CURRENT_VERSION = '2.4.6';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -69,6 +69,7 @@ export default function App() {
 
   const [expandedClients, setExpandedClients] = useState([]);
   const [bulkTaskModalOpen, setBulkTaskModalOpen] = useState(false);
+  const [bulkTaskInitialData, setBulkTaskInitialData] = useState(null);
 
   const [clientFileOpen, setClientFileOpen] = useState(false);
   const [activeClientGroup, setActiveClientGroup] = useState(null);
@@ -236,7 +237,7 @@ export default function App() {
             ), { duration: Infinity, id: 'pwa-update-toast', icon: '🔄' });
           } else {
             // Se for no navegador comum, apenas avisamos discretamente com um toast temporário
-            toast.success(`Uma nova atualização (${data.versao}) foi lançada! Recarregue a página caso note instabilidades.`, {
+            toast.success(`Uma nova versão (${data.versao}) foi lançada! Recarregue a página caso note instabilidades.`, {
               duration: 10000,
               id: 'web-update-toast'
             });
@@ -1427,6 +1428,11 @@ useEffect(() => {
           isManager={canEdit}
           teamMembers={teamMembers}
           broadcastTaskFocus={broadcastTaskFocus}
+          onCopyTaskToBulk={(task) => {
+              setBulkTaskInitialData(task);
+              setBulkTaskModalOpen(true); 
+              setTaskModalOpen(false);
+          }}
         />
       )}
 
@@ -1440,7 +1446,11 @@ useEffect(() => {
 
       <BulkTaskModal 
         isOpen={bulkTaskModalOpen}
-        onClose={() => setBulkTaskModalOpen(false)}
+        onClose={() => {
+            setBulkTaskModalOpen(false); 
+            setBulkTaskInitialData(null);
+        }}
+        initialData={bulkTaskInitialData}
         stores={stores}
         onSave={handleSaveBulkTasks}
         teamMembers={teamMembers}

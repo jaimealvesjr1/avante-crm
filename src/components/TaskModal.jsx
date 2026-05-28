@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus }) {
+export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus, onCopyTaskToBulk }) {
   const [newLog, setNewLog] = useState('');
   const [newChecklist, setNewChecklist] = useState('');
   const [newChecklistResp, setNewChecklistResp] = useState('');
   const [newTaskDate, setNewTaskDate] = useState('');
   const [newTaskTime, setNewTaskTime] = useState('');
   const [newTaskRecurrence, setNewTaskRecurrence] = useState('none');
-  const [newTaskWeight, setNewTaskWeight] = useState('media'); // Apenas a complexidade foi mantida
+  const [newTaskWeight, setNewTaskWeight] = useState('media');
 
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome;
   const isVisitante = currentUserData?.role === 'Visitante';
@@ -181,7 +181,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       hora: newTaskTime, 
       recorrencia: newTaskRecurrence,
       peso: newTaskWeight
-      // Prioridade foi removida daqui
     };
     const updatedChecklists = [...(store.checklists || []), item];
     const newNextAccess = autoScheduleStore(updatedChecklists);
@@ -513,12 +512,10 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     const isEditing = editingTaskId === item.id;
                     const canEditTask = isManager || item.criadoPor === username;
                     
-                    // NOVA LÓGICA DE SLA PARA AS CORES (Igual ao Radar do Feed)
                     const rightNow = new Date();
                     let isOverdue = false;
                     let isWarning = false;
 
-                    // Só calcula prazos para tarefas que ainda não foram feitas e que têm data
                     if (!item.feita && item.data) {
                         const timeString = item.hora || '23:59';
                         const deadlineDate = new Date(`${item.data}T${timeString}:00`);
@@ -532,7 +529,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                         }
                     }
 
-                    // NOVAS CORES E HOVER (Apenas alteração de cor da borda)
                     const taskStyles = item.feita 
                         ? 'bg-gray-800/40 border-gray-800 hover:border-gray-600 border-l-4 border-l-gray-700' 
                         : isOverdue
@@ -645,6 +641,12 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                                 </button>
                               )}
 
+                              {!item.feita && onCopyTaskToBulk && (
+                                <button type="button" onClick={() => onCopyTaskToBulk(item)} className="text-gray-500 hover:text-indigo-400 p-1.5 bg-gray-900 hover:bg-indigo-500/10 rounded transition-colors" title="Copiar para Tarefa em Massa">
+                                  <Copy size={14}/>
+                                </button>
+                              )}
+
                               {canEditOrDeleteTask(item) && !item.feita && (
                                 <>
                                   <button type="button" onClick={() => startEditingTask(item)} className="text-gray-500 hover:text-blue-400 p-1.5 bg-gray-900 hover:bg-white/10 rounded transition-colors">
@@ -673,7 +675,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   </select>
                 </div>
                 
-                {/* Aviso para o usuário não esquecer que Data/Hora são SLA */}
                 <div className="w-full flex items-center gap-1.5 mt-1">
                     <AlertCircle size={12} className="text-amber-500" />
                     <span className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Atenção: Defina a data e o horário limite para concluir a tarefa</span>

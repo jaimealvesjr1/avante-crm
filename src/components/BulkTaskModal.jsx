@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { X, Search, CopyPlus, CheckSquare, Square, Eraser, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMembers }) {
+export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMembers, initialData }) {
   const [taskText, setTaskText] = useState('');
   const [taskResp, setTaskResp] = useState('');
   
@@ -19,6 +19,24 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
   const clients = [...new Set(stores.map(s => s.client))].filter(Boolean).sort();
   const mkts = [...new Set(stores.map(s => s.marketplace))].filter(Boolean).sort();
+
+  useEffect(() => {
+    if (isOpen && initialData) {
+      setTaskText(initialData.texto || '');
+      setTaskResp(initialData.responsavel || '');
+      setTaskDate(initialData.data || '');
+      setTaskTime(initialData.hora || '');
+      setTaskRecurrence(initialData.recorrencia || 'none');
+      setBulkWeight(initialData.peso || 'media');
+    } else if (isOpen && !initialData) {
+      setTaskText('');
+      setTaskResp('');
+      setTaskDate('');
+      setTaskTime('');
+      setTaskRecurrence('none');
+      setBulkWeight('media');
+    }
+  }, [isOpen, initialData]);
 
   const filteredStores = useMemo(() => {
     return stores.filter(s => {

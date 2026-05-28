@@ -30,8 +30,8 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
     const [liveStatus, setLiveStatus] = useState({});
     const [feedFilter, setFeedFilter] = useState('all');
     
-    // NOVO ESTADO: Filtro Global do Radar (Padrão: Vazio = Todas as Tarefas)
-    const [radarFilter, setRadarFilter] = useState('');
+    // ATUALIZADO: Filtro Global do Radar agora inicia com o seu nome (Meu Foco)
+    const [radarFilter, setRadarFilter] = useState(myName);
     
     useEffect(() => {
         const unsubFocus = onSnapshot(doc(db, "settings", "atividades_equipe"), (docSnap) => {
@@ -249,7 +249,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     return resp === '';
                 }
 
-                // Se filtrou por um nome específico (ex: "Jonas", "Maria")
+                // Se filtrou por um nome específico
                 return resp === filterTarget || 
                        (resp !== '' && filterTarget !== '' && (resp.includes(filterTarget) || filterTarget.includes(resp)));
             });
@@ -257,7 +257,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
 
         return filteredItems.sort((a, b) => a.timeDiff - b.timeDiff);
 
-    }, [stores, radarFilter, liveStatus]); // O myName foi removido como dependência fixa aqui, dependemos apenas do radarFilter
+    }, [stores, radarFilter, liveStatus]);
     
     const visibleLogs = useMemo(() => {
         return allLogs
@@ -286,7 +286,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                             <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">{deadlinesData.length}</span>
                         </h3>
                         
-                        {/* NOVO FILTRO GLOBAL NO RADAR */}
+                        {/* ATUALIZADO: Dropdown reordenado para dar prioridade ao 'Meu Foco' */}
                         <div className="flex w-full sm:w-auto">
                             <select
                                 value={radarFilter}
@@ -294,8 +294,8 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                 className="w-full sm:w-auto bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-xs font-bold text-white outline-none focus:border-indigo-500 cursor-pointer shadow-sm transition-colors"
                                 title="Filtrar Radar por Responsável"
                             >
-                                <option value="">🌍 Visão Global (Todas)</option>
                                 <option value={myName}>🎯 Meu Foco ({myName})</option>
+                                <option value="">🌍 Visão Global (Todas)</option>
                                 <option value="unassigned">👻 Sem Responsável</option>
                                 {teamNames.filter(name => name !== myName).length > 0 && (
                                     <optgroup label="Outros Membros da Equipe">
@@ -443,7 +443,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     )}
                 </div>
 
-                {/* 2. TIMELINE MOVIDA PARA CÁ */}
+                {/* 2. TIMELINE */}
                 <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col max-h-[400px]">
                     <div className="flex justify-between items-center mb-6 border-b border-gray-700 pb-4 shrink-0">
                         <h3 className="text-base font-bold tracking-wide text-gray-300 uppercase flex items-center gap-2">
@@ -451,7 +451,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                             Timeline <span className="text-xs bg-gray-700 text-gray-300 px-2.5 py-0.5 rounded-full">{visibleLogs.length}</span>
                         </h3>
                         <div className="flex items-center gap-2">
-                            <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 hidden sm:flex">
+                            <div className="hidden sm:flex bg-gray-900 rounded-lg p-1 border border-gray-700">
                                 <button onClick={() => setFeedFilter('all')} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'all' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tudo</button>
                                 <button onClick={() => setFeedFilter('tasks')} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
                             </div>
@@ -490,7 +490,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     </div>
                 </div>
 
-                {/* 3. RANKING DE EXECUÇÃO
+                {/* 3. RANKING DE EXECUÇÃO */}
                 <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
                     <div className="mb-4 border-b border-gray-700 pb-4">
                         <h3 className="text-lg font-bold tracking-wide text-amber-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
@@ -550,7 +550,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         <strong>Agilidade:</strong> Rápida (+5) • Na média (0) • Lenta (-5) comparado ao histórico geral.
                     </div>
                 </div>
-                 */}
             </div>
         </div>
     );
