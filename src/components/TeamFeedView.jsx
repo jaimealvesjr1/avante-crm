@@ -6,6 +6,7 @@ import { toast } from 'react-hot-toast';
 
 export default function TeamFeedView({ currentUserData, user, stores, openTaskModal, teamMembers }) {
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
+    const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
     
     const isAdmin = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager' || currentUserData?.role === 'Analista';
 
@@ -28,7 +29,9 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
     const [feedClearedAt, setFeedClearedAt] = useState(() => Number(localStorage.getItem('avante_feed_cleared_at')) || 0);
     const [liveStatus, setLiveStatus] = useState({});
     const [feedFilter, setFeedFilter] = useState('all');
-    const [deadlineTab, setDeadlineTab] = useState('mine');
+    
+    // NOVO ESTADO: Filtro Global do Radar (Padrão: Vazio = Todas as Tarefas)
+    const [radarFilter, setRadarFilter] = useState('');
     
     useEffect(() => {
         const unsubFocus = onSnapshot(doc(db, "settings", "atividades_equipe"), (docSnap) => {
@@ -37,17 +40,14 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         return () => unsubFocus();
     }, []);
     
-    // 1. ATUALIZAÇÃO: Busca 100% blindada via ID
-    const handleOpenStoreById = (storeId) => {
-        const targetStore = stores.find(s => s.id === storeId);
+    const handleOpenStore = (storeName) => {
+        const targetStore = stores.find(s => s.store === storeName);
         if (targetStore && openTaskModal) openTaskModal(targetStore);
     };
     
     const now = new Date();
     const localToday = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-    
-    // 2. ATUALIZAÇÃO: Adicionado o storeId no log
-    const allLogs = stores.flatMap(s => (s.taskLogs || []).map(l => ({ ...l, storeName: s.store, clientName: s.client, storeId: s.id })));
+    const allLogs = stores.flatMap(s => (s.taskLogs || []).map(l => ({ ...l, storeName: s.store, clientName: s.client })));
     
     const rankingDiario = useMemo(() => {
         const stats = {};
@@ -233,26 +233,31 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
             }
         });
 
-        // CRUZAMENTO DE IDENTIDADE SIMPLIFICADO
-        const me = (myName || '').toLowerCase().trim();
+        // APLICAÇÃO DO NOVO FILTRO GLOBAL
+        let filteredItems = items;
+        
+        if (radarFilter !== '') {
+            const filterTarget = radarFilter.toLowerCase().trim();
 
-        const filteredItems = items.filter(item => {
-            let resp = (item.responsavel || '').toLowerCase().trim();
-            const termosGenericos = ['equipe', 'equipa', 'sem resp.', 'sem responsavel'];
-            if (termosGenericos.includes(resp)) resp = '';
+            filteredItems = items.filter(item => {
+                let resp = (item.responsavel || '').toLowerCase().trim();
+                const termosGenericos = ['equipe', 'equipa', 'sem resp.', 'sem responsavel'];
+                if (termosGenericos.includes(resp)) resp = '';
 
-            const isMyTask = resp !== '' && me !== '' && (resp === me || resp.includes(me) || me.includes(resp));
+                // Se filtrou por "sem responsável"
+                if (radarFilter === 'unassigned') {
+                    return resp === '';
+                }
 
-            if (deadlineTab === 'mine') {
-                return isMyTask; 
-            } else {
-                return !isMyTask; 
-            }
-        });
+                // Se filtrou por um nome específico (ex: "Jonas", "Maria")
+                return resp === filterTarget || 
+                       (resp !== '' && filterTarget !== '' && (resp.includes(filterTarget) || filterTarget.includes(resp)));
+            });
+        }
 
         return filteredItems.sort((a, b) => a.timeDiff - b.timeDiff);
 
-    }, [stores, myName, deadlineTab, liveStatus]);
+    }, [stores, radarFilter, liveStatus]); // O myName foi removido como dependência fixa aqui, dependemos apenas do radarFilter
     
     const visibleLogs = useMemo(() => {
         return allLogs
@@ -268,37 +273,42 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
             
+            {/* LADO ESQUERDO: Radar de Prazos (SLA) */}
             <div className="lg:col-span-2 flex flex-col gap-6">
                 
-                {/* RADAR DE PRAZOS (SLA) */}
-                <div className="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-lg relative overflow-hidden flex flex-col max-h-[500px]">
+                <div className="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-lg relative overflow-hidden flex flex-col flex-1 min-h-[600px] lg:h-[calc(100vh-120px)]">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-orange-500 to-blue-500"></div>
                     
-                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-5 border-b border-gray-700 pb-4 mt-2">
+                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-5 border-b border-gray-700 pb-4 mt-2 shrink-0">
                         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
                             <Clock size={18} className="text-indigo-400" />
-                            Radar de Prazos SLA
+                            Radar SLA
                             <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">{deadlinesData.length}</span>
                         </h3>
                         
-                        <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 w-full sm:w-auto">
-                            <button 
-                                onClick={() => setDeadlineTab('mine')} 
-                                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${deadlineTab === 'mine' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                        {/* NOVO FILTRO GLOBAL NO RADAR */}
+                        <div className="flex w-full sm:w-auto">
+                            <select
+                                value={radarFilter}
+                                onChange={(e) => setRadarFilter(e.target.value)}
+                                className="w-full sm:w-auto bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-xs font-bold text-white outline-none focus:border-indigo-500 cursor-pointer shadow-sm transition-colors"
+                                title="Filtrar Radar por Responsável"
                             >
-                                Meu Foco
-                            </button>
-                            <button 
-                                onClick={() => setDeadlineTab('all')} 
-                                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${deadlineTab === 'all' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                            >
-                                Global
-                            </button>
+                                <option value="">🌍 Visão Global (Todas)</option>
+                                <option value={myName}>🎯 Meu Foco ({myName})</option>
+                                <option value="unassigned">👻 Sem Responsável</option>
+                                {teamNames.filter(name => name !== myName).length > 0 && (
+                                    <optgroup label="Outros Membros da Equipe">
+                                        {teamNames.filter(name => name !== myName).map(name => (
+                                            <option key={name} value={name}>{name}</option>
+                                        ))}
+                                    </optgroup>
+                                )}
+                            </select>
                         </div>
                     </div>
 
-                    {/* Espaçamento extra do scroll consertado no passo anterior */}
-                    <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pr-2 pb-2 pt-2 pl-1">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2">
                         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
                             {deadlinesData.map(item => {
                                 const isOverdue = item.statusColor === 'red';
@@ -308,7 +318,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                 return (
                                     <div 
                                         key={item.id} 
-                                        onClick={() => handleOpenStoreById(item.storeId)} // <-- ATUALIZADO AQUI
+                                        onClick={() => handleOpenStore(item.storeName)}
                                         className={`relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${
                                             isOverdue ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50' : 
                                             isWarning ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20 hover:border-orange-500/50' : 
@@ -365,58 +375,12 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         )}
                     </div>
                 </div>
-
-                {/* TIMELINE */}
-                <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col flex-1 min-h-[50vh]">
-                    <div className="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
-                        <h3 className="text-lg font-bold tracking-wide text-gray-300 uppercase flex items-center gap-2">
-                            <SquareStack size={28}/>
-                            Timeline <span className="text-xs bg-gray-700 text-gray-300 px-2.5 py-0.5 rounded-full">{visibleLogs.length}</span>
-                        </h3>
-                        <div className="flex items-center gap-3">
-                            <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700">
-                                <button onClick={() => setFeedFilter('all')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${feedFilter === 'all' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tudo</button>
-                                <button onClick={() => setFeedFilter('tasks')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
-                            </div>
-                            {visibleLogs.length > 0 && (
-                                <button 
-                                    onClick={() => { 
-                                        setFeedClearedAt(Date.now()); 
-                                        localStorage.setItem('avante_feed_cleared_at', Date.now()); 
-                                        toast.success("Mural limpo!"); 
-                                    }} 
-                                    className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 font-bold px-4 py-2 border border-red-500/20 hover:border-red-500/40 rounded-lg transition-colors"
-                                >
-                                    Limpar
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto pr-3 space-y-4 custom-scrollbar border-l-2 border-gray-700/50 ml-2 pl-5">
-                        {visibleLogs.map(log => {
-                            const isTask = log.texto?.includes('✅ Tarefa concluída');
-                            return (
-                                <div key={log.id} onClick={() => handleOpenStoreById(log.storeId)} className="relative group cursor-pointer"> {/* <-- ATUALIZADO AQUI */}
-                                    <div className={`absolute -left-[27px] top-2 w-3 h-3 rounded-full border-[3px] border-gray-800 ${isTask ? 'bg-emerald-500' : 'bg-indigo-500'}`}></div>
-                                    <div className={`p-4 rounded-xl border flex flex-col gap-1.5 transition-colors hover:brightness-125 ${isTask ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-gray-900/50 border-gray-700'}`}>
-                                        <div className="flex justify-between items-start">
-                                            <div className="text-xs font-black text-indigo-400 uppercase">{log.clientName} <span className="text-gray-500 mx-1.5">•</span> {log.storeName}</div>
-                                            <span className="text-[11px] text-gray-500 font-medium">{log.data}</span>
-                                        </div>
-                                        <p className={`text-base leading-relaxed ${isTask ? 'text-emerald-100 font-medium' : 'text-gray-300'}`}>{log.texto}</p>
-                                        <p className="text-xs text-gray-500 mt-1">Por: <span className="text-gray-400 font-bold">{log.author}</span></p>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
             </div>
 
+            {/* COLUNA DIREITA: Trabalhando Agora -> Timeline -> Ranking */}
             <div className="lg:col-span-1 flex flex-col gap-6">
 
-                {/* RADAR DA EQUIPE */}
+                {/* 1. RADAR DA EQUIPE (Trabalhando Agora) */}
                 <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg">
                     <h3 className="text-lg font-bold tracking-wide text-emerald-400 uppercase flex items-center gap-2 mb-5">
                         <Activity size={18} /> trabalhando agora
@@ -435,7 +399,8 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                     <div key={userName} 
                                         onClick={() => {
                                             if (data.storeId) {
-                                                handleOpenStoreById(data.storeId); // <-- ATUALIZADO AQUI
+                                                const targetStore = stores.find(s => s.id === data.storeId);
+                                                if (targetStore && openTaskModal) openTaskModal(targetStore);
                                             }
                                         }}
                                         className={`bg-gray-900/80 p-4 rounded-xl border flex items-center gap-4 relative overflow-hidden cursor-pointer transition-colors ${
@@ -478,7 +443,54 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     )}
                 </div>
 
-                {/* RANKING DE EXECUÇÃO
+                {/* 2. TIMELINE MOVIDA PARA CÁ */}
+                <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col max-h-[400px]">
+                    <div className="flex justify-between items-center mb-6 border-b border-gray-700 pb-4 shrink-0">
+                        <h3 className="text-base font-bold tracking-wide text-gray-300 uppercase flex items-center gap-2">
+                            <SquareStack size={20}/>
+                            Timeline <span className="text-xs bg-gray-700 text-gray-300 px-2.5 py-0.5 rounded-full">{visibleLogs.length}</span>
+                        </h3>
+                        <div className="flex items-center gap-2">
+                            <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 hidden sm:flex">
+                                <button onClick={() => setFeedFilter('all')} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'all' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tudo</button>
+                                <button onClick={() => setFeedFilter('tasks')} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
+                            </div>
+                            {visibleLogs.length > 0 && (
+                                <button 
+                                    onClick={() => { 
+                                        setFeedClearedAt(Date.now()); 
+                                        localStorage.setItem('avante_feed_cleared_at', Date.now()); 
+                                        toast.success("Mural limpo!"); 
+                                    }} 
+                                    className="text-[10px] bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 font-bold px-3 py-1.5 border border-red-500/20 hover:border-red-500/40 rounded-lg transition-colors"
+                                >
+                                    Limpar
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto pr-3 space-y-4 custom-scrollbar border-l-2 border-gray-700/50 ml-2 pl-5 pb-2">
+                        {visibleLogs.map(log => {
+                            const isTask = log.texto?.includes('✅ Tarefa concluída');
+                            return (
+                                <div key={log.id} onClick={() => handleOpenStore(log.storeName)} className="relative group cursor-pointer">
+                                    <div className={`absolute -left-[27px] top-2 w-3 h-3 rounded-full border-[3px] border-gray-800 ${isTask ? 'bg-emerald-500' : 'bg-indigo-500'}`}></div>
+                                    <div className={`p-4 rounded-xl border flex flex-col gap-1.5 transition-colors hover:brightness-125 ${isTask ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-gray-900/50 border-gray-700'}`}>
+                                        <div className="flex justify-between items-start">
+                                            <div className="text-xs font-black text-indigo-400 uppercase truncate pr-2">{log.clientName} <span className="text-gray-500 mx-1.5">•</span> {log.storeName}</div>
+                                            <span className="text-[10px] text-gray-500 font-medium shrink-0">{log.data}</span>
+                                        </div>
+                                        <p className={`text-sm leading-relaxed ${isTask ? 'text-emerald-100 font-medium' : 'text-gray-300'}`}>{log.texto}</p>
+                                        <p className="text-[10px] text-gray-500 mt-1">Por: <span className="text-gray-400 font-bold">{log.author}</span></p>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* 3. RANKING DE EXECUÇÃO
                 <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
                     <div className="mb-4 border-b border-gray-700 pb-4">
                         <h3 className="text-lg font-bold tracking-wide text-amber-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
@@ -538,8 +550,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         <strong>Agilidade:</strong> Rápida (+5) • Na média (0) • Lenta (-5) comparado ao histórico geral.
                     </div>
                 </div>
-                */}
-
+                 */}
             </div>
         </div>
     );
