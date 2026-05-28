@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus }) {
@@ -9,8 +9,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [newTaskDate, setNewTaskDate] = useState('');
   const [newTaskTime, setNewTaskTime] = useState('');
   const [newTaskRecurrence, setNewTaskRecurrence] = useState('none');
-  const [newTaskPriority, setNewTaskPriority] = useState('media');
-  const [newTaskWeight, setNewTaskWeight] = useState('media');
+  const [newTaskWeight, setNewTaskWeight] = useState('media'); // Apenas a complexidade foi mantida
 
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome;
   const isVisitante = currentUserData?.role === 'Visitante';
@@ -181,8 +180,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       data: newTaskDate, 
       hora: newTaskTime, 
       recorrencia: newTaskRecurrence,
-      peso: newTaskWeight,
-      prioridade: newTaskPriority
+      peso: newTaskWeight
+      // Prioridade foi removida daqui
     };
     const updatedChecklists = [...(store.checklists || []), item];
     const newNextAccess = autoScheduleStore(updatedChecklists);
@@ -507,7 +506,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     const isEditing = editingTaskId === item.id;
                     const canEditTask = isManager || item.criadoPor === username;
                     
-                    // 1. NOVA LÓGICA DE SLA PARA AS CORES (Igual ao Radar do Feed)
+                    // NOVA LÓGICA DE SLA PARA AS CORES (Igual ao Radar do Feed)
                     const rightNow = new Date();
                     let isOverdue = false;
                     let isWarning = false;
@@ -526,7 +525,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                         }
                     }
 
-                    // 2. NOVAS CORES E HOVER (Apenas alteração de cor da borda)
+                    // NOVAS CORES E HOVER (Apenas alteração de cor da borda)
                     const taskStyles = item.feita 
                         ? 'bg-gray-800/40 border-gray-800 hover:border-gray-600 border-l-4 border-l-gray-700' 
                         : isOverdue
@@ -538,27 +537,63 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     return (
                       <div 
                         key={item.id} 
-                        // 3. REMOVIDO O 'transition-all', ADICIONADO 'transition-colors duration-200'
                         className={`flex flex-col p-2.5 rounded-r-lg group shadow-sm transition-colors duration-200 ${taskStyles}`}
                       >
                         {isEditing ? (
                           <div className="flex flex-col gap-2 w-full animate-in fade-in duration-200">
                             <div className="flex gap-2">
-                              <input type="text" value={editTaskData.texto} onChange={e => setEditTaskData({...editTaskData, texto: e.target.value})} className="flex-1 bg-gray-900 border border-gray-600 rounded p-1.5 text-sm text-white outline-none focus:border-indigo-500" />
-                              <select value={editTaskData.responsavel} onChange={e => setEditTaskData({...editTaskData, responsavel: e.target.value})} className="w-28 bg-gray-900 border border-gray-600 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
+                              <input 
+                                type="text" 
+                                value={editTaskData.texto} 
+                                onChange={e => setEditTaskData({...editTaskData, texto: e.target.value})} 
+                                className="flex-1 bg-gray-900 border border-gray-600 rounded p-1.5 text-sm text-white outline-none focus:border-indigo-500" 
+                              />
+                              <select 
+                                value={editTaskData.responsavel} 
+                                onChange={e => setEditTaskData({...editTaskData, responsavel: e.target.value})} 
+                                className="w-28 bg-gray-900 border border-gray-600 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
+                              >
                                 <option value="">Sem Resp.</option>
                                 {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
                               </select>
                             </div>
+                            
                             <div className="flex flex-wrap gap-2 items-center">
-                              <input type="date" value={editTaskData.data} onChange={(e) => setEditTaskData({...editTaskData, data: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
-                              <input type="time" value={editTaskData.hora} onChange={(e) => setEditTaskData({...editTaskData, hora: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" />
-                              <select value={editTaskData.recorrencia} onChange={(e) => setEditTaskData({...editTaskData, recorrencia: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none cursor-pointer">
+                              <input 
+                                type="date" 
+                                value={editTaskData.data} 
+                                onChange={(e) => setEditTaskData({...editTaskData, data: e.target.value})} 
+                                className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" 
+                                title="Data Limite (SLA)" 
+                              />
+                              <input 
+                                type="time" 
+                                value={editTaskData.hora} 
+                                onChange={(e) => setEditTaskData({...editTaskData, hora: e.target.value})} 
+                                className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" 
+                                title="Horário Limite (SLA)" 
+                              />
+                              <select 
+                                value={editTaskData.recorrencia} 
+                                onChange={(e) => setEditTaskData({...editTaskData, recorrencia: e.target.value})} 
+                                className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none cursor-pointer"
+                              >
                                 <option value="none">S/ Repetição</option>
                                 <option value="daily">🔁 Diário</option>
                                 <option value="weekly">🔁 Semanal</option>
                                 <option value="monthly">🔁 Mensal</option>
                               </select>
+                              
+                              <select 
+                                value={editTaskData.peso || 'media'} 
+                                onChange={(e) => setEditTaskData({...editTaskData, peso: e.target.value})} 
+                                className="bg-gray-900 border border-gray-600 rounded p-1 text-xs text-white outline-none cursor-pointer"
+                              >
+                                <option value="baixa">🟢 Rápida</option>
+                                <option value="media">🟡 Média</option>
+                                <option value="alta">🔴 Demorada</option>
+                              </select>
+
                               <div className="flex gap-1 ml-auto">
                                 <button type="button" onClick={() => setEditingTaskId(null)} className="p-1 bg-gray-700 hover:bg-gray-600 text-white rounded"><X size={14}/></button>
                                 <button type="button" onClick={() => saveTaskEdit(item.id)} className="p-1 bg-green-600 hover:bg-green-500 text-white rounded"><Check size={14}/></button>
@@ -631,26 +666,21 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   </select>
                 </div>
                 
-                <div className="flex flex-wrap gap-2 items-center">
-                  <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Data da Tarefa" />
-                  <input type="time" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Hora" />
+                {/* Aviso para o usuário não esquecer que Data/Hora são SLA */}
+                <div className="w-full flex items-center gap-1.5 mt-1">
+                    <AlertCircle size={12} className="text-amber-500" />
+                    <span className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Atenção: Defina a data e o horário limite para concluir a tarefa</span>
+                </div>
 
-                  <select 
-                    value={newTaskPriority} 
-                    onChange={e => setNewTaskPriority(e.target.value)} 
-                    className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
-                    title="Urgência (Define a cor nos radares)"
-                  >
-                    <option value="baixa">🟡 Baixa Urgência</option>
-                    <option value="media">🟠 Média Urgência</option>
-                    <option value="alta">🔴 Alta Urgência</option>
-                  </select>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Data Limite para Conclusão" />
+                  <input type="time" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Horário Limite" />
 
                   <select 
                     value={newTaskWeight} 
                     onChange={e => setNewTaskWeight(e.target.value)} 
                     className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
-                    title="Tempo Médio Estimado"
+                    title="Tempo Médio Estimado da Tarefa"
                   >
                     <option value="baixa">🟢 Tarefa Rápida</option>
                     <option value="media">🟡 Tarefa Média</option>
@@ -685,7 +715,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   {store.taskLogs?.slice().reverse().map((log, i) => {
                     const isMine = log.author === username; 
                     
-                    // --- ATUALIZAÇÃO SINCRO: BUSCA DADOS DO AUTOR NA LISTA DE MEMBROS ---
                     const memberData = teamMembers?.find(m => m.nomeCompleto === log.author || m.nome === log.author);
                     const authorColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
                     const authorPhoto = memberData?.avatarUrl || null;

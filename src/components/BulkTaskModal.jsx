@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Search, CopyPlus, CheckSquare, Square, Eraser } from 'lucide-react';
+import { X, Search, CopyPlus, CheckSquare, Square, Eraser, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMembers }) {
@@ -9,8 +9,7 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
   const [taskDate, setTaskDate] = useState('');
   const [taskTime, setTaskTime] = useState('');
   const [taskRecurrence, setTaskRecurrence] = useState('none');
-  const [bulkPriority, setBulkPriority] = useState('media');
-  const [bulkWeight, setBulkWeight] = useState('media');
+  const [bulkWeight, setBulkWeight] = useState('media'); // Mantemos apenas a Complexidade
 
   const [searchTerm, setSearchTerm] = useState('');
   const [clientFilter, setClientFilter] = useState('');
@@ -62,8 +61,8 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
       data: taskDate,
       hora: taskTime,
       recorrencia: taskRecurrence,
-      peso: bulkWeight,
-      prioridade: bulkPriority
+      peso: bulkWeight
+      // Prioridade removida, o sistema agora usa SLA
     });
     
     setTaskText('');
@@ -71,7 +70,6 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
     setTaskDate('');
     setTaskTime('');
     setTaskRecurrence('none');
-    setBulkPriority('media');
     setBulkWeight('media');
     setSelectedStores([]);
     setSearchTerm('');
@@ -118,6 +116,12 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               </select>
             </div>
 
+            {/* Aviso de SLA para clareza do usuário */}
+            <div className="flex items-center gap-1.5 mt-2 mb-1">
+                <AlertCircle size={12} className="text-amber-500" />
+                <span className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Atenção: A Data e Hora definem o Prazo Limite (SLA)</span>
+            </div>
+
             {/* LINHA 2: Data, Hora e Recorrência */}
             <div className="flex flex-col md:flex-row gap-3">
               <input 
@@ -125,14 +129,14 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
                 value={taskDate} 
                 onChange={(e) => setTaskDate(e.target.value)} 
                 className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" 
-                title="Data da Tarefa" 
+                title="Data Limite para Conclusão" 
               />
               <input 
                 type="time" 
                 value={taskTime} 
                 onChange={(e) => setTaskTime(e.target.value)} 
                 className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" 
-                title="Hora" 
+                title="Horário Limite" 
               />
               <select 
                 value={taskRecurrence} 
@@ -146,24 +150,13 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               </select>
             </div>
 
-            {/* LINHA 3: Urgência, Complexidade e Botão Limpar */}
+            {/* LINHA 3: Complexidade e Botão Limpar */}
             <div className="flex flex-col md:flex-row gap-3">
-              <select 
-                value={bulkPriority} 
-                onChange={e => setBulkPriority(e.target.value)} 
-                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
-                title="Urgência (Define a cor nos radares)"
-              >
-                <option value="baixa">🟡 Baixa Urgência</option>
-                <option value="media">🟠 Média Urgência</option>
-                <option value="alta">🔴 Alta Urgência</option>
-              </select>
-
               <select 
                 value={bulkWeight} 
                 onChange={e => setBulkWeight(e.target.value)} 
                 className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
-                title="Tempo Médio Estimado"
+                title="Tempo Médio Estimado da Tarefa"
               >
                 <option value="baixa">🟢 Tarefa Rápida</option>
                 <option value="media">🟡 Tarefa Média</option>
@@ -171,7 +164,7 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               </select>
               
               <button 
-                onClick={() => { setTaskDate(''); setTaskTime(''); setTaskRecurrence('none'); setBulkPriority('media'); setBulkWeight('media'); }} 
+                onClick={() => { setTaskDate(''); setTaskTime(''); setTaskRecurrence('none'); setBulkWeight('media'); }} 
                 className="bg-gray-800 hover:bg-gray-700 text-gray-400 p-2.5 rounded-lg transition-colors border border-gray-600 flex items-center justify-center gap-2 md:w-auto px-4 w-full md:flex-none shrink-0" 
                 title="Restaurar Configurações Padrão"
               >

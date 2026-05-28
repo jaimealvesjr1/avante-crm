@@ -160,11 +160,10 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
 
         stores.forEach(store => {
             const isBeingWorkedOn = Object.values(liveStatus).some(status => status.storeId === store.id && !status.texto?.includes('⏸️'));
-            let hasPendingTasks = false;
 
             if (store.checklists && store.checklists.length > 0) {
                 store.checklists.filter(t => !t.feita).forEach(task => {
-                    hasPendingTasks = true;
+                    // Cálculo do tempo limite (SLA)
                     let timeDiff = null; 
                     let statusColor = 'blue'; 
                     let timeLabel = 'Sem Prazo';
@@ -174,22 +173,20 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         const deadlineDate = new Date(`${task.data}T${timeString}:00`);
                         timeDiff = deadlineDate.getTime() - rightNow.getTime();
                         
-                        // Cálculo preciso de Horas e Minutos
                         const isPast = timeDiff < 0;
                         const absDiff = Math.abs(timeDiff);
                         const hours = Math.floor(absDiff / (1000 * 60 * 60));
                         const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
 
                         if (isPast) {
-                            statusColor = 'red'; 
+                            statusColor = 'red';
                             timeLabel = `Atraso: ${hours}h ${minutes}m`;
                         } else if (hours < 24) {
-                            statusColor = 'orange'; 
+                            statusColor = 'orange';
                             timeLabel = `Vence em: ${hours}h ${minutes}m`;
                         } else {
-                            const days = Math.floor(hours / 24);
-                            statusColor = 'blue'; 
-                            timeLabel = `Vence em: ${days} dias`;
+                            statusColor = 'blue';
+                            timeLabel = `Vence em: ${Math.floor(hours / 24)} dias`;
                         }
                     }
 
@@ -208,50 +205,37 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     });
                 });
             }
-
-            if (!hasPendingTasks && store.dataProximoAcesso) {
-                const nextAccessDate = new Date(store.dataProximoAcesso);
-                const timeDiff = nextAccessDate.getTime() - rightNow.getTime();
-                
-                // Cálculo preciso para Rotinas
-                const isPast = timeDiff < 0;
-                const absDiff = Math.abs(timeDiff);
-                const hours = Math.floor(absDiff / (1000 * 60 * 60));
-                const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
-
-                if (hours <= 24 || isPast) {
-                    items.push({
-                        id: `routine-${store.id}`,
-                        storeId: store.id,
-                        storeName: store.store,
-                        clientName: store.client,
-                        type: 'routine',
-                        title: 'Visita de Rotina',
-                        responsavel: store.responsavel || '',
-                        statusColor: isPast ? 'red' : 'orange',
-                        timeLabel: isPast ? `Atraso: ${hours}h ${minutes}m` : `Vence em: ${hours}h ${minutes}m`,
-                        timeDiff: timeDiff,
-                        isBeingWorkedOn
-                    });
-                }
-            }
         });
 
-        // 3. FILTRO BLINDADO: Apenas minhas tarefas ou vazias
-        let filteredItems = items;
-        if (deadlineTab === 'mine') {
-            filteredItems = items.filter(item => {
-                // Remove espaços e transforma tudo em letras minúsculas para evitar erros de digitação
-                const resp = (item.responsavel || '').toLowerCase().trim();
-                const me = (myName || '').toLowerCase().trim();
-                
-                // Só passa se o responsável for EXATAMENTE o usuário atual OU se estiver completamente vazio.
-                // Adicionamos 'sem resp.' caso algum campo antigo tenha salvo essa string.
-                return resp === me || resp === '' || resp === 'sem resp.'; 
-            });
-        }
+        // ========================================================================
+        // FILTRAGEM PRECISA PARA AS ABAS
+        // ========================================================================
+        const me = myName.toLowerCase().trim();
 
-        return filteredItems.sort((a, b) => a.timeDiff - b.timeDiff);
+        if (deadlineTab === 'mine') {
+            return items.filter(item => {
+                // Normaliza o responsável: limpa espaços e trata termos genéricos como vazio
+                let resp = (item.responsavel || '').toLowerCase().trim();
+                
+                // Lista de termos que devem ser considerados como "Sem responsável"
+                const termosGenericos = ['equipe', 'equipa', 'sem resp.', 'sem responsavel'];
+                if (termosGenericos.includes(resp)) resp = '';
+
+                // A regra de ouro: é meu? OU está vazio?
+                return resp === me || resp === '';
+            }).sort((a, b) => a.timeDiff - b.timeDiff);
+        } else {
+            // Aba "Visão Global": Apenas o que NÃO é meu E que possui um responsável definido
+            return items.filter(item => {
+                let resp = (item.responsavel || '').toLowerCase().trim();
+                const termosGenericos = ['equipe', 'equipa', 'sem resp.', 'sem responsavel'];
+                
+                // Se for termo genérico, tratamos como vazio para excluir da visão global (ou manter se quiser ver o que está sem dono)
+                if (termosGenericos.includes(resp)) resp = '';
+
+                return resp !== me && resp !== '';
+            }).sort((a, b) => a.timeDiff - b.timeDiff);
+        }
 
     }, [stores, myName, deadlineTab, liveStatus]);
     
@@ -287,7 +271,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                 onClick={() => setDeadlineTab('mine')} 
                                 className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${deadlineTab === 'mine' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
                             >
-                                Meu Foco / Livres
+                                Meu Foco
                             </button>
                             <button 
                                 onClick={() => setDeadlineTab('all')} 
