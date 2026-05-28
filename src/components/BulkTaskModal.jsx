@@ -9,7 +9,7 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
   const [taskDate, setTaskDate] = useState('');
   const [taskTime, setTaskTime] = useState('');
   const [taskRecurrence, setTaskRecurrence] = useState('none');
-  const [bulkWeight, setBulkWeight] = useState('media'); // Mantemos apenas a Complexidade
+  const [bulkWeight, setBulkWeight] = useState('media');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [clientFilter, setClientFilter] = useState('');
@@ -57,12 +57,12 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
 
     onSave(selectedStores, {
       text: taskText,
+      responsavel: taskResp,
       resp: taskResp,
       data: taskDate,
       hora: taskTime,
       recorrencia: taskRecurrence,
       peso: bulkWeight
-      // Prioridade removida, o sistema agora usa SLA
     });
     
     setTaskText('');
@@ -97,7 +97,6 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
           <div className="mb-6 bg-gray-900/50 p-4 rounded-xl border border-gray-700 space-y-3">
             <h4 className="text-xs font-bold text-gray-400 uppercase">1. Configurações da Tarefa</h4>
             
-            {/* LINHA 1: Texto e Responsável */}
             <div className="flex flex-col md:flex-row gap-3">
               <input 
                 type="text" 
@@ -116,13 +115,11 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               </select>
             </div>
 
-            {/* Aviso de SLA para clareza do usuário */}
             <div className="flex items-center gap-1.5 mt-2 mb-1">
                 <AlertCircle size={12} className="text-amber-500" />
                 <span className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Atenção: A Data e Hora definem o Prazo Limite (SLA)</span>
             </div>
 
-            {/* LINHA 2: Data, Hora e Recorrência */}
             <div className="flex flex-col md:flex-row gap-3">
               <input 
                 type="date" 
@@ -150,7 +147,6 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               </select>
             </div>
 
-            {/* LINHA 3: Complexidade e Botão Limpar */}
             <div className="flex flex-col md:flex-row gap-3">
               <select 
                 value={bulkWeight} 

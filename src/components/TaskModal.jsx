@@ -212,7 +212,14 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
   const startEditingTask = (task) => {
     setEditingTaskId(task.id);
-    setEditTaskData({ texto: task.texto, responsavel: task.responsavel || '', data: task.data || '', hora: task.hora || '', recorrencia: task.recorrencia || 'none' });
+    setEditTaskData({ 
+        texto: task.texto, 
+        responsavel: task.responsavel || task.resp || '', 
+        data: task.data || '', 
+        hora: task.hora || '', 
+        recorrencia: task.recorrencia || 'none',
+        peso: task.peso || 'media'
+    });
   };
 
   const saveTaskEdit = (taskId) => {
@@ -620,7 +627,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                                       🔁 {item.recorrencia === 'daily' ? 'Diário' : item.recorrencia === 'weekly' ? 'Semanal' : 'Mensal'}
                                     </span>
                                   )}
-                                  {item.responsavel && <span className="text-[9px] text-gray-400 border border-gray-600 px-1.5 py-0.5 rounded shadow-sm">Resp: {item.responsavel}</span>}
+                                  {(item.responsavel || item.resp) && <span className="text-[9px] text-gray-400 border border-gray-600 px-1.5 py-0.5 rounded shadow-sm">Resp: {item.responsavel || item.resp}</span>}
                                   {item.criadoPor && <span className="text-[9px] text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded shadow-sm">Por: {item.criadoPor}</span>}
                                 </div>
                               </div>

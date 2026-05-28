@@ -5,7 +5,6 @@ import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
 
 export default function TeamFeedView({ currentUserData, user, stores, openTaskModal, teamMembers }) {
-    // 1. Definição do usuário logado
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
     
     const isAdmin = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager' || currentUserData?.role === 'Analista';
@@ -29,8 +28,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
     const [feedClearedAt, setFeedClearedAt] = useState(() => Number(localStorage.getItem('avante_feed_cleared_at')) || 0);
     const [liveStatus, setLiveStatus] = useState({});
     const [feedFilter, setFeedFilter] = useState('all');
-    
-    // Estado que controla a aba ativa no Radar SLA
     const [deadlineTab, setDeadlineTab] = useState('mine');
     
     useEffect(() => {
@@ -49,7 +46,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
     const localToday = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     const allLogs = stores.flatMap(s => (s.taskLogs || []).map(l => ({ ...l, storeName: s.store, clientName: s.client })));
     
-    // Lógica do Ranking (Intacta)
     const rankingDiario = useMemo(() => {
         const stats = {};
         const localTodayStr = localToday; 
@@ -153,7 +149,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         }).sort((a, b) => b.points - a.points);
     }, [stores, localToday]);
 
-    // MOTOR DO RADAR SLA ATUALIZADO (Com horas/minutos precisos)
     const deadlinesData = useMemo(() => {
         const items = [];
         const rightNow = new Date();
@@ -161,9 +156,11 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
         stores.forEach(store => {
             const isBeingWorkedOn = Object.values(liveStatus).some(status => status.storeId === store.id && !status.texto?.includes('⏸️'));
 
+            let hasPendingTasks = false;
+
             if (store.checklists && store.checklists.length > 0) {
                 store.checklists.filter(t => !t.feita).forEach(task => {
-                    // Cálculo do tempo limite (SLA)
+                    hasPendingTasks = true;
                     let timeDiff = null; 
                     let statusColor = 'blue'; 
                     let timeLabel = 'Sem Prazo';
@@ -197,7 +194,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         clientName: store.client,
                         type: 'task',
                         title: task.texto,
-                        responsavel: task.responsavel || '',
+                        responsavel: task.responsavel || task.resp || '',
                         statusColor,
                         timeLabel,
                         timeDiff: timeDiff !== null ? timeDiff : Infinity,
@@ -205,37 +202,61 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     });
                 });
             }
+
+            if (!hasPendingTasks && store.dataProximoAcesso) {
+                const nextAccessDate = new Date(store.dataProximoAcesso);
+                const timeDiff = nextAccessDate.getTime() - rightNow.getTime();
+                
+                const isPast = timeDiff < 0;
+                const absDiff = Math.abs(timeDiff);
+                const hours = Math.floor(absDiff / (1000 * 60 * 60));
+                const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
+
+                if (hours <= 24 || isPast) {
+                    items.push({
+                        id: `routine-${store.id}`,
+                        storeId: store.id,
+                        storeName: store.store,
+                        clientName: store.client,
+                        type: 'routine',
+                        title: 'Visita de Rotina',
+                        responsavel: store.responsavel || store.resp || '',
+                        statusColor: isPast ? 'red' : 'orange',
+                        timeLabel: isPast ? `Atraso: ${hours}h ${minutes}m` : `Vence em: ${hours}h ${minutes}m`,
+                        timeDiff: timeDiff,
+                        isBeingWorkedOn
+                    });
+                }
+            }
         });
 
-        // ========================================================================
-        // FILTRAGEM PRECISA PARA AS ABAS
-        // ========================================================================
-        const me = myName.toLowerCase().trim();
+        // CRUZAMENTO INTELIGENTE DE IDENTIDADE
+        const me = (myName || '').toLowerCase().trim();
 
-        if (deadlineTab === 'mine') {
-            return items.filter(item => {
-                // Normaliza o responsável: limpa espaços e trata termos genéricos como vazio
-                let resp = (item.responsavel || '').toLowerCase().trim();
-                
-                // Lista de termos que devem ser considerados como "Sem responsável"
-                const termosGenericos = ['equipe', 'equipa', 'sem resp.', 'sem responsavel'];
-                if (termosGenericos.includes(resp)) resp = '';
+        // 1. Filtramos as tarefas da lista
+        const filteredItems = items.filter(item => {
+            // Pegamos o responsável pela tarefa e deixamos em letras minúsculas
+            let resp = (item.responsavel || '').toLowerCase().trim();
+            
+            // 2. Se a tarefa foi assinada com um termo genérico, tratamos como "sem responsável"
+            const termosGenericos = ['equipe', 'equipa', 'sem resp.', 'sem responsavel'];
+            if (termosGenericos.includes(resp)) resp = '';
 
-                // A regra de ouro: é meu? OU está vazio?
-                return resp === me || resp === '';
-            }).sort((a, b) => a.timeDiff - b.timeDiff);
-        } else {
-            // Aba "Visão Global": Apenas o que NÃO é meu E que possui um responsável definido
-            return items.filter(item => {
-                let resp = (item.responsavel || '').toLowerCase().trim();
-                const termosGenericos = ['equipe', 'equipa', 'sem resp.', 'sem responsavel'];
-                
-                // Se for termo genérico, tratamos como vazio para excluir da visão global (ou manter se quiser ver o que está sem dono)
-                if (termosGenericos.includes(resp)) resp = '';
+            // 3. Documentação: A tarefa É MINHA apenas se tiver um responsável, eu estiver logado, e os nomes baterem.
+            const isMyTask = resp !== '' && me !== '' && (resp === me || resp.includes(me) || me.includes(resp));
 
-                return resp !== me && resp !== '';
-            }).sort((a, b) => a.timeDiff - b.timeDiff);
-        }
+            // 4. Documentação: Separação exata das abas
+            if (deadlineTab === 'mine') {
+                // MEU FOCO: Retorna ESTRITAMENTE as minhas tarefas
+                return isMyTask; 
+            } else {
+                // GLOBAL: Retorna tudo que NÃO é meu (tarefas de outros e tarefas vazias/sem dono)
+                return !isMyTask; 
+            }
+        });
+
+        // Retorna as tarefas filtradas e organizadas pelas mais urgentes (menor tempo primeiro)
+        return filteredItems.sort((a, b) => a.timeDiff - b.timeDiff);
 
     }, [stores, myName, deadlineTab, liveStatus]);
     
@@ -277,7 +298,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                 onClick={() => setDeadlineTab('all')} 
                                 className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${deadlineTab === 'all' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
                             >
-                                Visão Global
+                                Global
                             </button>
                         </div>
                     </div>
@@ -294,9 +315,9 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                         key={item.id} 
                                         onClick={() => handleOpenStore(item.storeName)}
                                         className={`relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${
-                                        isOverdue ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50' : 
-                                        isWarning ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20 hover:border-orange-500/50' : 
-                                        'bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40'
+                                            isOverdue ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50' : 
+                                            isWarning ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20 hover:border-orange-500/50' : 
+                                            'bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40'
                                         }`}
                                     >
                                         {item.isBeingWorkedOn && (
@@ -464,7 +485,7 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     )}
                 </div>
 
-                {/* RANKING DE EXECUÇÃO */}
+                {/* RANKING DE EXECUÇÃO
                 <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
                     <div className="mb-4 border-b border-gray-700 pb-4">
                         <h3 className="text-lg font-bold tracking-wide text-amber-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
@@ -524,6 +545,8 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         <strong>Agilidade:</strong> Rápida (+5) • Na média (0) • Lenta (-5) comparado ao histórico geral.
                     </div>
                 </div>
+                */}
+
             </div>
         </div>
     );
