@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, Bell, Clock, CheckCircle, AlertCircle, SquareStack, Play, Search, CalendarClock } from 'lucide-react';
+import { Activity, Bell, Clock, CheckCircle, AlertCircle, SquareStack, Play, Search, CalendarClock, X } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
@@ -25,12 +25,56 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
             }
         }
     };
+
+    const handleDeleteFeedLog = async (e, storeName, logId) => {
+        e.stopPropagation(); 
+        if (!window.confirm("Deseja realmente apagar esta notificação do feed?")) return;
+
+        const targetStore = stores.find(s => s.store === storeName);
+        if (targetStore) {
+            try {
+                const updatedLogs = (targetStore.taskLogs || []).filter(l => l.id !== logId);
+                const storeRef = doc(db, "stores", targetStore.id.toString());
+                await updateDoc(storeRef, { taskLogs: updatedLogs });
+                toast.success("Notificação apagada com sucesso!");
+            } catch (error) {
+                console.error("Erro ao apagar log:", error);
+                toast.error("Erro ao apagar do banco de dados.");
+            }
+        }
+    };
+
+    const handleDeleteSpecificTask = async (e, storeId, taskId, isRoutine) => {
+        e.stopPropagation(); 
+        
+        if (isRoutine) {
+            if (!window.confirm("Remover o alerta de visita de rotina desta loja?")) return;
+            const storeRef = doc(db, "stores", storeId.toString());
+            await updateDoc(storeRef, { dataProximoAcesso: '' });
+            toast.success("Alerta de rotina removido!");
+            return;
+        }
+
+        if (!window.confirm("Deseja realmente forçar a exclusão desta tarefa específica?")) return;
+
+        const store = stores.find(s => s.id === storeId);
+        if (store) {
+            try {
+                const updatedChecklists = (store.checklists || []).filter(t => t.id !== taskId);
+                const storeRef = doc(db, "stores", storeId.toString());
+                await updateDoc(storeRef, { checklists: updatedChecklists });
+                toast.success("Tarefa fantasma removida com sucesso!");
+            } catch (error) {
+                console.error("Erro ao remover tarefa:", error);
+                toast.error("Erro ao remover a tarefa do banco.");
+            }
+        }
+    };
     
     const [feedClearedAt, setFeedClearedAt] = useState(() => Number(localStorage.getItem('avante_feed_cleared_at')) || 0);
     const [liveStatus, setLiveStatus] = useState({});
     const [feedFilter, setFeedFilter] = useState('all');
     
-    // ATUALIZADO: Filtro Global do Radar agora inicia com o seu nome (Meu Foco)
     const [radarFilter, setRadarFilter] = useState(myName);
     
     useEffect(() => {
@@ -191,7 +235,8 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     }
 
                     items.push({
-                        id: task.id,
+                        id: `task-${store.id}-${task.id}`,
+                        originalTaskId: task.id,
                         storeId: store.id,
                         storeName: store.store,
                         clientName: store.client,
@@ -233,7 +278,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
             }
         });
 
-        // APLICAÇÃO DO NOVO FILTRO GLOBAL
         let filteredItems = items;
         
         if (radarFilter !== '') {
@@ -244,12 +288,10 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                 const termosGenericos = ['equipe', 'equipa', 'sem resp.', 'sem responsavel'];
                 if (termosGenericos.includes(resp)) resp = '';
 
-                // Se filtrou por "sem responsável"
                 if (radarFilter === 'unassigned') {
                     return resp === '';
                 }
 
-                // Se filtrou por um nome específico
                 return resp === filterTarget || 
                        (resp !== '' && filterTarget !== '' && (resp.includes(filterTarget) || filterTarget.includes(resp)));
             });
@@ -259,11 +301,26 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
 
     }, [stores, radarFilter, liveStatus]);
     
-    const visibleLogs = allLogs.filter(log => {
-        if (feedFilter === 'tasks') return log.texto?.includes('✅') || log.texto?.includes('▶️') || log.texto?.includes('⏸️');
-        if (feedFilter === 'mentions') return log.texto?.includes(`@${myName}`); // Mostra apenas se tiver o @ do usuário logado
-        return true;
-    }).slice(0, 100);
+    // ATUALIZADO: Motor de filtro da Timeline recuperado e corrigido
+    const visibleLogs = useMemo(() => {
+        return allLogs
+            // 1. Aplica a limpeza do mural (oculta os mais antigos que a data do clique)
+            .filter(l => l.id > feedClearedAt)
+            // 2. Filtra pelo botão de abas selecionado
+            .filter(l => {
+                if (feedFilter === 'tasks') {
+                    return l.texto?.includes('✅') || l.texto?.includes('▶️') || l.texto?.includes('⏸️');
+                }
+                if (feedFilter === 'mine') {
+                    return l.author === myName;
+                }
+                return true; // 'all' retorna tudo
+            })
+            // 3. Ordena os eventos por cronologia (mais recente no topo)
+            .sort((a, b) => b.id - a.id)
+            // 4. Limita a quantidade para garantir o desempenho visual
+            .slice(0, 100);
+    }, [allLogs, feedClearedAt, feedFilter, myName]);
     
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
@@ -281,7 +338,6 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                             <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">{deadlinesData.length}</span>
                         </h3>
                         
-                        {/* ATUALIZADO: Dropdown reordenado para dar prioridade ao 'Meu Foco' */}
                         <div className="flex w-full sm:w-auto">
                             <select
                                 value={radarFilter}
@@ -314,12 +370,22 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                                     <div 
                                         key={item.id} 
                                         onClick={() => handleOpenStore(item.storeName)}
-                                        className={`relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${
+                                        className={`group relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${
                                             isOverdue ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50' : 
                                             isWarning ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20 hover:border-orange-500/50' : 
                                             'bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40'
                                         }`}
                                     >
+                                        {isAdmin && (
+                                            <button 
+                                                onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, item.type === 'routine')}
+                                                className="absolute top-2 right-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 p-1 rounded transition-colors opacity-0 group-hover:opacity-100 z-10"
+                                                title="Forçar exclusão desta tarefa"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        )}
+
                                         {item.isBeingWorkedOn && (
                                             <div className="absolute -top-1 -right-1 flex h-3 w-3">
                                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -440,60 +506,64 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
 
                 {/* 2. TIMELINE */}
                 <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col max-h-[400px]">
-                    <div className="flex justify-between items-center mb-6 border-b border-gray-700 pb-4 shrink-0">
-                        <h3 className="text-base font-bold tracking-wide text-gray-300 uppercase flex items-center gap-2">
-                            <SquareStack size={20}/>
-                            Timeline <span className="text-xs bg-gray-700 text-gray-300 px-2.5 py-0.5 rounded-full">{visibleLogs.length}</span>
-                        </h3>
-                        <div className="flex items-center gap-2">
-                            <div className="hidden sm:flex bg-gray-900 rounded-lg p-1 border border-gray-700">
-                                <button onClick={() => setFeedFilter('all')} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'all' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tudo</button>
-                                <button onClick={() => setFeedFilter('tasks')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
-                                <button onClick={() => setFeedFilter('mentions')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${feedFilter === 'mentions' ? 'bg-amber-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Menções</button>
-                            </div>
-                            {visibleLogs.length > 0 && (
-                                <button 
-                                    onClick={() => { 
-                                        setFeedClearedAt(Date.now()); 
-                                        localStorage.setItem('avante_feed_cleared_at', Date.now()); 
-                                        toast.success("Mural limpo!"); 
-                                    }} 
-                                    className="text-[10px] bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 font-bold px-3 py-1.5 border border-red-500/20 hover:border-red-500/40 rounded-lg transition-colors"
-                                >
-                                    Limpar
-                                </button>
-                            )}
+                    
+                    {/* ATUALIZADO: Cabeçalho Reestruturado e Responsivo */}
+                    <div className="flex flex-col gap-4 mb-5 border-b border-gray-700 pb-4 shrink-0">
+                        {/* Linha 1: Título e Botão Limpar */}
+                        <div className="flex justify-between items-center w-full">
+                            <h3 className="text-base font-bold tracking-wide text-gray-300 uppercase flex items-center gap-2">
+                                <SquareStack size={20}/>
+                                Timeline <span className="text-xs bg-gray-700 text-gray-300 px-2.5 py-0.5 rounded-full">{visibleLogs.length}</span>
+                            </h3>
+                            
+                            {/* Botão Limpar Estável e com desativação visual correta */}
+                            <button 
+                                onClick={() => { 
+                                    setFeedClearedAt(Date.now()); 
+                                    localStorage.setItem('avante_feed_cleared_at', Date.now()); 
+                                    toast.success("Mural limpo!"); 
+                                }} 
+                                disabled={visibleLogs.length === 0}
+                                className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all border shrink-0 ${
+                                    visibleLogs.length > 0
+                                        ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border-red-500/20 hover:border-red-500/40 cursor-pointer'
+                                        : 'bg-gray-800 text-gray-600 border-gray-700 opacity-50 cursor-not-allowed'
+                                }`}
+                                title="Limpar Histórico"
+                            >
+                                Limpar
+                            </button>
+                        </div>
+
+                        {/* Linha 2: Abas Dinâmicas de Filtro */}
+                        <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 w-full">
+                            <button onClick={() => setFeedFilter('all')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'all' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Tudo</button>
+                            <button onClick={() => setFeedFilter('tasks')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
+                            <button onClick={() => setFeedFilter('mine')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'mine' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Minhas</button>
                         </div>
                     </div>
                     
-                    <div className="flex-1 overflow-y-auto pr-3 space-y-4 custom-scrollbar border-l-2 border-gray-700/50 ml-2 pl-5 pb-2">
+                    <div className="flex-1 overflow-y-auto pr-3 custom-scrollbar border-l-2 border-gray-700/50 ml-2 pl-5 pb-2">
+                        {/* Interface de Estado Vazio */}
+                        {visibleLogs.length === 0 && (
+                            <div className="flex flex-col items-center justify-center p-6 mt-2 border border-dashed border-gray-700 rounded-xl bg-gray-900/30">
+                                <SquareStack size={24} className="text-gray-600 mb-2" />
+                                <p className="text-xs text-gray-500 font-medium text-center">Nenhum registro encontrado nesta visão.</p>
+                            </div>
+                        )}
+
                         {visibleLogs.map(log => {
-                            const isTask = log.texto?.includes('✅');
-                            const isMention = log.texto?.includes(`@${myName}`);
-
-                            const cardStyle = isMention 
-                                ? 'bg-amber-500/10 border-amber-500/40 hover:brightness-110 shadow-[0_0_15px_rgba(245,158,11,0.1)]'
-                                : isTask 
-                                    ? 'bg-emerald-500/5 border-emerald-500/20 hover:brightness-125' 
-                                    : 'bg-gray-900/50 border-gray-700 hover:brightness-125';
-
-                            const dotStyle = isMention ? 'bg-amber-400' : isTask ? 'bg-emerald-500' : 'bg-indigo-500';
-
+                            const isTask = log.texto?.includes('✅ Tarefa concluída');
                             return (
-                                <div key={log.id} onClick={() => handleOpenStore(log.storeName)} className="relative group cursor-pointer">
-                                    <div className={`absolute -left-[27px] top-2 w-3 h-3 rounded-full border-[3px] border-gray-800 ${dotStyle}`}></div>
-                                    
-                                    <div className={`p-4 rounded-xl border flex flex-col gap-1.5 transition-all ${cardStyle}`}>
+                                <div key={log.id} onClick={() => handleOpenStore(log.storeName)} className="relative group cursor-pointer mb-4 last:mb-0">
+                                    <div className={`absolute -left-[27px] top-2 w-3 h-3 rounded-full border-[3px] border-gray-800 ${isTask ? 'bg-emerald-500' : 'bg-indigo-500'}`}></div>
+                                    <div className={`p-4 rounded-xl border flex flex-col gap-1.5 transition-colors hover:brightness-125 ${isTask ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-gray-900/50 border-gray-700'}`}>
                                         <div className="flex justify-between items-start">
-                                            <div className="text-xs font-black text-indigo-400 uppercase">{log.clientName} <span className="text-gray-500 mx-1.5">•</span> {log.storeName}</div>
-                                            <span className="text-[11px] text-gray-500 font-medium">{log.data}</span>
+                                            <div className="text-xs font-black text-indigo-400 uppercase truncate pr-2">{log.clientName} <span className="text-gray-500 mx-1.5">•</span> {log.storeName}</div>
+                                            <span className="text-[10px] text-gray-500 font-medium shrink-0">{log.data}</span>
                                         </div>
-                                        
-                                        <p className={`text-base leading-relaxed ${isMention ? 'text-amber-100 font-bold' : isTask ? 'text-emerald-100 font-medium' : 'text-gray-300'}`}>
-                                            {log.texto}
-                                        </p>
-                                        
-                                        <p className="text-xs text-gray-500 mt-1">Por: <span className="text-gray-400 font-bold">{log.author}</span></p>
+                                        <p className={`text-sm leading-relaxed ${isTask ? 'text-emerald-100 font-medium' : 'text-gray-300'}`}>{log.texto}</p>
+                                        <p className="text-[10px] text-gray-500 mt-1">Por: <span className="text-gray-400 font-bold">{log.author}</span></p>
                                     </div>
                                 </div>
                             );
