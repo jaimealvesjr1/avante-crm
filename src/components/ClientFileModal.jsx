@@ -31,7 +31,13 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, handleSaveRetroactive
     const onSave = async () => {
         if (!day || rev === '') return toast.error("Dia e Faturamento são obrigatórios.");
         setIsSaving(true);
-        await handleSaveIndividualEntry(store.id, day, Number(String(rev).replace(',', '.')), Number(String(ads).replace(',', '.')) || 0, Number(ord) || 0, Number(uni) || 0);
+
+        const numRev = Number(String(rev).replace(/\./g, '').replace(',', '.'));
+        const numAds = Number(String(ads).replace(/\./g, '').replace(',', '.')) || 0;
+        const numOrd = Number(ord) || 0;
+        const numUni = Number(uni) || 0;
+
+        await handleSaveIndividualEntry(store.id, day, numRev, numAds, numOrd, numUni);
         setDay(prev => prev < 31 ? Number(prev) + 1 : 31);
         setIsSaving(false);
     };

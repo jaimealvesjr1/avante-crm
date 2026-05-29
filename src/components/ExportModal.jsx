@@ -1,117 +1,115 @@
-import React, { useState, useEffect } from 'react';
-import { X, FileJson, FileText, FileSpreadsheet, Download, Settings2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Download, FileJson, FileText, FileSpreadsheet, CalendarDays } from 'lucide-react';
 
 export default function ExportModal({ isOpen, onClose, onExport, filterCount }) {
-  const [selJson, setSelJson] = useState(false);
-  const [selPdf, setSelPdf] = useState(true);
-  const [selExcel, setSelExcel] = useState(true);
-  const [monthInput, setMonthInput] = useState('');
-  
-  // Novo estado para controlar a visibilidade da fatura no PDF
+  const [pdf, setPdf] = useState(true);
+  const [excel, setExcel] = useState(true);
+  const [json, setJson] = useState(false);
   const [showAgencyFee, setShowAgencyFee] = useState(true);
-
-  // Preenche uma sugestão de mês automaticamente (Ex: MAIO/2026)
-  useEffect(() => {
-    if (isOpen) {
-      const meses = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
-      const hoje = new Date();
-      setMonthInput(`${meses[hoje.getMonth()]}/${hoje.getFullYear()}`);
-      // Reseta a opção sempre que abrir
-      setShowAgencyFee(true); 
-    }
-  }, [isOpen]);
+  const [monthInput, setMonthInput] = useState('');
 
   if (!isOpen) return null;
 
+  // Traduz o input do calendário para o padrão oficial (Ex: "2026-04" -> "ABR/26")
+  const formatToBankMonth = (yyyyMm) => {
+      if (!yyyyMm) return '';
+      const [year, month] = yyyyMm.split('-');
+      const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+      return `${months[parseInt(month, 10) - 1]}/${year.slice(-2)}`;
+  };
+
   const handleExport = () => {
-    if ((selPdf || selExcel) && !monthInput.trim()) {
-      alert("Por favor, digite a competência (Ex: MAIO/2026) para gerar PDF/Excel.");
-      return;
+    if ((pdf || excel) && !monthInput) {
+        return alert("Por favor, selecione a Competência (Mês/Ano) para gerar os relatórios.");
     }
-    if (!selJson && !selPdf && !selExcel) {
-      alert("Selecione pelo menos um formato para exportar.");
-      return;
-    }
-    // Agora enviamos também a opção showAgencyFee para o App.jsx
-    onExport({ json: selJson, pdf: selPdf, excel: selExcel, monthInput, showAgencyFee });
+    
+    onExport({ 
+        json, 
+        pdf, 
+        excel, 
+        monthInput: monthInput ? formatToBankMonth(monthInput) : '', 
+        showAgencyFee 
+    });
+    
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
-      <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl w-full max-w-md shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
-        <button onClick={onClose} className="absolute right-4 top-4 text-gray-500 hover:text-white transition-colors bg-gray-800 rounded-full p-1"><X size={16} /></button>
-        
-        <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-2">
-          <Download size={20} className="text-indigo-400" /> Exportar Dados
-        </h2>
-        <p className="text-xs text-gray-400 mb-6">
-          Você está exportando os dados de <strong className="text-indigo-400">{filterCount} loja(s)</strong> visíveis no filtro atual.
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+      <div className="bg-gray-900 p-6 rounded-3xl border border-gray-700 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <Download size={22} className="text-orange-500" /> Exportar Dados
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <p className="text-sm text-gray-400 mb-6">
+          Você está gerando relatórios considerando as <strong>{filterCount}</strong> lojas atualmente filtradas no painel.
         </p>
 
-        <div className="space-y-3 mb-6">
-          <label className="flex items-center gap-3 p-3 border border-gray-700 rounded-xl cursor-pointer hover:bg-white/5 transition-colors">
-            <input type="checkbox" checked={selExcel} onChange={e => setSelExcel(e.target.checked)} className="w-4 h-4 accent-indigo-500" />
-            <FileSpreadsheet size={18} className="text-emerald-500" />
-            <div>
-              <p className="text-sm font-bold text-gray-200 leading-none">Planilha Gerencial (Excel)</p>
-              <p className="text-[10px] text-gray-500 mt-1">Visão completa com split de comissões e indicadores.</p>
+        <div className="space-y-4 mb-8">
+          <label className="flex items-center gap-3 p-3 rounded-xl border border-gray-700 bg-black/20 cursor-pointer hover:bg-white/5 transition-colors">
+            <input type="checkbox" checked={pdf} onChange={e => setPdf(e.target.checked)} className="w-5 h-5 rounded text-orange-500 bg-gray-800 border-gray-600 focus:ring-orange-500 focus:ring-offset-gray-900" />
+            <div className="flex items-center gap-2">
+              <FileText size={18} className="text-red-400" />
+              <span className="text-sm font-bold text-white">Relatório em PDF</span>
             </div>
           </label>
 
-          <label className="flex items-center gap-3 p-3 border border-gray-700 rounded-xl cursor-pointer hover:bg-white/5 transition-colors">
-            <input type="checkbox" checked={selPdf} onChange={e => setSelPdf(e.target.checked)} className="w-4 h-4 accent-indigo-500" />
-            <FileText size={18} className="text-red-500" />
-            <div>
-              <p className="text-sm font-bold text-gray-200 leading-none">Relatório Executivo (PDF)</p>
-              <p className="text-[10px] text-gray-500 mt-1">PDF premium formatado para envio direto ao cliente.</p>
+          <label className="flex items-center gap-3 p-3 rounded-xl border border-gray-700 bg-black/20 cursor-pointer hover:bg-white/5 transition-colors">
+            <input type="checkbox" checked={excel} onChange={e => setExcel(e.target.checked)} className="w-5 h-5 rounded text-orange-500 bg-gray-800 border-gray-600 focus:ring-orange-500 focus:ring-offset-gray-900" />
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet size={18} className="text-emerald-400" />
+              <span className="text-sm font-bold text-white">Planilha Excel (XLSX)</span>
             </div>
           </label>
 
-          <label className="flex items-center gap-3 p-3 border border-gray-700 rounded-xl cursor-pointer hover:bg-white/5 transition-colors">
-            <input type="checkbox" checked={selJson} onChange={e => setSelJson(e.target.checked)} className="w-4 h-4 accent-indigo-500" />
-            <FileJson size={18} className="text-amber-500" />
-            <div>
-              <p className="text-sm font-bold text-gray-200 leading-none">Backup Bruto (JSON)</p>
-              <p className="text-[10px] text-gray-500 mt-1">Cópia de segurança para restauração do sistema.</p>
+          <label className="flex items-center gap-3 p-3 rounded-xl border border-gray-700 bg-black/20 cursor-pointer hover:bg-white/5 transition-colors">
+            <input type="checkbox" checked={json} onChange={e => setJson(e.target.checked)} className="w-5 h-5 rounded text-orange-500 bg-gray-800 border-gray-600 focus:ring-orange-500 focus:ring-offset-gray-900" />
+            <div className="flex items-center gap-2">
+              <FileJson size={18} className="text-yellow-400" />
+              <div>
+                <span className="text-sm font-bold text-white block">Backup Completo (JSON)</span>
+                <span className="text-[10px] text-gray-500">Dados brutos para restauração do sistema</span>
+              </div>
             </div>
           </label>
         </div>
 
-        {/* OPÇÕES ADICIONAIS DO RELATÓRIO */}
-        {selPdf && (
-          <div className="mb-6 animate-in slide-in-from-top-2 bg-black/20 p-4 rounded-xl border border-gray-700">
-            <h4 className="flex items-center gap-1.5 text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">
-              <Settings2 size={14}/> Configurações do PDF
+        {(pdf || excel) && (
+          <div className="bg-black/40 p-4 rounded-xl border border-white/5 mb-6">
+            <h4 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2">
+              <CalendarDays size={14} /> Configurações do Relatório
             </h4>
-            <label className="flex items-center gap-3 cursor-pointer group">
+            
+            <div className="mb-4">
+              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Competência</label>
               <input 
-                type="checkbox" 
-                checked={showAgencyFee} 
-                onChange={e => setShowAgencyFee(e.target.checked)} 
-                className="w-4 h-4 accent-indigo-500 rounded border-gray-600 cursor-pointer" 
+                type="month" 
+                value={monthInput} 
+                onChange={e => setMonthInput(e.target.value)} 
+                className="w-full bg-gray-950 border border-gray-700 rounded-lg p-2.5 text-sm text-white outline-none focus:border-orange-500 transition-colors cursor-pointer" 
               />
-              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">Mostrar valor da Fatura da Assessoria</span>
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer mt-4">
+              <input type="checkbox" checked={showAgencyFee} onChange={e => setShowAgencyFee(e.target.checked)} className="w-4 h-4 rounded text-orange-500 bg-gray-800 border-gray-600 focus:ring-orange-500 focus:ring-offset-gray-900" />
+              <span className="text-xs font-medium text-gray-300">Incluir Fatura da Assessoria (B2X) no PDF</span>
             </label>
           </div>
         )}
 
-        {(selPdf || selExcel) && (
-          <div className="mb-6 animate-in slide-in-from-top-2">
-            <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Competência do Relatório</label>
-            <input 
-              type="text" 
-              value={monthInput} 
-              onChange={e => setMonthInput(e.target.value.toUpperCase())}
-              placeholder="Ex: MAIO/2026"
-              className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
-            />
-          </div>
-        )}
-
-        <button onClick={handleExport} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2">
-          Gerar Arquivos Selecionados
-        </button>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors">
+            Cancelar
+          </button>
+          <button onClick={handleExport} className="bg-orange-600 hover:bg-orange-500 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md transition-colors flex items-center gap-2">
+            <Download size={16} /> Baixar Arquivos
+          </button>
+        </div>
       </div>
     </div>
   );

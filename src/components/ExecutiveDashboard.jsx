@@ -325,7 +325,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
           <div className="flex-1 w-full relative">
             {historicalChartData.length > 0 ? (
               <ResponsiveContainer width="99%" height="100%" minWidth={0}>
-                {/* ComposedChart permite misturar Áreas e Linhas no mesmo gráfico */}
                 <ComposedChart data={historicalChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorGlobal" x1="0" y1="0" x2="0" y2="1">
@@ -341,8 +340,15 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
                   <YAxis yAxisId="right" orientation="right" hide />
                   
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                  <Tooltip contentStyle={glassTooltipStyle} formatter={(value) => formatCurrency(value)} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}/>
+                  
+                  <Tooltip 
+                    cursor={{ fill: 'rgba(255,255,255,0.02)' }} 
+                    contentStyle={glassTooltipStyle} 
+                    itemStyle={{ color: '#fff', fontWeight: 'bold' }} 
+                    formatter={(value) => formatCurrency(value)} 
+                  />
+                  
+                  <Legend verticalAlign="top" height={36} iconType="circle"/>
                   
                   <Area yAxisId="left" type="monotone" dataKey="ReceitaGlobal" name="Receita Realizada" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorGlobal)" />
                   <Area yAxisId="right" type="monotone" dataKey="ReceitaAgencia" name="Receita Avante" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#colorAgency)" />

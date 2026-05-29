@@ -38,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.5.6';
+  const CURRENT_VERSION = '2.5.7';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -97,6 +97,8 @@ export default function App() {
   const [newNoteText, setNewNoteText] = useState('');
   
   const [isBatchMode, setIsBatchMode] = useState(false);
+  const [isCloseMonthModalOpen, setIsCloseMonthModalOpen] = useState(false);
+  const [closeMonthValue, setCloseMonthValue] = useState('');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -199,7 +201,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const unsubStores = onSnapshot(collection(db, "stores"), (snapshot) => {
-      if (!snapshot.empty) setStores(snapshot.docs.map(doc => doc.data()).sort((a, b) => b.id - a.id));
+      setStores(snapshot.docs.map(doc => doc.data()).sort((a, b) => b.id - a.id));
       setIsDbLoading(false);
     });
 
@@ -242,7 +244,7 @@ export default function App() {
     });
 
     const unsubEquipe = onSnapshot(collection(db, "equipe"), (snapshot) => {
-      if (!snapshot.empty) setTeamMembers(snapshot.docs.map(doc => doc.data()));
+      setTeamMembers(snapshot.docs.map(doc => doc.data()));
     });
 
     const unsubInternal = onSnapshot(doc(db, "settings", "internal_tasks"), (docSnap) => {
@@ -402,7 +404,7 @@ export default function App() {
   const handleStoreChange = (id, field, value) => {
     let finalValue = value;
     if (typeof value === 'string' && (field === 'currentRevenue' || field === 'adsInvestment' || field === 'gmvBase' || field === 'customGrowth')) {
-      finalValue = value.trim().replace(',', '.');
+      finalValue = value.trim().replace(/\./g, '').replace(',', '.');
     }
     
     const numericValue = finalValue !== '' ? Number(finalValue) : 0;
@@ -559,8 +561,8 @@ export default function App() {
     const store = stores.find(s => s.id === storeId);
     if (!store) return;
 
-    const numGmv = Number(String(gmv).replace(',', '.')) || 0;
-    const numAds = Number(String(ads).replace(',', '.')) || 0;
+    const numGmv = Number(String(gmv).replace(/\./g, '').replace(',', '.')) || 0;
+    const numAds = Number(String(ads).replace(/\./g, '').replace(',', '.')) || 0;
     const feePercent = Number(store.feePercent) || 0;
     const fixedFee = Number(store.fixedFee) || 0;
     const agencyRevenue = (store.feeType === 'fixed' || fixedFee > 0) ? fixedFee : numGmv * (feePercent / 100);
@@ -633,20 +635,29 @@ export default function App() {
     } 
   };
 
-  const closeMonth = async () => {
-    const monthInput = prompt("FECHAMENTO OFICIAL DE MÊS\n\nDigite a competência que está sendo fechada (Ex: MAIO/2026):");
-    if (!monthInput) return;
+  const closeMonth = () => {
+    setCloseMonthValue(''); // Limpa o campo
+    setIsCloseMonthModalOpen(true); // Abre nossa nova interface
+  };
 
-    if (!window.confirm(`ATENÇÃO! Tem certeza que deseja FECHAR O MÊS de ${monthInput.toUpperCase()}?\n\n1. Os relatórios em PDF e Excel serão baixados.\n2. O histórico financeiro será salvo.\n3. O faturamento de TODAS as lojas será zerado.`)) return;
+  // === 2. EXECUTA O FECHAMENTO APÓS ESCOLHER A DATA ===
+  const executeCloseMonth = async () => {
+    if (!closeMonthValue) return toast.error("Selecione a competência para fechar o mês.");
 
+    // Passa o valor do calendário (ex: 2026-05) pelo nosso Padronizador Oficial!
+    const padronizado = normalizeMonthYear(closeMonthValue);
+
+    if (!window.confirm(`ATENÇÃO! Tem certeza que deseja FECHAR O MÊS de ${padronizado}?\n\n1. Os relatórios em PDF e Excel serão baixados.\n2. O histórico financeiro será salvo.\n3. O faturamento de TODAS as lojas será zerado.`)) return;
+
+    setIsCloseMonthModalOpen(false); // Fecha o modal
     toast.loading("Processando fechamento do mês e gravando histórico...", { id: 'close-month' });
 
     try {
-      await generateReports(stores, monthInput, { pdf: true, excel: true });
+      await generateReports(stores, padronizado, { pdf: true, excel: true });
       
       const batch = writeBatch(db);
       stores.forEach(store => {
-        const storeRef = doc(db, 'lojas', store.id);
+        const storeRef = doc(db, 'stores', store.id.toString());
         
         const gmv = Number(store.currentRevenue) || 0;
         const feePercent = Number(store.feePercent) || 0;
@@ -656,8 +667,8 @@ export default function App() {
         const agencyRevenue = isFixed ? fixedFee : gmv * (feePercent / 100);
 
         const snapshot = {
-          id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-          month: monthInput.toUpperCase(),
+          id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+          month: padronizado, // Mês padrão cravado (Ex: MAI/26)
           gmv: gmv,
           agencyRevenue: agencyRevenue,
           feeType: store.feeType || 'percent',
@@ -713,7 +724,7 @@ export default function App() {
     const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     
     try {
-      const parseSafeNumber = (val) => Number(String(val || 0).trim().replace(',', '.')) || 0;
+      const parseSafeNumber = (val) => Number(String(val || 0).trim().replace(/\./g, '').replace(',', '.')) || 0;
       const formatMoney = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
       const formatPercent = (val) => (val > 0 ? '+' : '') + (val * 100).toFixed(2) + '%';
       const formatRoas = (val) => val > 0 ? val.toFixed(2) + 'x' : '-';
@@ -821,13 +832,13 @@ export default function App() {
           docPdf.setFontSize(10); docPdf.setTextColor(156, 163, 175); docPdf.text('RELATÓRIO DE PERFORMANCE B2X', 14, 30); docPdf.text(`Período Apurado: ${periodoApurado}`, 14, 35);
           docPdf.setFontSize(8); docPdf.setTextColor(107, 114, 128); docPdf.text(`Gerado em: ${dataGeracao}`, 196, 35, { align: 'right' });
 
-          docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Faturamento Consolidado:', 14, 52);
-          docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Faturamento Histórico:', 14, 72);
+          docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Faturamento no Mês:', 14, 52);
+          docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Histórico de Faturamento:', 14, 72);
           docPdf.setFontSize(16); docPdf.setTextColor(16, 185, 129); docPdf.text(formatMoney(allTimeGmv), 14, 80);
           docPdf.setFontSize(24); docPdf.setTextColor(16, 185, 129); docPdf.text(formatMoney(totalGmv), 14, 62);
           
           if (options.showAgencyFee) {
-            docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Fatura da Assessoria (B2X):', 120, 52);
+            docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Fatura da Assessoria:', 120, 52);
             docPdf.setFontSize(24); docPdf.setTextColor(79, 70, 229); docPdf.text(formatMoney(avanteTotalFee * 2), 120, 62);
           }
 
@@ -841,7 +852,7 @@ export default function App() {
           });
 
           autoTable(docPdf, {
-            startY: 85,
+            startY: 75,
             head: [['Rk', 'Canal', 'Loja', 'GMV', 'Evolução', 'Volume', 'ADS', 'ROAS', 'CPA Médio']],
             body: storeRows, theme: 'grid',
             headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
@@ -1209,9 +1220,6 @@ export default function App() {
           <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
             <button onClick={() => setActiveView('feed_equipe')} className={`relative px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'feed_equipe' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <Activity size={16} /> Feed
-              {globalPendingTasks > 0 && (
-                <span className="absolute top-1 right-2 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)] border border-red-400/50"></span>
-              )}
             </button>
             <button onClick={() => setActiveView('rotinas')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'rotinas' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <CalendarDays size={16} /> <span className="hidden md:inline">Workflow</span>
@@ -1469,6 +1477,35 @@ export default function App() {
 
       {isBatchMode && (
         <BatchEntry stores={stores} currentDay={currentDay} onSaveBatch={handleSaveBatch} onClose={() => setIsBatchMode(false)} />
+      )}
+
+      {/* MODAL DE FECHAMENTO DE MÊS */}
+      {isCloseMonthModalOpen && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+          <div className="bg-gray-900 p-6 rounded-3xl border border-gray-700 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+              <CalendarDays size={20} className="text-red-400" /> Fechamento de Mês
+            </h3>
+            <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+              Selecione a competência (mês/ano) que você deseja encerrar. Os painéis serão zerados e o histórico será salvo.
+            </p>
+            
+            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Competência</label>
+            <input 
+              type="month" 
+              value={closeMonthValue} 
+              onChange={e => setCloseMonthValue(e.target.value)} 
+              className="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-sm text-white outline-none focus:border-red-500 mb-8 transition-colors cursor-pointer shadow-inner" 
+            />
+            
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setIsCloseMonthModalOpen(false)} className="text-gray-400 hover:text-white px-4 py-2 text-sm font-medium transition-colors">Cancelar</button>
+              <button onClick={executeCloseMonth} className="bg-red-600 hover:bg-red-500 text-white px-5 py-2 rounded-xl font-bold shadow-md transition-colors text-sm">
+                Continuar Fechamento
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {taskModalOpen && (
