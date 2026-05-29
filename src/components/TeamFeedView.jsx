@@ -259,16 +259,11 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
 
     }, [stores, radarFilter, liveStatus]);
     
-    const visibleLogs = useMemo(() => {
-        return allLogs
-            .filter(l => l.id > feedClearedAt)
-            .filter(l => {
-                if (feedFilter === 'tasks') return l.texto?.includes('✅ Tarefa concluída');
-                if (feedFilter === 'mine') return l.author === myName;
-                return true;
-            })
-            .sort((a, b) => b.id - a.id);
-    }, [allLogs, feedClearedAt, feedFilter, myName]);
+    const visibleLogs = allLogs.filter(log => {
+        if (feedFilter === 'tasks') return log.texto?.includes('✅') || log.texto?.includes('▶️') || log.texto?.includes('⏸️');
+        if (feedFilter === 'mentions') return log.texto?.includes(`@${myName}`); // Mostra apenas se tiver o @ do usuário logado
+        return true;
+    }).slice(0, 100);
     
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
@@ -453,7 +448,8 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                         <div className="flex items-center gap-2">
                             <div className="hidden sm:flex bg-gray-900 rounded-lg p-1 border border-gray-700">
                                 <button onClick={() => setFeedFilter('all')} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'all' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tudo</button>
-                                <button onClick={() => setFeedFilter('tasks')} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
+                                <button onClick={() => setFeedFilter('tasks')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
+                                <button onClick={() => setFeedFilter('mentions')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${feedFilter === 'mentions' ? 'bg-amber-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>Menções</button>
                             </div>
                             {visibleLogs.length > 0 && (
                                 <button 
@@ -472,17 +468,32 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     
                     <div className="flex-1 overflow-y-auto pr-3 space-y-4 custom-scrollbar border-l-2 border-gray-700/50 ml-2 pl-5 pb-2">
                         {visibleLogs.map(log => {
-                            const isTask = log.texto?.includes('✅ Tarefa concluída');
+                            const isTask = log.texto?.includes('✅');
+                            const isMention = log.texto?.includes(`@${myName}`);
+
+                            const cardStyle = isMention 
+                                ? 'bg-amber-500/10 border-amber-500/40 hover:brightness-110 shadow-[0_0_15px_rgba(245,158,11,0.1)]'
+                                : isTask 
+                                    ? 'bg-emerald-500/5 border-emerald-500/20 hover:brightness-125' 
+                                    : 'bg-gray-900/50 border-gray-700 hover:brightness-125';
+
+                            const dotStyle = isMention ? 'bg-amber-400' : isTask ? 'bg-emerald-500' : 'bg-indigo-500';
+
                             return (
                                 <div key={log.id} onClick={() => handleOpenStore(log.storeName)} className="relative group cursor-pointer">
-                                    <div className={`absolute -left-[27px] top-2 w-3 h-3 rounded-full border-[3px] border-gray-800 ${isTask ? 'bg-emerald-500' : 'bg-indigo-500'}`}></div>
-                                    <div className={`p-4 rounded-xl border flex flex-col gap-1.5 transition-colors hover:brightness-125 ${isTask ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-gray-900/50 border-gray-700'}`}>
+                                    <div className={`absolute -left-[27px] top-2 w-3 h-3 rounded-full border-[3px] border-gray-800 ${dotStyle}`}></div>
+                                    
+                                    <div className={`p-4 rounded-xl border flex flex-col gap-1.5 transition-all ${cardStyle}`}>
                                         <div className="flex justify-between items-start">
-                                            <div className="text-xs font-black text-indigo-400 uppercase truncate pr-2">{log.clientName} <span className="text-gray-500 mx-1.5">•</span> {log.storeName}</div>
-                                            <span className="text-[10px] text-gray-500 font-medium shrink-0">{log.data}</span>
+                                            <div className="text-xs font-black text-indigo-400 uppercase">{log.clientName} <span className="text-gray-500 mx-1.5">•</span> {log.storeName}</div>
+                                            <span className="text-[11px] text-gray-500 font-medium">{log.data}</span>
                                         </div>
-                                        <p className={`text-sm leading-relaxed ${isTask ? 'text-emerald-100 font-medium' : 'text-gray-300'}`}>{log.texto}</p>
-                                        <p className="text-[10px] text-gray-500 mt-1">Por: <span className="text-gray-400 font-bold">{log.author}</span></p>
+                                        
+                                        <p className={`text-base leading-relaxed ${isMention ? 'text-amber-100 font-bold' : isTask ? 'text-emerald-100 font-medium' : 'text-gray-300'}`}>
+                                            {log.texto}
+                                        </p>
+                                        
+                                        <p className="text-xs text-gray-500 mt-1">Por: <span className="text-gray-400 font-bold">{log.author}</span></p>
                                     </div>
                                 </div>
                             );

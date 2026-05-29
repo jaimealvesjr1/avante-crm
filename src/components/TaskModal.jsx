@@ -171,21 +171,23 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const addChecklist = () => {
     if (!newChecklist.trim()) return;
     setIsAddingTask(true);
-    const item = {
-      id: Date.now(), 
-      texto: newChecklist, 
-      feita: false, 
-      responsavel: newChecklistResp.trim(), 
-      criadoPor: username, 
-      data: newTaskDate, 
-      hora: newTaskTime, 
-      recorrencia: newTaskRecurrence,
-      peso: newTaskWeight
-    };
+    const item = { id: Date.now(), texto: newChecklist, feita: false, responsavel: newChecklistResp.trim(), criadoPor: username, data: newTaskDate, hora: newTaskTime, recorrencia: newTaskRecurrence };
     const updatedChecklists = [...(store.checklists || []), item];
     const newNextAccess = autoScheduleStore(updatedChecklists);
 
-    saveChanges({ ...store, checklists: updatedChecklists, dataProximoAcesso: newNextAccess || store.dataProximoAcesso || '' });
+    let updatedLogs = store.taskLogs || [];
+    const resp = newChecklistResp.trim();
+    if (resp && resp !== username) {
+        updatedLogs.push({
+            id: Date.now() + 1,
+            data: new Date().toLocaleString('pt-BR'),
+            texto: `📌 @${resp}, você recebeu uma nova tarefa: "${newChecklist}"`,
+            author: username
+        });
+    }
+
+    saveChanges({ ...store, checklists: updatedChecklists, taskLogs: updatedLogs, dataProximoAcesso: newNextAccess || store.dataProximoAcesso || '' });
+    
     setTimeout(() => {
       setNewChecklist(''); setNewChecklistResp(''); setNewTaskDate(''); setNewTaskTime(''); setNewTaskRecurrence('none');
       setIsAddingTask(false);
@@ -379,7 +381,16 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     }
 
     let updatedLogs = store.taskLogs || [];
-    if (isCompleting) updatedLogs = [...updatedLogs, { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `✅ Tarefa concluída: "${task.texto}"`, author: username }];
+    if (isCompleting) {
+        let logTexto = `✅ Tarefa concluída: "${task.texto}"`;
+        
+        // Se a tarefa foi criada por outra pessoa, avisa quem criou
+        if (task.criadoPor && task.criadoPor !== username) {
+             logTexto = `✅ @${task.criadoPor}, a tarefa "${task.texto}" foi concluída!`;
+        }
+        
+        updatedLogs = [...updatedLogs, { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: logTexto, author: username }];
+    }
 
     const newNextAccess = autoScheduleStore(updatedChecklists);
     let finalNextAccess = newNextAccess;
