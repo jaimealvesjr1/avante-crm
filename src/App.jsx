@@ -38,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.5.2';
+  const CURRENT_VERSION = '2.5.5';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -536,6 +536,94 @@ export default function App() {
     toast.success(`Loja atualizada! Dados distribuídos do dia ${startDay} ao ${targetDay} 🚀`);
   };
 
+  const normalizeMonthYear = (str) => {
+    if (!str) return '';
+    if (/^\d{4}-\d{2}$/.test(str)) { // Formato do input type="month" (2026-04)
+        const [y, m] = str.split('-');
+        const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+        return `${months[parseInt(m, 10) - 1]}/${y.slice(-2)}`;
+    }
+    let cleanStr = String(str).toUpperCase().replace(/\s+/g, '');
+    cleanStr = cleanStr.replace('ABRI', 'ABR'); // Corrige o erro comum de ABRI
+    const match = cleanStr.match(/^([A-Z]{3,4})\/?(\d{2,4})$/);
+    if (match) {
+        let m = match[1].substring(0, 3);
+        let y = match[2];
+        if (y.length === 4) y = y.slice(-2);
+        return `${m}/${y}`;
+    }
+    return str.toUpperCase();
+  };
+
+  const handleSaveRetroactiveMonth = async (storeId, monthStr, gmv, ads, editId = null) => {
+    const store = stores.find(s => s.id === storeId);
+    if (!store) return;
+
+    const numGmv = Number(String(gmv).replace(',', '.')) || 0;
+    const numAds = Number(String(ads).replace(',', '.')) || 0;
+    const feePercent = Number(store.feePercent) || 0;
+    const fixedFee = Number(store.fixedFee) || 0;
+    const agencyRevenue = (store.feeType === 'fixed' || fixedFee > 0) ? fixedFee : numGmv * (feePercent / 100);
+
+    const standardMonth = normalizeMonthYear(monthStr);
+
+    const isOldStringId = editId && typeof editId === 'string' && editId.includes('/');
+    
+    const snapshot = {
+      id: (editId && !isOldStringId) ? editId : 'retro-' + Date.now(),
+      month: standardMonth,
+      gmv: numGmv,
+      adsInvestment: numAds,
+      agencyRevenue: agencyRevenue,
+      feeType: store.feeType || 'percent',
+      feePercent: feePercent,
+      fixedFee: fixedFee,
+      closedAt: new Date().toISOString(),
+      isRetroactive: true
+    };
+
+    let newMonthlyHistory = [...(store.monthlyHistory || [])];
+    
+    // Se estiver editando, busca pelo ID ou pelo próprio nome do mês (para dados legados)
+    if (editId) {
+        newMonthlyHistory = newMonthlyHistory.map(h => (h.id || h.month) === editId ? snapshot : h);
+    } else {
+        newMonthlyHistory.push(snapshot);
+    }
+
+    const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    newMonthlyHistory.sort((a, b) => {
+        const [mA, yA] = normalizeMonthYear(a.month).split('/');
+        const [mB, yB] = normalizeMonthYear(b.month).split('/');
+        const valA = parseInt(yA || 0, 10) * 100 + monthsOrder.indexOf(mA);
+        const valB = parseInt(yB || 0, 10) * 100 + monthsOrder.indexOf(mB);
+        return valA - valB;
+    });
+
+    const newBase = newMonthlyHistory.length > 0 ? Number(newMonthlyHistory[newMonthlyHistory.length - 1].gmv) : 0;
+    const updatedStore = { ...store, monthlyHistory: newMonthlyHistory, gmvBase: newBase, updatedAt: new Date().toISOString() };
+
+    updateStoreInCloud(updatedStore);
+    setStores(stores.map(s => s.id === storeId ? updatedStore : s));
+    toast.success(editId ? `Edição de ${standardMonth} salva e padronizada!` : `Fechamento de ${standardMonth} registrado!`);
+  };
+
+  const handleDeleteRetroactiveMonth = async (storeId, retroId) => {
+    if(!window.confirm("Deseja realmente apagar este fechamento? O Ponto de Partida da loja será recalculado.")) return;
+    const store = stores.find(s => s.id === storeId);
+    if (!store) return;
+
+    // Filtra pelo ID ou pelo Mês (para dados legados)
+    const updatedHistory = (store.monthlyHistory || []).filter(h => (h.id || h.month) !== retroId);
+    
+    const newBase = updatedHistory.length > 0 ? Number(updatedHistory[updatedHistory.length - 1].gmv) : 0;
+    const updatedStore = { ...store, monthlyHistory: updatedHistory, gmvBase: newBase, updatedAt: new Date().toISOString() };
+
+    updateStoreInCloud(updatedStore);
+    setStores(stores.map(s => s.id === storeId ? updatedStore : s));
+    toast.success("Fechamento removido com sucesso!");
+  };
+
   const deleteClient = async (clientName) => { 
     if(window.confirm(`🚨 Apagar o cliente ${clientName} e TODAS as suas lojas?`)){ 
       const batch = writeBatch(db);
@@ -599,68 +687,6 @@ export default function App() {
       console.error(error);
       toast.error("Erro fatal ao fechar o mês: " + error.message, { id: 'close-month' });
     }
-  };
-
-  const handleSaveRetroactiveMonth = async (storeId, monthStr, gmv, ads) => {
-    const store = stores.find(s => s.id === storeId);
-    if (!store) return;
-
-    const numGmv = Number(String(gmv).replace(',', '.')) || 0;
-    const numAds = Number(String(ads).replace(',', '.')) || 0;
-    const feePercent = Number(store.feePercent) || 0;
-    const fixedFee = Number(store.fixedFee) || 0;
-    const isFixed = store.feeType === 'fixed' || fixedFee > 0;
-    
-    const agencyRevenue = isFixed ? fixedFee : numGmv * (feePercent / 100);
-
-    const snapshot = {
-      id: 'retro-' + Date.now(),
-      month: monthStr.toUpperCase(),
-      gmv: numGmv,
-      adsInvestment: numAds,
-      agencyRevenue: agencyRevenue,
-      feeType: store.feeType || 'percent',
-      feePercent: feePercent,
-      fixedFee: fixedFee,
-      closedAt: new Date().toISOString(),
-      isRetroactive: true
-    };
-
-    const newMonthlyHistory = [...(store.monthlyHistory || []), snapshot];
-
-    const updatedStore = {
-      ...store,
-      monthlyHistory: newMonthlyHistory,
-      gmvBase: numGmv, 
-      updatedAt: new Date().toISOString()
-    };
-
-    updateStoreInCloud(updatedStore);
-    setStores(stores.map(s => s.id === storeId ? updatedStore : s));
-    toast.success(`Fechamento de ${monthStr.toUpperCase()} registrado com sucesso!`);
-  };
-
-  const handleDeleteRetroactiveMonth = async (storeId, retroId) => {
-    if(!window.confirm("Deseja realmente apagar este fechamento histórico? O Ponto de Partida (Base) da loja será recalculado.")) return;
-    
-    const store = stores.find(s => s.id === storeId);
-    if (!store) return;
-
-    const updatedHistory = (store.monthlyHistory || []).filter(h => h.id !== retroId);
-    
-    // Recalcula a nova base (pega o GMV do último mês que sobrou, ou zera se não sobrou nenhum)
-    const newBase = updatedHistory.length > 0 ? Number(updatedHistory[updatedHistory.length - 1].gmv) : 0;
-
-    const updatedStore = { 
-      ...store, 
-      monthlyHistory: updatedHistory, 
-      gmvBase: newBase,
-      updatedAt: new Date().toISOString()
-    };
-
-    updateStoreInCloud(updatedStore);
-    setStores(stores.map(s => s.id === storeId ? updatedStore : s));
-    toast.success("Fechamento histórico removido com sucesso!");
   };
 
   const exportBackup = () => {
@@ -796,6 +822,8 @@ export default function App() {
           docPdf.setFontSize(8); docPdf.setTextColor(107, 114, 128); docPdf.text(`Gerado em: ${dataGeracao}`, 196, 35, { align: 'right' });
 
           docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Faturamento Consolidado:', 14, 52);
+          docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Faturamento Histórico:', 14, 72);
+          docPdf.setFontSize(16); docPdf.setTextColor(16, 185, 129); docPdf.text(formatMoney(allTimeGmv), 14, 80);
           docPdf.setFontSize(24); docPdf.setTextColor(16, 185, 129); docPdf.text(formatMoney(totalGmv), 14, 62);
           
           if (options.showAgencyFee) {
@@ -813,7 +841,7 @@ export default function App() {
           });
 
           autoTable(docPdf, {
-            startY: 75,
+            startY: 85,
             head: [['Rk', 'Canal', 'Loja', 'GMV', 'Evolução', 'Volume', 'ADS', 'ROAS', 'CPA Médio']],
             body: storeRows, theme: 'grid',
             headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
@@ -1009,6 +1037,11 @@ export default function App() {
     const mktPerformance = {};
     const globalHistoryAggregation = {};
 
+    const dataAtual = new Date();
+    dataAtual.setMonth(dataAtual.getMonth() - 1);
+    const mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    const mesPassadoExato = `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`;
+
     const processedStores = stores.map(store => {
       const growthRate = store.customGrowth !== undefined ? Number(store.customGrowth) : globalGrowth;
       const gmvTarget = (Number(store.gmvBase) || 0) * (1 + (growthRate / 100));
@@ -1022,7 +1055,7 @@ export default function App() {
       const matchSearch = !searchTerm || store.client.toLowerCase().includes(searchTerm.toLowerCase()) || store.store.toLowerCase().includes(searchTerm.toLowerCase());
       const matchStatus = statusFilter === 'all' || store.status === statusFilter;
       const matchMkt = mktFilter === 'all' || (store.marketplace && store.marketplace.toUpperCase() === mktFilter);
-      return matchSearch && matchStatus && matchMkt; // Simplificado para focar na lógica principal
+      return matchSearch && matchStatus && matchMkt; 
     });
 
     const groups = {};
@@ -1034,20 +1067,27 @@ export default function App() {
       totalOrders += (s.orders || 0);
       totalUnits += (s.units || 0);
 
+      // === CÁLCULO DE CANAIS: Mês Atual vs Mês Passado EXATO ===
       const mktName = s.marketplace ? s.marketplace.toUpperCase() : 'N/A';
       if (!mktPerformance[mktName]) mktPerformance[mktName] = { name: mktName, atual: 0, passado: 0 };
+      
       mktPerformance[mktName].atual += (Number(s.currentRevenue) || 0);
+      
       if (s.monthlyHistory && s.monthlyHistory.length > 0) {
-          mktPerformance[mktName].passado += Number(s.monthlyHistory[s.monthlyHistory.length - 1].gmv) || 0;
+          // Em vez de pegar o último da fila, procura o mês cravado (Ex: "ABR/26")
+          const prevData = s.monthlyHistory.find(h => h.month === mesPassadoExato);
+          if (prevData) mktPerformance[mktName].passado += Number(prevData.gmv) || 0;
       }
 
+      // AGREGADOR DO GRÁFICO HISTÓRICO GLOBAL
       if (s.monthlyHistory) {
           s.monthlyHistory.forEach(hist => {
-              if (!globalHistoryAggregation[hist.month]) {
-                  globalHistoryAggregation[hist.month] = { month: hist.month, ReceitaGlobal: 0, ReceitaAgencia: 0, sortDate: hist.closedAt };
+              const stdMonth = normalizeMonthYear(hist.month);
+              if (!globalHistoryAggregation[stdMonth]) {
+                  globalHistoryAggregation[stdMonth] = { month: stdMonth, ReceitaGlobal: 0, ReceitaAgencia: 0 };
               }
-              globalHistoryAggregation[hist.month].ReceitaGlobal += Number(hist.gmv) || 0;
-              globalHistoryAggregation[hist.month].ReceitaAgencia += Number(hist.agencyRevenue) || 0;
+              globalHistoryAggregation[stdMonth].ReceitaGlobal += Number(hist.gmv) || 0;
+              globalHistoryAggregation[stdMonth].ReceitaAgencia += Number(hist.agencyRevenue) || 0;
           });
       }
 
@@ -1060,30 +1100,47 @@ export default function App() {
       groups[s.client].totalAds += s.adsInvestment || 0;
     });
 
-    const historicalChartData = Object.values(globalHistoryAggregation).sort((a, b) => new Date(a.sortDate) - new Date(b.sortDate));
+    const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    let historicalChartData = Object.values(globalHistoryAggregation).sort((a, b) => {
+        const [mA, yA] = a.month.split('/');
+        const [mB, yB] = b.month.split('/');
+        return (parseInt(yA, 10) * 100 + monthsOrder.indexOf(mA)) - (parseInt(yB, 10) * 100 + monthsOrder.indexOf(mB));
+    });
+
+    if (historicalChartData.length > 0) {
+        const lastPastMonth = historicalChartData[historicalChartData.length - 1];
+        lastPastMonth.ProjecaoGlobal = lastPastMonth.ReceitaGlobal;
+        lastPastMonth.MetaGlobal = lastPastMonth.ReceitaGlobal;
+    }
+
+    historicalChartData.push({
+      month: 'Atual',
+      ReceitaGlobal: totalCurrentRevenue,
+      ReceitaAgencia: totalAgencyRevenueActual,
+      ProjecaoGlobal: totalProjected,
+      MetaGlobal: totalTarget
+    });
 
     const groupedClients = Object.values(groups).map(g => {
       const p = g.totalGmvTarget > 0 ? (g.totalProjectedGmv / g.totalGmvTarget) * 100 : 0;
       const sampleStore = g.stores[0];
-      const feeType = sampleStore?.feeType || 'percent';
-      const feePercent = sampleStore?.feePercent || 0;
-      const fixedFee = sampleStore?.fixedFee || 0;
-      const isFixed = feeType === 'fixed' || fixedFee > 0;
+      const isFixed = sampleStore?.feeType === 'fixed' || (sampleStore?.fixedFee > 0);
       
-      const groupAgencyTarget = isFixed ? Number(fixedFee) : g.totalGmvTarget * (Number(feePercent) / 100);
+      const groupAgencyTarget = isFixed ? Number(sampleStore.fixedFee) : g.totalGmvTarget * (Number(sampleStore.feePercent) / 100);
       agencyTarget += groupAgencyTarget;
-      totalAgencyRevenueActual += isFixed ? Number(fixedFee) : g.totalCurrentRevenue * (Number(feePercent) / 100);
-      totalAgencyRevenue += isFixed ? Number(fixedFee) : g.totalProjectedGmv * (Number(feePercent) / 100);
+      totalAgencyRevenueActual += isFixed ? Number(sampleStore.fixedFee) : g.totalCurrentRevenue * (Number(sampleStore.feePercent) / 100);
+      totalAgencyRevenue += isFixed ? Number(sampleStore.fixedFee) : g.totalProjectedGmv * (Number(sampleStore.feePercent) / 100);
 
-      return { ...g, percentReached: p, feeType, feePercent, fixedFee, status: p >= 95 ? 'success' : p >= 80 ? 'warning' : 'danger', roas: g.totalAds > 0 ? (g.totalCurrentRevenue / g.totalAds).toFixed(1) : 0, stores: g.stores };
-    }).sort((a, b) => b.totalCurrentRevenue - a.totalCurrentRevenue);
+      return { ...g, percentReached: p, feeType: sampleStore?.feeType, feePercent: sampleStore?.feePercent, fixedFee: sampleStore?.fixedFee, status: p >= 95 ? 'success' : p >= 80 ? 'warning' : 'danger', roas: g.totalAds > 0 ? (g.totalCurrentRevenue / g.totalAds).toFixed(1) : 0, stores: g.stores };
+    }).sort((a, b) => {
+      if (sortBy === 'name') return a.client.localeCompare(b.client);
+      if (sortBy === 'status') { const w = { danger: 1, warning: 2, success: 3 }; return w[a.status] - w[b.status]; }
+      return b.totalCurrentRevenue - a.totalCurrentRevenue;
+    });
 
     return { 
-      groupedClients, 
-      flatFilteredStores: filteredStores, 
-      totalTarget, totalProjected, totalCurrentRevenue, 
-      totalAgencyRevenue, totalAgencyRevenueActual, agencyTarget, 
-      totalGlobalAds, totalOrders, totalUnits,
+      groupedClients, flatFilteredStores: filteredStores, totalTarget, totalProjected, totalCurrentRevenue, 
+      totalAgencyRevenue, totalAgencyRevenueActual, agencyTarget, totalGlobalAds, totalOrders, totalUnits,
       globalRoas: totalGlobalAds > 0 ? (totalCurrentRevenue / totalGlobalAds).toFixed(1) : 0,
       rankingMarketplaces: Object.values(mktPerformance).sort((a, b) => b.atual - a.atual),
       historicalChartData

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, PieChartIcon, Award } from 'lucide-react';
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area, Legend } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Area, Line, Legend } from 'recharts';
 
 export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieData, roasData, COLORS, currentDay, daysInMonth }) {
   
@@ -24,44 +24,54 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
       }));
   }, [dashboardData.flatFilteredStores]);
 
-  const monthlyComparisonData = useMemo(() => {
+  // === NOVO AGREGADOR DE HISTÓRICO GLOBAL (Com Bifurcação no Mês Atual) ===
+  const historicalChartData = useMemo(() => {
     const monthlyStats = {};
 
-    dashboardData.groupedClients.forEach(group => {
-      const isFixed = group.feeType === 'fixed' || (group.stores[0]?.feeType === 'fixed') || Number(group.fixedFee || group.stores[0]?.fixedFee || 0) > 0;
-      const fixedFee = Number(group.fixedFee || group.stores[0]?.fixedFee || 0);
-      const feePercent = Number(group.feePercent || group.stores[0]?.feePercent || 0);
+    // 1. Somar todo o histórico de todas as lojas ativas no filtro
+    dashboardData.flatFilteredStores.forEach(store => {
+      const isFixed = store.feeType === 'fixed' || Number(store.fixedFee) > 0;
+      const feePercent = Number(store.feePercent) || 0;
+      const fixedFee = Number(store.fixedFee) || 0;
 
-      const clientMonths = {};
-      group.stores.forEach(store => {
-        (store.monthlyHistory || []).forEach(h => {
-          if (!clientMonths[h.month]) clientMonths[h.month] = 0;
-          clientMonths[h.month] += h.gmv;
-        });
-      });
-
-      Object.entries(clientMonths).forEach(([month, totalGmv]) => {
-        if (!monthlyStats[month]) {
-          monthlyStats[month] = { month, clientRevenue: 0, agencyRevenue: 0 };
+      (store.monthlyHistory || []).forEach(hist => {
+        if (!monthlyStats[hist.month]) {
+          monthlyStats[hist.month] = { month: hist.month, ReceitaGlobal: 0, ReceitaAgencia: 0 };
         }
+        monthlyStats[hist.month].ReceitaGlobal += Number(hist.gmv) || 0;
         
-        monthlyStats[month].clientRevenue += totalGmv;
-        
-        if (isFixed) {
-          monthlyStats[month].agencyRevenue += fixedFee;
-        } else {
-          monthlyStats[month].agencyRevenue += totalGmv * (feePercent / 100);
-        }
+        // Garante a receita da agência (caso o histórico seja muito antigo e não tenha)
+        const agencyRev = hist.agencyRevenue !== undefined ? Number(hist.agencyRevenue) : (isFixed ? fixedFee : (Number(hist.gmv) || 0) * (feePercent / 100));
+        monthlyStats[hist.month].ReceitaAgencia += agencyRev;
       });
     });
 
-    const data = Object.values(monthlyStats);
+    // 2. Colocar na ordem cronológica correta
+    const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    let data = Object.values(monthlyStats).sort((a, b) => {
+      const [mA, yA] = (a.month || '').split('/');
+      const [mB, yB] = (b.month || '').split('/');
+      const valA = parseInt(yA || 0, 10) * 100 + monthsOrder.indexOf(mA);
+      const valB = parseInt(yB || 0, 10) * 100 + monthsOrder.indexOf(mB);
+      return valA - valB;
+    });
+
+    // 3. Ponto de Bifurcação (Conecta o mês passado com a Projeção e Meta do mês atual)
+    if (data.length > 0) {
+        const lastPastMonth = data[data.length - 1];
+        lastPastMonth.ProjecaoGlobal = lastPastMonth.ReceitaGlobal;
+        lastPastMonth.MetaGlobal = lastPastMonth.ReceitaGlobal;
+    }
+
+    // 4. Adiciona o Mês Atual
     data.push({
-      month: 'Atual (Proj.)',
-      clientRevenue: dashboardData.totalProjected,
-      agencyRevenue: dashboardData.totalAgencyRevenue
+      month: 'Atual',
+      ReceitaGlobal: dashboardData.totalCurrentRevenue,
+      ReceitaAgencia: dashboardData.totalAgencyRevenueActual,
+      ProjecaoGlobal: dashboardData.totalProjected,
+      MetaGlobal: dashboardData.totalTarget
     });
-    
+
     return data;
   }, [dashboardData]);
 
@@ -76,7 +86,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
   }, [dashboardData]);
 
   const glassTooltipStyle = {
-    backgroundColor: 'rgba(11, 15, 25, 0.85)',
+    backgroundColor: 'rgba(11, 15, 25, 0.9)',
     backdropFilter: 'blur(12px)',
     WebkitBackdropFilter: 'blur(12px)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -198,7 +208,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
         </div>
       </div>
 
-      {/* 🌟 2. GRÁFICOS DE ANÁLISE SECUNDÁRIA */}
+      {/* 🌟 2. GRÁFICOS SECUNDÁRIOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6">
         
         {/* Gráfico 1: TOP 5 LOJAS */}
@@ -280,18 +290,17 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             <div className="p-2.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
               <ShoppingCart size={20} className="text-emerald-400"/>
             </div>
-            <h3 className="text-lg font-bold text-white tracking-wide">Market Share (Canais)</h3>
+            <h3 className="text-lg font-bold text-white tracking-wide">Faturamento Canais</h3>
           </div>
-          <div className="h-[300px] w-full mt-4">
+          <div className="h-[300px]">
             {dashboardData.rankingMarketplaces.length > 0 ? (
               <ResponsiveContainer width="99%" height={250} minWidth={0}>
                 <BarChart data={dashboardData.rankingMarketplaces} layout="vertical" margin={{ left: 0, right: 15, top: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} vertical={true} />
                   <XAxis type="number" hide />
                   <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={10} width={80} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ backgroundColor: 'rgba(11, 15, 25, 0.9)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '12px', color: '#fff', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)' }} formatter={(value) => formatCurrency(value)} />
-                  {/* Agora com duas Barras para comparação MoM */}
-                  <Bar dataKey="passado" name="Mês Anterior" fill="#6B7280" radius={[0, 4, 4, 0]} barSize={8} />
+                  <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={glassTooltipStyle} formatter={(value) => formatCurrency(value)} />
+                  <Bar dataKey="passado" name="Mês Anterior" fill="#4B5563" radius={[0, 4, 4, 0]} barSize={10} />
                   <Bar dataKey="atual" name="Mês Atual" fill="#6366F1" radius={[0, 4, 4, 0]} barSize={12} />
                 </BarChart>
               </ResponsiveContainer>
@@ -303,45 +312,52 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
 
       </div>
 
-      {/* 🌟 3. EVOLUÇÃO MENSAL E ALERTAS - AGORA FIXOS EM 400PX DE ALTURA */}
+      {/* 🌟 3. EVOLUÇÃO MENSAL E ALERTAS */}
       <div className="grid grid-cols-1 2xl:grid-cols-4 gap-6">
         
-        {/* EVOLUÇÃO */}
-        <div className="bg-black/20 p-6 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
-          <h3 className="text-sm font-bold text-white mb-6 flex items-center gap-2"><TrendingUp size={16} className="text-emerald-400"/> Evolução Histórica (Dinâmica)</h3>
-          <div className="h-80">
-            {dashboardData.historicalChartData.length > 0 ? (
+        {/* EVOLUÇÃO (Ocupa 3/4 da tela) */}
+        <div className="2xl:col-span-3 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm overflow-hidden flex flex-col h-[420px]">
+          <div className="flex items-center gap-3 mb-6 shrink-0">
+            <div className="p-2.5 bg-blue-500/10 rounded-xl border border-blue-500/20"><TrendingUp size={20} className="text-blue-400"/></div>
+            <h3 className="text-lg font-bold text-white tracking-wide">Evolução Histórica Global (Mês a Mês)</h3>
+          </div>
+          
+          <div className="flex-1 w-full relative">
+            {historicalChartData.length > 0 ? (
               <ResponsiveContainer width="99%" height="100%" minWidth={0}>
-                <AreaChart data={dashboardData.historicalChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                {/* ComposedChart permite misturar Áreas e Linhas no mesmo gráfico */}
+                <ComposedChart data={historicalChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorGlobal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
                     </linearGradient>
                     <linearGradient id="colorAgency" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="month" stroke="#6B7280" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis hide />
+                  
+                  <YAxis yAxisId="left" hide />
+                  <YAxis yAxisId="right" orientation="right" hide />
+                  
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                  <Tooltip contentStyle={{ backgroundColor: 'rgba(17, 24, 39, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} formatter={(value) => formatCurrency(value)} />
+                  <Tooltip contentStyle={glassTooltipStyle} formatter={(value) => formatCurrency(value)} />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}/>
-                  <Area type="monotone" dataKey="ReceitaGlobal" name="Receita Global (Clientes)" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorGlobal)" />
-                  <Area type="monotone" dataKey="ReceitaAgencia" name="Receita Avante" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#colorAgency)" />
-                </AreaChart>
+                  
+                  <Area yAxisId="left" type="monotone" dataKey="ReceitaGlobal" name="Receita Realizada" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorGlobal)" />
+                  <Area yAxisId="right" type="monotone" dataKey="ReceitaAgencia" name="Receita Avante" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#colorAgency)" />
+
+                  <Line yAxisId="left" type="monotone" dataKey="ProjecaoGlobal" name="Projeção (Fim do Mês)" stroke="#F59E0B" strokeDasharray="5 5" strokeWidth={3} dot={{r:4}} connectNulls={true} />
+                  <Line yAxisId="left" type="monotone" dataKey="MetaGlobal" name="Meta (Fim do Mês)" stroke="#8B5CF6" strokeDasharray="5 5" strokeWidth={3} dot={{r:4}} connectNulls={true} />
+                </ComposedChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-                Registre fechamentos passados nas lojas para gerar o gráfico histórico.
-              </div>
+              <div className="flex items-center justify-center h-full text-gray-500 text-sm">Registre fechamentos nas lojas para gerar o gráfico histórico.</div>
             )}
           </div>
         </div>
 
-        {/* LOG DE ALERTAS - Acompanhando a altura do Gráfico */}
-        <div className="2xl:col-span-1 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm overflow-hidden flex flex-col h-[400px]">
+        <div className="2xl:col-span-1 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm overflow-hidden flex flex-col h-[420px]">
           <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-3 shrink-0">
             <div className="p-2.5 bg-gray-500/10 rounded-xl border border-white/10"><AlertCircle size={20} className="text-gray-400"/></div>
             Radar de Pacing
@@ -349,7 +365,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
           
           <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
             {changeLogs.map((log, i) => (
-              <div key={i} className={`flex flex-col gap-3 p-4 rounded-2xl border backdrop-blur-md transition-all hover:scale-[1.02] ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
+              <div key={i} className={`flex flex-col gap-3 p-4 rounded-2xl border backdrop-blur-md transition-all ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
                 <div className="flex items-start gap-3">
                   <div className={`p-2.5 rounded-xl mt-0.5 ${log.type === 'danger' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
                     {log.type === 'danger' ? <AlertCircle size={18} /> : <Clock size={18} />}

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, Settings, TrendingUp, TrendingDown } from 'lucide-react';
+import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, Settings, TrendingUp, TrendingDown, ChevronDown, ChevronRight, Edit2 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
@@ -8,8 +8,7 @@ import StoreManagementModal from './StoreManagementModal';
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
 
-// === COMPONENTE: LINHA DE APURAÇÃO INDIVIDUAL ===
-const StoreEntryRow = ({ store, handleSaveIndividualEntry }) => {
+const StoreEntryRow = ({ store, handleSaveIndividualEntry, handleSaveRetroactiveMonth, handleDeleteRetroactiveMonth, formatCurrency }) => {
     const lastDayRecorded = store.history && store.history.length > 0 
         ? Math.max(...store.history.map(h => h.day)) 
         : 0;
@@ -20,53 +19,188 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry }) => {
     const [uni, setUni] = useState(store.units || '');
     const [ads, setAds] = useState(store.adsInvestment || '');
     const [isSaving, setIsSaving] = useState(false);
+    
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    const [retroMonth, setRetroMonth] = useState('');
+    const [retroGmv, setRetroGmv] = useState('');
+    const [retroAds, setRetroAds] = useState('');
+    const [isSavingRetro, setIsSavingRetro] = useState(false);
+    const [editingRetroId, setEditingRetroId] = useState(null);
 
     const onSave = async () => {
         if (!day || rev === '') return toast.error("Dia e Faturamento são obrigatórios.");
         setIsSaving(true);
-        
-        const numRev = Number(String(rev).replace(',', '.'));
-        const numAds = Number(String(ads).replace(',', '.')) || 0;
-        const numOrd = Number(ord) || 0;
-        const numUni = Number(uni) || 0;
-
-        await handleSaveIndividualEntry(store.id, day, numRev, numAds, numOrd, numUni);
-        
+        await handleSaveIndividualEntry(store.id, day, Number(String(rev).replace(',', '.')), Number(String(ads).replace(',', '.')) || 0, Number(ord) || 0, Number(uni) || 0);
         setDay(prev => prev < 31 ? Number(prev) + 1 : 31);
         setIsSaving(false);
     };
 
+    const formatToInputMonth = (bankMonth) => {
+        if (!bankMonth) return '';
+        let clean = String(bankMonth).toUpperCase().replace(/\s+/g, '').replace('ABRI', 'ABR');
+        const match = clean.match(/^([A-Z]{3,4})\/?(\d{2,4})?$/);
+        
+        if (match) {
+            const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+            const monthStr = match[1].substring(0, 3);
+            const monthIndex = months.indexOf(monthStr);
+            if (monthIndex === -1) return '';
+            
+            const monthNum = String(monthIndex + 1).padStart(2, '0');
+            let yearStr = match[2];
+            
+            if (!yearStr) yearStr = new Date().getFullYear().toString(); 
+            else if (yearStr.length === 2) yearStr = `20${yearStr}`;
+            
+            return `${yearStr}-${monthNum}`;
+        }
+        return '';
+    };
+
+    const onSaveRetro = async () => {
+        if (!retroMonth || !retroGmv) return toast.error('Preencha o mês e o faturamento.');
+        setIsSavingRetro(true);
+        await handleSaveRetroactiveMonth(store.id, retroMonth, retroGmv, retroAds, editingRetroId);
+        cancelEditing();
+        setIsSavingRetro(false);
+    };
+
+    const startEditingRetro = (hist) => {
+        const fallbackId = hist.id || hist.month; 
+        setEditingRetroId(fallbackId);
+        
+        setRetroMonth(formatToInputMonth(hist.month));
+        setRetroGmv(hist.gmv);
+        setRetroAds(hist.adsInvestment || 0);
+        
+        if (!hist.id) {
+            toast('Lançamento antigo detectado. Ao salvar, ele será padronizado.', { icon: '✨' });
+        }
+    };
+
+    const cancelEditing = () => {
+        setEditingRetroId(null);
+        setRetroMonth(''); 
+        setRetroGmv(''); 
+        setRetroAds('');
+    };
+
     return (
-        <tr className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-            <td className="p-4">
-                <div className="font-bold text-gray-200 truncate max-w-[150px]" title={store.store}>{store.store}</div>
-                <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{store.marketplace || 'Marketplace'}</div>
-            </td>
-            <td className="p-3">
-                <input type="number" min="1" max="31" value={day} onChange={e => setDay(e.target.value)} className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-white text-center font-bold outline-none focus:border-amber-500 shadow-inner" />
-            </td>
-            <td className="p-3">
-                <input type="text" value={rev} onChange={e => setRev(e.target.value)} placeholder="0.00" className="w-24 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner" />
-            </td>
-            <td className="p-3">
-                <input type="number" value={ord} onChange={e => setOrd(e.target.value)} placeholder="0" className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner" />
-            </td>
-            <td className="p-3">
-                <input type="number" value={uni} onChange={e => setUni(e.target.value)} placeholder="0" className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner" />
-            </td>
-            <td className="p-3">
-                <input type="text" value={ads} onChange={e => setAds(e.target.value)} placeholder="0.00" className="w-24 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 shadow-inner" />
-            </td>
-            <td className="p-4 text-right">
-                <button 
-                    onClick={onSave} 
-                    disabled={isSaving}
-                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-colors"
-                >
-                    {isSaving ? '⏳' : 'Salvar'}
-                </button>
-            </td>
-        </tr>
+        <React.Fragment>
+            {/* LINHA PRINCIPAL DA LOJA */}
+            <tr className={`border-b border-white/5 hover:bg-white/[0.02] transition-colors ${isExpanded ? 'bg-white/[0.03]' : ''}`}>
+                <td className="p-4 cursor-pointer group" onClick={() => setIsExpanded(!isExpanded)}>
+                    <div className="flex items-center gap-2">
+                        <div className={`w-4 h-4 rounded flex items-center justify-center transition-colors ${isExpanded ? 'bg-indigo-500/20 text-indigo-400' : 'bg-white/5 text-gray-400 group-hover:bg-white/10 group-hover:text-white'}`}>
+                            {isExpanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
+                        </div>
+                        <div>
+                            <div className="font-bold text-gray-200 truncate max-w-[150px] group-hover:text-indigo-300 transition-colors" title={store.store}>{store.store}</div>
+                            <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{store.marketplace || 'Marketplace'}</div>
+                        </div>
+                    </div>
+                </td>
+                <td className="p-3">
+                    <input type="number" min="1" max="31" value={day} onChange={e => setDay(e.target.value)} className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-white text-center font-bold outline-none focus:border-amber-500 shadow-inner" />
+                </td>
+                <td className="p-3">
+                    <input type="text" value={rev} onChange={e => setRev(e.target.value)} placeholder="0.00" className="w-24 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner" />
+                </td>
+                <td className="p-3">
+                    <input type="number" value={ord} onChange={e => setOrd(e.target.value)} placeholder="0" className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner" />
+                </td>
+                <td className="p-3">
+                    <input type="number" value={uni} onChange={e => setUni(e.target.value)} placeholder="0" className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner" />
+                </td>
+                <td className="p-3">
+                    <input type="text" value={ads} onChange={e => setAds(e.target.value)} placeholder="0.00" className="w-24 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 shadow-inner" />
+                </td>
+                <td className="p-4 text-right">
+                    <button onClick={onSave} disabled={isSaving} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-colors">
+                        {isSaving ? '⏳' : 'Salvar'}
+                    </button>
+                </td>
+            </tr>
+
+            {/* PAINEL EXPANDIDO (HISTÓRICO DA LOJA EM BLOCO ÚNICO) */}
+            {isExpanded && (
+                <tr className="bg-[#0B0F19]/50 border-b border-white/5">
+                    <td colSpan="7" className="p-0">
+                        <div className="p-5 border-l-[3px] border-indigo-500 ml-4 mb-4 mt-2 rounded-r-xl bg-black/20 shadow-inner">
+                            
+                            <h5 className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                                <History size={14}/> 
+                                {editingRetroId ? 'Editando Fechamento' : 'Registrar Mês Anterior'}
+                            </h5>
+                            
+                            {/* LINHA 1: FORMULÁRIO DE LANÇAMENTO */}
+                            <div className="flex flex-wrap gap-3 items-end">
+                                <div className="flex-1 min-w-[120px]">
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Mês/Ano</label>
+                                    <input type="month" value={retroMonth} onChange={e => setRetroMonth(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 transition-colors cursor-pointer" />
+                                </div>
+                                <div className="flex-1 min-w-[120px]">
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Faturamento</label>
+                                    <input type="text" placeholder="0.00" value={retroGmv} onChange={e => setRetroGmv(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 transition-colors" />
+                                </div>
+                                <div className="flex-1 min-w-[120px]">
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Ads Investido</label>
+                                    <input type="text" placeholder="0.00" value={retroAds} onChange={e => setRetroAds(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 transition-colors" />
+                                </div>
+                                
+                                {/* BOTÕES NA MESMA LINHA */}
+                                {editingRetroId && (
+                                    <button onClick={cancelEditing} className="bg-white/5 hover:bg-white/10 text-gray-400 px-4 py-2.5 rounded-lg text-xs font-bold transition-colors">
+                                        Cancelar
+                                    </button>
+                                )}
+                                <button onClick={onSaveRetro} disabled={isSavingRetro} className={`${editingRetroId ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-500'} disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-xs font-bold shadow-md transition-colors`}>
+                                    {isSavingRetro ? '⏳' : (editingRetroId ? 'Salvar Edição' : 'Adicionar Mês')}
+                                </button>
+                            </div>
+
+                            {/* LINHA 2: GRID DE HISTÓRICO (3 COLUNAS) */}
+                            {store.monthlyHistory && store.monthlyHistory.length > 0 && (
+                                <div className="mt-5 pt-4 border-t border-white/10">
+                                    <h5 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3">Histórico Registrado</h5>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {store.monthlyHistory.map((hist, index) => {
+                                            // Fallback para o highlight funcionar mesmo sem ID no histórico velho
+                                            const histKey = hist.id || hist.month;
+                                            
+                                            return (
+                                                <div key={hist.id || `hist-${index}-${hist.month}`} className={`flex items-center justify-between p-2 rounded-lg border transition-colors ${editingRetroId === histKey ? 'bg-indigo-900/30 border-indigo-500/50' : 'bg-gray-900/60 border-white/5 hover:border-white/10'}`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-[10px] font-bold text-white bg-black/40 border border-white/10 px-2 py-1 rounded shadow-sm">
+                                                            {hist.month}
+                                                        </span>
+                                                        <div>
+                                                            <span className="text-[11px] text-blue-400 font-bold block">{formatCurrency(hist.gmv)}</span>
+                                                            {hist.adsInvestment > 0 && <span className="text-[9px] text-amber-500 block">Ads: {formatCurrency(hist.adsInvestment)}</span>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-1 pr-1">
+                                                        <button onClick={() => startEditingRetro(hist)} className={`p-1.5 rounded transition-colors ${editingRetroId === histKey ? 'text-indigo-400 bg-indigo-500/20' : 'text-gray-400 hover:text-blue-400 hover:bg-blue-500/10'}`} title="Editar">
+                                                            <Edit2 size={14}/>
+                                                        </button>
+                                                        <button onClick={() => handleDeleteRetroactiveMonth(store.id, histKey)} className="p-1.5 text-gray-400 hover:bg-red-500/10 hover:text-red-400 rounded transition-colors" title="Excluir">
+                                                            <X size={14}/>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+                    </td>
+                </tr>
+            )}
+        </React.Fragment>
     );
 };
 
@@ -78,13 +212,6 @@ export default function ClientFileModal({
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
   const [isStoreManagementModalOpen, setIsStoreManagementModalOpen] = useState(false);
   
-  // Estados para o Formulário Retroativo
-  const [retroStoreId, setRetroStoreId] = useState('');
-  const [retroMonth, setRetroMonth] = useState('');
-  const [retroGmv, setRetroGmv] = useState('');
-  const [retroAds, setRetroAds] = useState('');
-  const [isSavingRetro, setIsSavingRetro] = useState(false);
-
   const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
   const handleBulkTaskSave = (selectedStoreIds, taskData) => {
@@ -117,38 +244,14 @@ export default function ClientFileModal({
     toast.success(`Tarefa replicada em ${selectedStoreIds.length} loja(s)!`);
   };
 
-  const formatMonthYear = (yyyyMm) => {
-    if (!yyyyMm) return '';
-    const [year, month] = yyyyMm.split('-');
-    const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-    const shortYear = year.slice(-2);
-    // Transforma "2026-04" em "ABR/26"
-    return `${months[parseInt(month, 10) - 1]}/${shortYear}`;
-  };
-
-  const onSaveRetro = async () => {
-    if (!retroStoreId || !retroMonth || !retroGmv) return toast.error('Preencha a loja, o mês e o faturamento.');
-    setIsSavingRetro(true);
-    
-    // Padroniza a data antes de mandar para o banco de dados
-    const formattedMonth = formatMonthYear(retroMonth);
-
-    // Chama a função que adicionamos no App.jsx usando o mês formatado
-    await handleSaveRetroactiveMonth(Number(retroStoreId), formattedMonth, retroGmv, retroAds);
-    
-    // Limpa os campos após salvar
-    setRetroStoreId('');
-    setRetroMonth('');
-    setRetroGmv('');
-    setRetroAds('');
-    setIsSavingRetro(false);
-  };
-
   const clientOpenTasks = useMemo(() => {
     if (!clientGroup || !clientGroup.stores) return [];
     const open = [];
-    clientGroup.stores.forEach(store => {
-      if (store.checklists && !store.arquivada) {
+    
+    const currentClientStores = stores.filter(s => s.client === clientGroup.client && !s.arquivada);
+    
+    currentClientStores.forEach(store => {
+      if (store.checklists) {
         store.checklists.forEach(task => {
           if (!task.feita) {
             open.push({ ...task, storeName: store.store, storeId: store.id });
@@ -185,23 +288,30 @@ export default function ClientFileModal({
 
   const allTimeTotalGmv = useMemo(() => {
     return liveStores.reduce((acc, s) => {
-        let storeTotal = Number(s.currentRevenue) || 0;
+        let storeTotal = Number(s.currentRevenue) || 0; 
         if (s.monthlyHistory) {
-            s.monthlyHistory.forEach(h => storeTotal += (Number(h.gmv) || 0));
+            s.monthlyHistory.forEach(h => storeTotal += (Number(h.gmv) || 0)); 
         }
         return acc + storeTotal;
     }, 0);
   }, [liveStores]);
 
-  // === MOTOR DE CÁLCULO MoM (Month-over-Month) ===
+  const mesPassadoExato = useMemo(() => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - 1);
+      const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+      return `${meses[d.getMonth()]}/${String(d.getFullYear()).slice(-2)}`;
+  }, []);
+
   const lastMonthTotalGmv = useMemo(() => {
     return liveStores.reduce((acc, s) => {
         if (s.monthlyHistory && s.monthlyHistory.length > 0) {
-            return acc + (Number(s.monthlyHistory[s.monthlyHistory.length - 1].gmv) || 0);
+            const prevData = s.monthlyHistory.find(h => h.month === mesPassadoExato);
+            return acc + (prevData ? Number(prevData.gmv) : 0);
         }
         return acc + (Number(s.gmvBase) || 0);
     }, 0);
-  }, [liveStores]);
+  }, [liveStores, mesPassadoExato]);
 
   const momGrowth = lastMonthTotalGmv > 0 
     ? ((clientGroup.totalProjectedGmv - lastMonthTotalGmv) / lastMonthTotalGmv) * 100 
@@ -312,7 +422,6 @@ export default function ClientFileModal({
             <button onClick={() => setActiveTab('historico')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${activeTab === 'historico' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><ClipboardList size={16}/> Histórico & Notas</button>
           </div>
 
-          {/* BOTÕES DE AÇÃO DO CABEÇALHO */}
           <div className="flex items-center gap-2">
             {currentUserData?.role !== 'Visitante' && (
               <button onClick={() => setIsStoreManagementModalOpen(true)} className="px-3 py-2 bg-slate-700 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-gray-300 flex items-center transition-colors">
@@ -349,25 +458,22 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              {/* === ATUALIZADO: Grid de Cartões === */}
+              {/* Grid de Cartões */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
                 
-                {/* NOVO CARTÃO DUPLO: FATURAMENTO HISTÓRICO + FATURAMENTO DO MÊS */}
+                {/* CARTÃO DUPLO: FATURAMENTO HISTÓRICO + FATURAMENTO DO GRUPO */}
                 <div className="sm:col-span-2 bg-gradient-to-r from-indigo-900/20 to-black/20 p-5 rounded-2xl border border-indigo-500/20 shadow-sm flex flex-col justify-center">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 w-full">
                     
-                    {/* Metade Esquerda: Histórico Total */}
                     <div className="flex-1 w-full">
                       <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Faturamento Histórico</span>
                       <p className="text-2xl font-bold text-indigo-300 mt-1">{formatCurrency(allTimeTotalGmv)}</p>
                       <p className="text-xs text-gray-400 mt-1">Acumulado de todos os meses</p>
                     </div>
                     
-                    {/* Divisor Visual */}
                     <div className="w-px h-12 bg-white/10 hidden sm:block"></div>
                     <div className="w-full h-px bg-white/10 sm:hidden my-1"></div>
                     
-                    {/* Metade Direita: Faturamento Atual do Grupo */}
                     <div className="flex-1 w-full sm:pl-2">
                       <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Faturamento do Grupo</span>
                       <p className="text-2xl font-bold text-blue-400 mt-1">{formatCurrency(clientGroup.totalCurrentRevenue)}</p>
@@ -377,16 +483,15 @@ export default function ClientFileModal({
                   </div>
                 </div>
 
-                {/* Os 3 Cartões restantes */}
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Evolução (MoM)</span>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Evolução Mensal</span>
                   <div className="flex items-center gap-2 mt-1">
                     <p className={`text-2xl font-bold ${momGrowth >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {momGrowth > 0 ? '+' : ''}{momGrowth.toFixed(1)}%
                     </p>
                     {momGrowth >= 0 ? <TrendingUp size={20} className="text-emerald-400" /> : <TrendingDown size={20} className="text-rose-400" />}
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">Base passada: {formatCurrency(lastMonthTotalGmv)}</p>
+                  <p className="text-xs text-gray-400 mt-1">Mês anterior: {formatCurrency(lastMonthTotalGmv)}</p>
                 </div>
 
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
@@ -472,7 +577,7 @@ export default function ClientFileModal({
               <div className="flex justify-between items-center bg-black/20 p-4 rounded-2xl border border-white/5">
                 <div>
                   <h3 className="text-white font-bold flex items-center gap-2"><Zap className="text-amber-400" size={16}/> Lançamentos Individuais</h3>
-                  <p className="text-xs text-gray-400 mt-1">O sistema calculará automaticamente a média diária entre o último lançamento e o dia informado.</p>
+                  <p className="text-xs text-gray-400 mt-1">Clique no nome da loja para expandir e gerenciar o histórico de fechamentos daquela conta.</p>
                 </div>
               </div>
 
@@ -494,93 +599,14 @@ export default function ClientFileModal({
                       <StoreEntryRow 
                         key={store.id} 
                         store={store} 
-                        handleSaveIndividualEntry={handleSaveIndividualEntry} 
+                        handleSaveIndividualEntry={handleSaveIndividualEntry}
+                        handleSaveRetroactiveMonth={handleSaveRetroactiveMonth}
+                        handleDeleteRetroactiveMonth={handleDeleteRetroactiveMonth}
+                        formatCurrency={formatCurrency}
                       />
                     ))}
                   </tbody>
                 </table>
-              </div>
-
-              {/* === MÓDULO UNIFICADO: GESTÃO DE HISTÓRICO PASSADO === */}
-              <div className="mt-8 bg-black/20 p-6 rounded-2xl border border-white/5 shadow-sm">
-                  
-                  {/* Cabeçalho do Módulo */}
-                  <div className="mb-5">
-                      <h4 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
-                          <History className="text-indigo-400" size={18}/> Gestão de Fechamentos Anteriores
-                      </h4>
-                      <p className="text-xs text-gray-400">Insira e gerencie os fechamentos passados de cada loja para estabelecer a base de cálculo de crescimento (MoM).</p>
-                  </div>
-                  
-                  {/* Formulário de Inserção */}
-                  <div className="flex flex-col md:flex-row gap-4 items-end bg-gray-900/40 p-4 rounded-xl border border-white/5 mb-6">
-                      <div className="flex-1 w-full">
-                          <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Loja</label>
-                          <select value={retroStoreId} onChange={e => setRetroStoreId(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer transition-colors">
-                              <option value="">Selecione a loja...</option>
-                              {liveStores.map(s => <option key={s.id} value={s.id}>{s.store} {s.marketplace ? `- ${s.marketplace}` : ''}</option>)}
-                          </select>
-                      </div>
-                      <div className="w-full md:w-32">
-                          <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Mês/Ano</label>
-                          <input 
-                              type="month" 
-                              value={retroMonth} 
-                              onChange={e => setRetroMonth(e.target.value)} 
-                              className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors cursor-pointer" 
-                          />
-                      </div>
-                      <div className="w-full md:w-32">
-                          <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Fat. Fechado</label>
-                          <input type="text" placeholder="0.00" value={retroGmv} onChange={e => setRetroGmv(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 transition-colors" />
-                      </div>
-                      <div className="w-full md:w-32">
-                          <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Ads Investido</label>
-                          <input type="text" placeholder="0.00" value={retroAds} onChange={e => setRetroAds(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 transition-colors" />
-                      </div>
-                      <button 
-                          onClick={onSaveRetro} 
-                          disabled={isSavingRetro}
-                          className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-6 py-2.5 rounded-lg text-xs font-bold shadow-md transition-colors"
-                      >
-                          {isSavingRetro ? 'Salvando...' : 'Registrar'}
-                      </button>
-                  </div>
-                  
-                  {/* Linha Divisória */}
-                  <hr className="border-white/5 mb-6" />
-
-                  {/* Lista de Histórico Salvo */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {liveStores.map(store => {
-                          if (!store.monthlyHistory || store.monthlyHistory.length === 0) return null;
-                          return (
-                              <div key={`hist-${store.id}`} className="bg-gray-900/40 rounded-xl p-4 border border-white/5 hover:border-white/10 transition-colors">
-                                  <h5 className="text-xs font-bold text-gray-300 mb-3 truncate flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]"></div>
-                                      {store.store} {store.marketplace ? `- ${store.marketplace}` : ''}
-                                  </h5>
-                                  <div className="space-y-2">
-                                      {store.monthlyHistory.map(hist => (
-                                          <div key={hist.id} className="flex items-center justify-between bg-black/40 p-2.5 rounded-lg border border-white/5">
-                                              <div>
-                                                  <p className="text-[10px] font-bold text-white tracking-wide">{hist.month}</p>
-                                                  <p className="text-[9px] text-blue-400 font-medium mt-0.5">GMV: {formatCurrency(hist.gmv)}</p>
-                                              </div>
-                                              <button 
-                                                  onClick={() => handleDeleteRetroactiveMonth(store.id, hist.id)}
-                                                  className="p-1.5 text-gray-500 hover:bg-red-500/10 hover:text-red-400 rounded-md transition-colors"
-                                                  title="Excluir Mês"
-                                              >
-                                                  <X size={14}/>
-                                              </button>
-                                          </div>
-                                      ))}
-                                  </div>
-                              </div>
-                          );
-                      })}
-                  </div>
               </div>
             </div>
           )}
