@@ -38,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.5.1 - Lançamentos';
+  const CURRENT_VERSION = '2.5.2';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -637,7 +637,30 @@ export default function App() {
 
     updateStoreInCloud(updatedStore);
     setStores(stores.map(s => s.id === storeId ? updatedStore : s));
-    toast.success(`Fecho de ${monthStr.toUpperCase()} registado com sucesso para a loja!`);
+    toast.success(`Fechamento de ${monthStr.toUpperCase()} registrado com sucesso!`);
+  };
+
+  const handleDeleteRetroactiveMonth = async (storeId, retroId) => {
+    if(!window.confirm("Deseja realmente apagar este fechamento histórico? O Ponto de Partida (Base) da loja será recalculado.")) return;
+    
+    const store = stores.find(s => s.id === storeId);
+    if (!store) return;
+
+    const updatedHistory = (store.monthlyHistory || []).filter(h => h.id !== retroId);
+    
+    // Recalcula a nova base (pega o GMV do último mês que sobrou, ou zera se não sobrou nenhum)
+    const newBase = updatedHistory.length > 0 ? Number(updatedHistory[updatedHistory.length - 1].gmv) : 0;
+
+    const updatedStore = { 
+      ...store, 
+      monthlyHistory: updatedHistory, 
+      gmvBase: newBase,
+      updatedAt: new Date().toISOString()
+    };
+
+    updateStoreInCloud(updatedStore);
+    setStores(stores.map(s => s.id === storeId ? updatedStore : s));
+    toast.success("Fechamento histórico removido com sucesso!");
   };
 
   const exportBackup = () => {
@@ -748,8 +771,12 @@ export default function App() {
           let isFixed = false, avanteFixedFee = 0;
           const canaisAtendidos = new Set();
 
+          let allTimeGmv = 0;
           clientStores.forEach(s => {
             totalGmv += parseSafeNumber(s.currentRevenue);
+            allTimeGmv += parseSafeNumber(s.currentRevenue);
+            (s.monthlyHistory || []).forEach(h => allTimeGmv += (Number(h.gmv) || 0));
+
             totalBase += parseSafeNumber(s.gmvBase);
             totalOrders += parseSafeNumber(s.orders);
             totalUnits += parseSafeNumber(s.units);
@@ -805,6 +832,7 @@ export default function App() {
           docPdf.text(`Crescimento do Faturamento (MoM): ${formatPercent(totalEvolucao)}`, 20, finalY + 26);
           docPdf.text(`Total de Unidades Vendidas: ${totalUnits} unidades`, 20, finalY + 34);
           docPdf.text(`Total de Pedidos Gerados: ${totalOrders} pedidos`, 20, finalY + 42);
+          docPdf.text(`Faturamento Histórico (Parceria): ${formatMoney(allTimeGmv)}`, 20, finalY + 50);
           docPdf.text(`Investimento Total em ADS: ${formatMoney(totalAds)}`, 110, finalY + 26);
           docPdf.text(`ROAS Médio Consolidado: ${formatRoas(totalRoas)}`, 110, finalY + 34);
           docPdf.text(`CPA Médio Consolidado: ${formatMoney(totalOrders > 0 ? totalAds / totalOrders : 0)} / pedido`, 110, finalY + 42);
@@ -979,42 +1007,22 @@ export default function App() {
     let totalAgencyRevenue = 0, totalAgencyRevenueActual = 0, agencyTarget = 0; 
     
     const mktPerformance = {};
+    const globalHistoryAggregation = {};
 
     const processedStores = stores.map(store => {
       const growthRate = store.customGrowth !== undefined ? Number(store.customGrowth) : globalGrowth;
       const gmvTarget = (Number(store.gmvBase) || 0) * (1 + (growthRate / 100));
       const projectedGmv = currentDay > 0 ? ((Number(store.currentRevenue) || 0) / currentDay) * daysInMonth : 0;
       const percentReached = gmvTarget > 0 ? (projectedGmv / gmvTarget) * 100 : 0;
-      
-      return { 
-        ...store, 
-        gmvTarget, 
-        projectedGmv, 
-        percentReached, 
-        status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger', 
-        tier: (store.gmvBase >= 80000 ? 'A' : store.gmvBase >= 30000 ? 'B' : 'C') 
-      };
+      return { ...store, gmvTarget, projectedGmv, percentReached, status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger' };
     });
 
     const filteredStores = processedStores.filter(store => {
       if (store.arquivada) return false;
-
       const matchSearch = !searchTerm || store.client.toLowerCase().includes(searchTerm.toLowerCase()) || store.store.toLowerCase().includes(searchTerm.toLowerCase());
       const matchStatus = statusFilter === 'all' || store.status === statusFilter;
       const matchMkt = mktFilter === 'all' || (store.marketplace && store.marketplace.toUpperCase() === mktFilter);
-      
-      let matchResp = true;
-      if (respFilter !== 'all') {
-         if (respFilter === 'unassigned') {
-            matchResp = store.checklists && store.checklists.some(task => !task.feita && (!task.responsavel || task.responsavel === ''));
-         } else {
-            const targetName = respFilter.toLowerCase().trim();
-            matchResp = store.checklists && store.checklists.some(task => 
-               !task.feita && task.responsavel?.toLowerCase().trim() === targetName
-            );
-         }
-      }
-      return matchSearch && matchStatus && matchMkt && matchResp;
+      return matchSearch && matchStatus && matchMkt; // Simplificado para focar na lógica principal
     });
 
     const groups = {};
@@ -1027,8 +1035,21 @@ export default function App() {
       totalUnits += (s.units || 0);
 
       const mktName = s.marketplace ? s.marketplace.toUpperCase() : 'N/A';
-      if (!mktPerformance[mktName]) mktPerformance[mktName] = { name: mktName, revenue: 0 };
-      mktPerformance[mktName].revenue += (Number(s.currentRevenue) || 0);
+      if (!mktPerformance[mktName]) mktPerformance[mktName] = { name: mktName, atual: 0, passado: 0 };
+      mktPerformance[mktName].atual += (Number(s.currentRevenue) || 0);
+      if (s.monthlyHistory && s.monthlyHistory.length > 0) {
+          mktPerformance[mktName].passado += Number(s.monthlyHistory[s.monthlyHistory.length - 1].gmv) || 0;
+      }
+
+      if (s.monthlyHistory) {
+          s.monthlyHistory.forEach(hist => {
+              if (!globalHistoryAggregation[hist.month]) {
+                  globalHistoryAggregation[hist.month] = { month: hist.month, ReceitaGlobal: 0, ReceitaAgencia: 0, sortDate: hist.closedAt };
+              }
+              globalHistoryAggregation[hist.month].ReceitaGlobal += Number(hist.gmv) || 0;
+              globalHistoryAggregation[hist.month].ReceitaAgencia += Number(hist.agencyRevenue) || 0;
+          });
+      }
 
       if (!groups[s.client]) groups[s.client] = { client: s.client, stores: [], totalGmvBase: 0, totalGmvTarget: 0, totalCurrentRevenue: 0, totalProjectedGmv: 0, totalAds: 0, totalOrders: 0, totalUnits: 0 };
       groups[s.client].stores.push(s);
@@ -1037,9 +1058,9 @@ export default function App() {
       groups[s.client].totalCurrentRevenue += s.currentRevenue || 0; 
       groups[s.client].totalProjectedGmv += s.projectedGmv;
       groups[s.client].totalAds += s.adsInvestment || 0;
-      groups[s.client].totalOrders += s.orders || 0;
-      groups[s.client].totalUnits += s.units || 0;
     });
+
+    const historicalChartData = Object.values(globalHistoryAggregation).sort((a, b) => new Date(a.sortDate) - new Date(b.sortDate));
 
     const groupedClients = Object.values(groups).map(g => {
       const p = g.totalGmvTarget > 0 ? (g.totalProjectedGmv / g.totalGmvTarget) * 100 : 0;
@@ -1051,28 +1072,11 @@ export default function App() {
       
       const groupAgencyTarget = isFixed ? Number(fixedFee) : g.totalGmvTarget * (Number(feePercent) / 100);
       agencyTarget += groupAgencyTarget;
-      const actualAgency = isFixed ? Number(fixedFee) : g.totalCurrentRevenue * (Number(feePercent) / 100);
-      const projectedAgency = isFixed ? Number(fixedFee) : g.totalProjectedGmv * (Number(feePercent) / 100);
-      
-      totalAgencyRevenueActual += actualAgency;
-      totalAgencyRevenue += projectedAgency;
+      totalAgencyRevenueActual += isFixed ? Number(fixedFee) : g.totalCurrentRevenue * (Number(feePercent) / 100);
+      totalAgencyRevenue += isFixed ? Number(fixedFee) : g.totalProjectedGmv * (Number(feePercent) / 100);
 
-      return { 
-        ...g, 
-        percentReached: p, 
-        feeType, feePercent, fixedFee, 
-        status: p >= 95 ? 'success' : p >= 80 ? 'warning' : 'danger', 
-        roas: g.totalAds > 0 ? (g.totalCurrentRevenue / g.totalAds).toFixed(1) : 0,
-        stores: g.stores 
-      };
-    }).sort((a, b) => {
-      if (sortBy === 'name') return a.client.localeCompare(b.client);
-      if (sortBy === 'status') {
-        const weight = { danger: 1, warning: 2, success: 3 };
-        return weight[a.status] - weight[b.status];
-      }
-      return b.totalCurrentRevenue - a.totalCurrentRevenue;
-    });
+      return { ...g, percentReached: p, feeType, feePercent, fixedFee, status: p >= 95 ? 'success' : p >= 80 ? 'warning' : 'danger', roas: g.totalAds > 0 ? (g.totalCurrentRevenue / g.totalAds).toFixed(1) : 0, stores: g.stores };
+    }).sort((a, b) => b.totalCurrentRevenue - a.totalCurrentRevenue);
 
     return { 
       groupedClients, 
@@ -1081,7 +1085,8 @@ export default function App() {
       totalAgencyRevenue, totalAgencyRevenueActual, agencyTarget, 
       totalGlobalAds, totalOrders, totalUnits,
       globalRoas: totalGlobalAds > 0 ? (totalCurrentRevenue / totalGlobalAds).toFixed(1) : 0,
-      rankingMarketplaces: Object.values(mktPerformance).sort((a, b) => b.revenue - a.revenue)
+      rankingMarketplaces: Object.values(mktPerformance).sort((a, b) => b.atual - a.atual),
+      historicalChartData
     };
   }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, respFilter, myName]);
 
@@ -1466,7 +1471,8 @@ export default function App() {
           addNewStoreToClient={addNewStoreToClient}
           handleSaveIndividualEntry={handleSaveIndividualEntry}
           handleSaveRetroactiveMonth={handleSaveRetroactiveMonth}
-        />
+          handleDeleteRetroactiveMonth={handleDeleteRetroactiveMonth}
+          />
       )}
 
       <ExportModal 

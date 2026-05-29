@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, PieChartIcon, Award } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line, Legend } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area, Legend } from 'recharts';
 
 export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieData, roasData, COLORS, currentDay, daysInMonth }) {
   
@@ -280,22 +280,24 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             <div className="p-2.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
               <ShoppingCart size={20} className="text-emerald-400"/>
             </div>
-            <h3 className="text-lg font-bold text-white tracking-wide">Por Canal (Mkt)</h3>
+            <h3 className="text-lg font-bold text-white tracking-wide">Market Share (Canais)</h3>
           </div>
           <div className="h-[300px] w-full mt-4">
-            <ResponsiveContainer width="99%" height={250} minWidth={0}>
-              <BarChart data={dashboardData.rankingMarketplaces} margin={{ top: 10, right: 5, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="name" stroke="#6B7280" fontSize={12} tickLine={false} />
-                <YAxis stroke="#6B7280" fontSize={12} tickFormatter={(v) => v >= 1000 ? `R$${(v/1000).toFixed(0)}k` : `R$${v}`} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} contentStyle={glassTooltipStyle} itemStyle={{ color: '#fff', fontWeight: 'bold' }} formatter={(value) => formatCurrency(value)} />
-                <Bar dataKey="revenue" radius={[6, 6, 0, 0]} barSize={28}>
-                  {dashboardData.rankingMarketplaces.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {dashboardData.rankingMarketplaces.length > 0 ? (
+              <ResponsiveContainer width="99%" height={250} minWidth={0}>
+                <BarChart data={dashboardData.rankingMarketplaces} layout="vertical" margin={{ left: 0, right: 15, top: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} vertical={true} />
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={10} width={80} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: 'rgba(11, 15, 25, 0.9)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '12px', color: '#fff', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)' }} formatter={(value) => formatCurrency(value)} />
+                  {/* Agora com duas Barras para comparação MoM */}
+                  <Bar dataKey="passado" name="Mês Anterior" fill="#6B7280" radius={[0, 4, 4, 0]} barSize={8} />
+                  <Bar dataKey="atual" name="Mês Atual" fill="#6366F1" radius={[0, 4, 4, 0]} barSize={12} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-500 text-center mt-20 text-sm">Sem faturamento registrado.</p>
+            )}
           </div>
         </div>
 
@@ -305,26 +307,36 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
       <div className="grid grid-cols-1 2xl:grid-cols-4 gap-6">
         
         {/* EVOLUÇÃO */}
-        <div className="2xl:col-span-3 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm flex flex-col h-[400px]">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2.5 bg-purple-500/10 rounded-xl border border-purple-500/20">
-              <Activity size={20} className="text-purple-400"/>
-            </div>
-            <h3 className="text-lg font-bold text-white tracking-wide">Evolução Histórica: Receita Global vs Receita Agência</h3>
-          </div>
-          <div className="w-full flex-1 min-h-0">
-            <ResponsiveContainer width="99%" height={250} minWidth={0}>
-              <LineChart data={monthlyComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="month" stroke="#6B7280" fontSize={13} tickMargin={10} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="left" stroke="#3B82F6" fontSize={13} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="right" orientation="right" stroke="#A855F7" fontSize={13} tickFormatter={(v) => v >= 1000 ? `R$${(v/1000).toFixed(0)}k` : `R$${v}`} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={glassTooltipStyle} itemStyle={{ fontWeight: 'bold' }} formatter={(v) => formatCurrency(v)} />
-                <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '14px' }} iconType="circle" />
-                <Line yAxisId="left" type="monotone" dataKey="clientRevenue" name="Global Clientes" stroke="#3B82F6" strokeWidth={4} dot={{ r: 5 }} />
-                <Line yAxisId="right" type="monotone" dataKey="agencyRevenue" name="Receita Avante" stroke="#A855F7" strokeWidth={4} dot={{ r: 5 }} />
-              </LineChart>
-            </ResponsiveContainer>
+        <div className="bg-black/20 p-6 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+          <h3 className="text-sm font-bold text-white mb-6 flex items-center gap-2"><TrendingUp size={16} className="text-emerald-400"/> Evolução Histórica (Dinâmica)</h3>
+          <div className="h-80">
+            {dashboardData.historicalChartData.length > 0 ? (
+              <ResponsiveContainer width="99%" height="100%" minWidth={0}>
+                <AreaChart data={dashboardData.historicalChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorGlobal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorAgency" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="month" stroke="#6B7280" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis hide />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <Tooltip contentStyle={{ backgroundColor: 'rgba(17, 24, 39, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} formatter={(value) => formatCurrency(value)} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}/>
+                  <Area type="monotone" dataKey="ReceitaGlobal" name="Receita Global (Clientes)" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorGlobal)" />
+                  <Area type="monotone" dataKey="ReceitaAgencia" name="Receita Avante" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#colorAgency)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                Registre fechamentos passados nas lojas para gerar o gráfico histórico.
+              </div>
+            )}
           </div>
         </div>
 
