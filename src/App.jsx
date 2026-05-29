@@ -38,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.4.8';
+  const CURRENT_VERSION = '2.5.1 - Lançamentos';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -208,25 +208,21 @@ export default function App() {
         const data = docSnap.data();
         if(data.globalGrowth !== undefined) setGlobalGrowth(data.globalGrowth);
         
-        // --- SISTEMA INTELIGENTE DE VERIFICAÇÃO DE ATUALIZAÇÃO ---
         if (data.versao && data.versao !== CURRENT_VERSION) {
-          // Detecta se o CRM está rodando como Aplicativo Instalado (Área de Trabalho ou Celular)
           const isPWA = window.matchMedia('(display-mode: standalone)').matches;
 
           if (isPWA) {
-            // Se for o App instalado, o cache é rígido. Mostramos um alerta fixo para forçar o reload puro.
             toast((t) => (
               <div className="flex flex-col gap-2 p-1">
                 <p className="text-xs font-bold text-slate-900  flex items-center gap-1.5">
                   🚀 Nova versão disponível: <span className="text-yellow-400 font-black">{data.versao}</span>
                 </p>
                 <p className="text-[10px] text-gray-400 leading-tight">
-                  Atualize para garantir que os painéis e o ranking diário sincronizem corretamente.
+                  Atualize para garantir que os painéis sincronizem corretamente.
                 </p>
                 <button 
                   onClick={() => {
                     toast.dismiss(t.id);
-                    // Força a limpeza de cache local e recarrega o app instalado do zero
                     window.location.reload(true);
                   }}
                   className="w-full mt-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold py-2 px-3 rounded-xl shadow-md transition-colors"
@@ -236,8 +232,7 @@ export default function App() {
               </div>
             ), { duration: Infinity, id: 'pwa-update-toast', icon: '🔄' });
           } else {
-            // Se for no navegador comum, apenas avisamos discretamente com um toast temporário
-            toast.success(`Uma nova versão (${data.versao}) foi lançada! Recarregue a página caso note instabilidades.`, {
+            toast.success(`Uma nova atualização (${data.versao}) foi lançada! Recarregue a página caso note instabilidades.`, {
               duration: 10000,
               id: 'web-update-toast'
             });
@@ -258,12 +253,11 @@ export default function App() {
     return () => { unsubStores(); unsubSettings(); unsubEquipe(); unsubInternal(); };
   }, [user]);
 
-useEffect(() => {
+  useEffect(() => {
     if (stores.length === 0 || !canEdit) return;
 
     const cleanOldTasks = async () => {
       const now = new Date();
-      // Calcula a data de há exatos 7 dias atrás
       const sevenDaysAgo = new Date(now.setDate(now.getDate() - 7));
       const batch = writeBatch(db);
       let hasUpdates = false;
@@ -272,14 +266,11 @@ useEffect(() => {
         if (store.checklists && store.checklists.length > 0) {
           const originalLength = store.checklists.length;
           
-          // Filtramos as tarefas que queremos MANTÊR
           const validChecklists = store.checklists.filter(task => {
             if (!task.feita) return true;
-            
             if (!task.data) return true; 
             
             const taskDate = new Date(task.data);
-            // Mantém a tarefa se ela for mais RECENTE que 7 dias atrás
             return taskDate >= sevenDaysAgo;
           });
 
@@ -370,7 +361,7 @@ useEffect(() => {
       const updateData = { nome: primeiroNome, nomeCompleto: newNameCompleto.trim() };
       
       if (newColor) updateData.avatarColor = newColor;
-      if (newAvatarUrl !== undefined) updateData.avatarUrl = newAvatarUrl; // Salva a foto
+      if (newAvatarUrl !== undefined) updateData.avatarUrl = newAvatarUrl;
 
       await setDoc(userDocRef, updateData, { merge: true });
       toast.success('Usuário atualizado com sucesso!');
@@ -378,10 +369,10 @@ useEffect(() => {
   };
 
   const handleToggleRole = async (email, currentRole) => {
-    let newRole = 'Operacional'; // Estrategista
-    if (currentRole === 'Operacional' || currentRole === 'Visualizador') newRole = 'Supervisor'; // Gestor
-    else if (currentRole === 'Supervisor') newRole = 'Admin'; // Analista
-    else if (currentRole === 'Admin') newRole = 'Visitante'; // Visitante
+    let newRole = 'Operacional';
+    if (currentRole === 'Operacional' || currentRole === 'Visualizador') newRole = 'Supervisor'; 
+    else if (currentRole === 'Supervisor') newRole = 'Admin'; 
+    else if (currentRole === 'Admin') newRole = 'Visitante'; 
     else if (currentRole === 'Visitante') newRole = 'Operacional';
 
     try {
@@ -476,82 +467,73 @@ useEffect(() => {
     toast.success(`Tarefa replicada em ${storeIds.length} loja(s)!`);
   };
 
-  // === NOVO SISTEMA DE LANÇAMENTO EM MASSA BLINDADO (Resolve o bug do "1.000") ===
-  const handleSaveBatch = async (batchDay, formData) => {
-    const batch = writeBatch(db);
-    let localStores = [...stores];
+  const handleSaveIndividualEntry = async (storeId, dayStr, cumRev, cumAds, cumOrd, cumUni) => {
+    const targetDay = Number(dayStr);
+    const store = stores.find(s => s.id === storeId);
+    if (!store) return;
 
-    Object.keys(formData).forEach(storeIdStr => {
-      const storeId = Number(storeIdStr);
-      const data = formData[storeId];
-      if (!data || (!data.currentRevenue && !data.adsInvestment && !data.orders && !data.units)) return;
-
-      const parseSafeNumber = (val) => {
-        if (typeof val === 'number') return val;
-        if (!val) return 0;
-        return Number(String(val).trim().replace(',', '.')) || 0;
-      };
-
-      const parseSafeInt = (val) => {
-         if (!val) return 0;
-         return parseInt(String(val).trim(), 10) || 0;
-      };
-
-      const storeIndex = localStores.findIndex(s => s.id === storeId);
-      if (storeIndex === -1) return;
-      const s = localStores[storeIndex];
-
-      const cumRev = parseSafeNumber(data.currentRevenue);
-      const cumAds = parseSafeNumber(data.adsInvestment);
-      const cumOrd = parseSafeInt(data.orders);
-      const cumUni = parseSafeInt(data.units);
-
-      let newHistory = [...(s.history || [])];
-      const existingIndex = newHistory.findIndex(h => h.day === batchDay);
-
-      let prevRev = 0, prevAds = 0;
-      const pastEntries = newHistory.filter(h => h.day < batchDay).sort((a,b) => b.day - a.day);
-      if(pastEntries.length > 0) {
-        prevRev = pastEntries[0].revenue || 0;
-        prevAds = pastEntries[0].ads || 0;
-      }
-
-      const dailyRev = cumRev - prevRev;
-
-      const histEntry = {
-        id: existingIndex >= 0 ? newHistory[existingIndex].id : Date.now() + storeId + Math.random(),
-        day: batchDay,
-        dailyRevenue: dailyRev > 0 ? dailyRev : 0,
-        revenue: cumRev,
-        ads: cumAds,
-        orders: cumOrd,
-        units: cumUni,
-        date: new Date().toLocaleDateString('pt-BR')
-      };
-
-      if (existingIndex >= 0) newHistory[existingIndex] = histEntry;
-      else newHistory.push(histEntry);
-
-      const finalStore = { 
-        ...s, 
-        history: newHistory.sort((a, b) => a.day - b.day) 
-      };
-      
-      const maxDay = Math.max(...finalStore.history.map(h => h.day));
-      if (batchDay === maxDay) {
-          finalStore.currentRevenue = cumRev;
-          finalStore.adsInvestment = cumAds;
-          finalStore.orders = cumOrd;
-          finalStore.units = cumUni;
-      }
-
-      localStores[storeIndex] = finalStore;
-      batch.set(doc(db, "stores", storeId.toString()), finalStore);
-    });
+    let history = [...(store.history || [])].sort((a,b) => a.day - b.day);
     
-    await batch.commit();
+    const pastEntries = history.filter(h => h.day < targetDay);
+    const prevEntry = pastEntries.length > 0 ? pastEntries[pastEntries.length - 1] : null;
+
+    const startDay = prevEntry ? prevEntry.day + 1 : 1;
+    const daysCount = targetDay - startDay + 1;
+
+    if (daysCount <= 0) {
+        toast.error(`Para corrigir um dia passado, limpe o histórico primeiro (em breve). O dia ${targetDay} é inválido para progressão.`);
+        return;
+    }
+
+    const prevRev = prevEntry ? prevEntry.revenue : 0;
+    const prevAds = prevEntry ? prevEntry.ads : 0;
+    const prevOrd = prevEntry ? prevEntry.orders : 0;
+    const prevUni = prevEntry ? prevEntry.units : 0;
+
+    const diffRev = Math.max(0, cumRev - prevRev);
+    const diffAds = Math.max(0, cumAds - prevAds);
+    const diffOrd = Math.max(0, cumOrd - prevOrd);
+    const diffUni = Math.max(0, cumUni - prevUni);
+
+    const avgRev = diffRev / daysCount;
+    const avgAds = diffAds / daysCount;
+    const avgOrd = diffOrd / daysCount;
+    const avgUni = diffUni / daysCount;
+
+    history = history.filter(h => h.day < startDay || h.day > targetDay);
+
+    for (let d = startDay; d <= targetDay; d++) {
+        const step = d - startDay + 1;
+        history.push({
+            id: Date.now() + Math.random(),
+            day: d,
+            dailyRevenue: avgRev, 
+            revenue: prevRev + (avgRev * step), 
+            ads: prevAds + (avgAds * step),
+            orders: Math.round(prevOrd + (avgOrd * step)),
+            units: Math.round(prevUni + (avgUni * step)),
+            date: new Date().toLocaleDateString('pt-BR')
+        });
+    }
+
+    history.sort((a, b) => a.day - b.day);
+
+    const maxDay = Math.max(...history.map(h => h.day));
+    const updates = { history };
+    
+    if (targetDay >= maxDay) {
+        updates.currentRevenue = cumRev;
+        updates.adsInvestment = cumAds;
+        updates.orders = cumOrd;
+        updates.units = cumUni;
+        updates.dataUltimoAcesso = new Date().toISOString();
+    }
+
+    updateStoreInCloud({ ...store, ...updates });
+    const localStores = stores.map(s => s.id === storeId ? { ...s, ...updates } : s);
     setStores(localStores);
-    toast.success(`Apuração do dia ${batchDay} salva na nuvem!`);
+    
+    toast.success(`Loja atualizada! Dados distribuídos do dia ${startDay} ao ${targetDay} 🚀`);
   };
 
   const deleteClient = async (clientName) => { 
@@ -572,10 +554,8 @@ useEffect(() => {
     toast.loading("Processando fechamento do mês e gravando histórico...", { id: 'close-month' });
 
     try {
-      // 1. Gera e baixa os relatórios baseando-se em TODAS as lojas
       await generateReports(stores, monthInput, { pdf: true, excel: true });
       
-      // 2. Grava o histórico oficial no Firebase e zera as lojas
       const batch = writeBatch(db);
       stores.forEach(store => {
         const storeRef = doc(db, 'lojas', store.id);
@@ -587,7 +567,6 @@ useEffect(() => {
         
         const agencyRevenue = isFixed ? fixedFee : gmv * (feePercent / 100);
 
-        // Snapshot salva o "retrato" da loja naquele mês
         const snapshot = {
           id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
           month: monthInput.toUpperCase(),
@@ -603,13 +582,13 @@ useEffect(() => {
         const newMonthlyHistory = [...currentHistory, snapshot];
 
         batch.update(storeRef, {
-          monthlyHistory: newMonthlyHistory, // Salva o novo mês no histórico
-          gmvBase: gmv, // O fechado de hoje vira a nova base para calcular evolução mês que vem
+          monthlyHistory: newMonthlyHistory, 
+          gmvBase: gmv, 
           currentRevenue: 0,
           orders: 0,
           units: 0,
           adsInvestment: 0,
-          history: [], // Zera o gráfico diário da tela da loja
+          history: [], 
           updatedAt: new Date().toISOString()
         });
       });
@@ -622,9 +601,48 @@ useEffect(() => {
     }
   };
 
+  const handleSaveRetroactiveMonth = async (storeId, monthStr, gmv, ads) => {
+    const store = stores.find(s => s.id === storeId);
+    if (!store) return;
+
+    const numGmv = Number(String(gmv).replace(',', '.')) || 0;
+    const numAds = Number(String(ads).replace(',', '.')) || 0;
+    const feePercent = Number(store.feePercent) || 0;
+    const fixedFee = Number(store.fixedFee) || 0;
+    const isFixed = store.feeType === 'fixed' || fixedFee > 0;
+    
+    const agencyRevenue = isFixed ? fixedFee : numGmv * (feePercent / 100);
+
+    const snapshot = {
+      id: 'retro-' + Date.now(),
+      month: monthStr.toUpperCase(),
+      gmv: numGmv,
+      adsInvestment: numAds,
+      agencyRevenue: agencyRevenue,
+      feeType: store.feeType || 'percent',
+      feePercent: feePercent,
+      fixedFee: fixedFee,
+      closedAt: new Date().toISOString(),
+      isRetroactive: true
+    };
+
+    const newMonthlyHistory = [...(store.monthlyHistory || []), snapshot];
+
+    const updatedStore = {
+      ...store,
+      monthlyHistory: newMonthlyHistory,
+      gmvBase: numGmv, 
+      updatedAt: new Date().toISOString()
+    };
+
+    updateStoreInCloud(updatedStore);
+    setStores(stores.map(s => s.id === storeId ? updatedStore : s));
+    toast.success(`Fecho de ${monthStr.toUpperCase()} registado com sucesso para a loja!`);
+  };
+
   const exportBackup = () => {
     const backupData = {
-      version: "2.0",
+      version: "3.0",
       exportDate: new Date().toISOString(),
       stores: stores,
       teamMembers: teamMembers,
@@ -799,7 +817,6 @@ useEffect(() => {
     }
   };
 
-  // GATILHO DA CENTRAL DE EXPORTAÇÃO
   const handleCustomExport = async ({ json, pdf, excel, monthInput, showAgencyFee }) => {
     toast.loading("Gerando arquivos solicitados...", { id: 'custom-export' });
     try {
@@ -837,7 +854,6 @@ useEffect(() => {
         let teamToImport = [];
         let settingsToImport = {};
 
-        // Identifica se é o formato antigo (Array de Lojas) ou o novo Formato Completo (Objeto)
         if (Array.isArray(imported)) {
           storesToImport = imported;
         } else if (imported.stores) {
@@ -867,7 +883,6 @@ useEffect(() => {
         await batch.commit();
         toast.success("✅ Banco de dados restaurado e atualizado com sucesso!");
         
-        // Dá um "refresh" local para quem importou ver na hora
         if (storesToImport.length > 0) setStores(storesToImport);
         if (teamToImport.length > 0) setTeamMembers(teamToImport);
 
@@ -913,6 +928,7 @@ useEffect(() => {
   };
 
   const startEditingStore = (store) => { setEditingStoreId(store.id); setStoreEditData({ store: store.store, marketplace: store.marketplace || '', gmvBase: store.gmvBase }); };
+  
   const saveStoreEdit = (id) => {
     const target = stores.find(s => s.id === id);
     if(target) {
@@ -1058,8 +1074,6 @@ useEffect(() => {
       return b.totalCurrentRevenue - a.totalCurrentRevenue;
     });
 
-    const rankingMarketplaces = Object.values(mktPerformance).sort((a, b) => b.revenue - a.revenue);
-
     return { 
       groupedClients, 
       flatFilteredStores: filteredStores, 
@@ -1075,21 +1089,6 @@ useEffect(() => {
   const roasData = useMemo(() => dashboardData.groupedClients.filter(g => g.totalAds > 0).map(g => ({ name: g.client, roas: Number(g.roas) })).sort((a, b) => b.roas - a.roas), [dashboardData]);
 
   const activeStore = useMemo(() => stores.find(s => s.id === activeStoreId), [stores, activeStoreId]);
-  const activeStorePacingData = useMemo(() => {
-    if (!activeStore) return [];
-    const data = [], historyMap = {};
-    [...(activeStore.history || [])].sort((a, b) => a.day - b.day).forEach(h => historyMap[h.day] = h.revenue);
-    if (activeStore.currentRevenue > 0) historyMap[currentDay] = activeStore.currentRevenue;
-    const gmvTarget = (Number(activeStore.gmvBase) || 0) * (1 + ((activeStore.customGrowth !== undefined ? Number(activeStore.customGrowth) : globalGrowth) / 100));
-    let lastActual = 0;
-    for (let i = 1; i <= daysInMonth; i++) {
-      if (i <= currentDay && historyMap[i] !== undefined) lastActual = historyMap[i];
-      data.push({ day: i, ideal: Math.round((gmvTarget / daysInMonth) * i), actual: i <= currentDay && lastActual > 0 ? Math.round(lastActual) : null });
-    }
-    return data;
-  }, [activeStore, daysInMonth, currentDay, globalGrowth]);
-
-  const activeStoreMonthlyData = useMemo(() => (!activeStore || !activeStore.monthlyHistory) ? [] : activeStore.monthlyHistory.map(h => ({ month: h.month, revenue: Math.round(h.gmv) })), [activeStore]);
 
   const broadcastTaskFocus = async (taskText, action = 'set', storeId = null) => {
     if (!myName) return;
@@ -1131,7 +1130,6 @@ useEffect(() => {
         </div>
       )}      
       
-      {/* 🌟 NAVEGAÇÃO PRINCIPAL (HEADER) */}
       <header className="sticky top-0 z-40 bg-[#0B0F19]/50 backdrop-blur-xl border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.3)]">
         <div className="w-full px-4 md:px-8 2xl:px-12 mx-auto h-16 flex items-center justify-between">
           <div className="flex items-center gap-6">
@@ -1168,7 +1166,6 @@ useEffect(() => {
               </>
             )}
 
-            {/* Bloqueio Duplo: Precisa poder editar E NÃO PODE ser visitante */}
             {(canEdit && !isVisitante) && (
               <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                 <Shield size={16} /> <span className="hidden md:inline">Equipe</span>
@@ -1179,7 +1176,6 @@ useEffect(() => {
           <div className="flex items-center gap-4">
             {canEdit && (
               <div className="hidden lg:flex gap-1 items-center">
-                {/* EXPORTAR (INDIGO) */}
                 <button 
                   onClick={() => setIsExportModalOpen(true)} 
                   className="text-orange-600 hover:text-orange-400 p-2 rounded-full hover:bg-orange-500/10 transition-all border border-transparent hover:border-orange-500/30" 
@@ -1188,9 +1184,8 @@ useEffect(() => {
                   <Download size={18} />
                 </button>
 
-                <div className="w-px h-4 bg-white/10 mx-1"></div> {/* Divisor visual */}
+                <div className="w-px h-4 bg-white/10 mx-1"></div>
 
-                {/* IMPORTAR / RESTAURAR (NEUTRO) */}
                 <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
                 <button 
                   onClick={() => fileInputRef.current.click()} 
@@ -1229,10 +1224,7 @@ useEffect(() => {
         </div>
       </header>
 
-      {/* ÁREA DE CONTEÚDO PRINCIPAL */}
       <main className="flex-1 w-full px-4 md:px-8 2xl:px-12 pt-6 relative mx-auto">
- 
-        {/* 🌟 BARRA DE FILTROS GLOBAL (FIXA E "PRESA") 🌟 */}
         {['dashboard', 'operacional', 'rotinas'].includes(activeView) && (
           <div className="sticky top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
             <div className="flex flex-col md:flex-row items-center gap-4 justify-between w-full">
@@ -1364,7 +1356,7 @@ useEffect(() => {
           />
         )}
 
-{activeView === 'rotinas' && (
+        {activeView === 'rotinas' && (
           <TaskView 
             stores={
               isVisitante 
@@ -1430,7 +1422,7 @@ useEffect(() => {
           broadcastTaskFocus={broadcastTaskFocus}
           onCopyTaskToBulk={(task) => {
               setBulkTaskInitialData(task);
-              setBulkTaskModalOpen(true); 
+              setBulkTaskModalOpen(true);
               setTaskModalOpen(false);
           }}
         />
@@ -1447,7 +1439,7 @@ useEffect(() => {
       <BulkTaskModal 
         isOpen={bulkTaskModalOpen}
         onClose={() => {
-            setBulkTaskModalOpen(false); 
+            setBulkTaskModalOpen(false);
             setBulkTaskInitialData(null);
         }}
         initialData={bulkTaskInitialData}
@@ -1472,6 +1464,8 @@ useEffect(() => {
           canEdit={canEdit}
           teamMembers={teamMembers}
           addNewStoreToClient={addNewStoreToClient}
+          handleSaveIndividualEntry={handleSaveIndividualEntry}
+          handleSaveRetroactiveMonth={handleSaveRetroactiveMonth}
         />
       )}
 

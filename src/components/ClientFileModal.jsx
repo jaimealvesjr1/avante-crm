@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, Settings } from 'lucide-react';
+import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, Settings, TrendingUp, TrendingDown } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
@@ -8,16 +8,84 @@ import StoreManagementModal from './StoreManagementModal';
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
 
+// === COMPONENTE: LINHA DE APURAÇÃO INDIVIDUAL ===
+const StoreEntryRow = ({ store, handleSaveIndividualEntry }) => {
+    const lastDayRecorded = store.history && store.history.length > 0 
+        ? Math.max(...store.history.map(h => h.day)) 
+        : 0;
+    
+    const [day, setDay] = useState(lastDayRecorded < 31 ? lastDayRecorded + 1 : 31);
+    const [rev, setRev] = useState(store.currentRevenue || '');
+    const [ord, setOrd] = useState(store.orders || '');
+    const [uni, setUni] = useState(store.units || '');
+    const [ads, setAds] = useState(store.adsInvestment || '');
+    const [isSaving, setIsSaving] = useState(false);
+
+    const onSave = async () => {
+        if (!day || rev === '') return toast.error("Dia e Faturamento são obrigatórios.");
+        setIsSaving(true);
+        
+        const numRev = Number(String(rev).replace(',', '.'));
+        const numAds = Number(String(ads).replace(',', '.')) || 0;
+        const numOrd = Number(ord) || 0;
+        const numUni = Number(uni) || 0;
+
+        await handleSaveIndividualEntry(store.id, day, numRev, numAds, numOrd, numUni);
+        
+        setDay(prev => prev < 31 ? Number(prev) + 1 : 31);
+        setIsSaving(false);
+    };
+
+    return (
+        <tr className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+            <td className="p-4">
+                <div className="font-bold text-gray-200 truncate max-w-[150px]" title={store.store}>{store.store}</div>
+                <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{store.marketplace || 'Marketplace'}</div>
+            </td>
+            <td className="p-3">
+                <input type="number" min="1" max="31" value={day} onChange={e => setDay(e.target.value)} className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-white text-center font-bold outline-none focus:border-amber-500 shadow-inner" />
+            </td>
+            <td className="p-3">
+                <input type="text" value={rev} onChange={e => setRev(e.target.value)} placeholder="0.00" className="w-24 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner" />
+            </td>
+            <td className="p-3">
+                <input type="number" value={ord} onChange={e => setOrd(e.target.value)} placeholder="0" className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner" />
+            </td>
+            <td className="p-3">
+                <input type="number" value={uni} onChange={e => setUni(e.target.value)} placeholder="0" className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner" />
+            </td>
+            <td className="p-3">
+                <input type="text" value={ads} onChange={e => setAds(e.target.value)} placeholder="0.00" className="w-24 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 shadow-inner" />
+            </td>
+            <td className="p-4 text-right">
+                <button 
+                    onClick={onSave} 
+                    disabled={isSaving}
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-colors"
+                >
+                    {isSaving ? '⏳' : 'Salvar'}
+                </button>
+            </td>
+        </tr>
+    );
+};
+
 export default function ClientFileModal({ 
-  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, addNewStoreToClient
+  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, addNewStoreToClient, 
+  handleSaveIndividualEntry, handleSaveRetroactiveMonth 
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
   const [isStoreManagementModalOpen, setIsStoreManagementModalOpen] = useState(false);
   
-  const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
+  // Estados para o Formulário Retroativo
+  const [retroStoreId, setRetroStoreId] = useState('');
+  const [retroMonth, setRetroMonth] = useState('');
+  const [retroGmv, setRetroGmv] = useState('');
+  const [retroAds, setRetroAds] = useState('');
+  const [isSavingRetro, setIsSavingRetro] = useState(false);
 
-  const [batchDay, setBatchDay] = useState(currentDay || 1);
+  const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
   const handleBulkTaskSave = (selectedStoreIds, taskData) => {
     const username = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
@@ -49,26 +117,22 @@ export default function ClientFileModal({
     toast.success(`Tarefa replicada em ${selectedStoreIds.length} loja(s)!`);
   };
 
-  const [formData, setFormData] = useState(() => {
-    const initial = {};
-    if (clientGroup) {
-      clientGroup.stores.forEach(s => {
-        initial[s.id] = {
-          currentRevenue: s.currentRevenue || '',
-          adsInvestment: s.adsInvestment || '',
-          orders: s.orders || '',
-          units: s.units || ''
-        };
-      });
-    }
-    return initial;
-  });
+  const onSaveRetro = async () => {
+    if (!retroStoreId || !retroMonth || !retroGmv) return toast.error('Preencha a loja, o mês e o faturamento.');
+    setIsSavingRetro(true);
+    await handleSaveRetroactiveMonth(Number(retroStoreId), retroMonth, retroGmv, retroAds);
+    setRetroStoreId('');
+    setRetroMonth('');
+    setRetroGmv('');
+    setRetroAds('');
+    setIsSavingRetro(false);
+  };
 
   const clientOpenTasks = useMemo(() => {
     if (!clientGroup || !clientGroup.stores) return [];
     const open = [];
     clientGroup.stores.forEach(store => {
-      if (store.checklists && !store.arquivada) { // <-- Ignora tarefas de lojas arquivadas
+      if (store.checklists && !store.arquivada) {
         store.checklists.forEach(task => {
           if (!task.feita) {
             open.push({ ...task, storeName: store.store, storeId: store.id });
@@ -99,10 +163,23 @@ export default function ClientFileModal({
 
   if (!clientGroup) return null;
 
-  // <-- LÓGICA REATIVA: Agora filtramos as lojas arquivadas (Soft Delete)
   const liveStores = useMemo(() => {
     return stores.filter(s => s.client === clientGroup.client && !s.arquivada);
   }, [stores, clientGroup.client]);
+
+  // === MOTOR DE CÁLCULO MoM (Month-over-Month) ===
+  const lastMonthTotalGmv = useMemo(() => {
+    return liveStores.reduce((acc, s) => {
+        if (s.monthlyHistory && s.monthlyHistory.length > 0) {
+            return acc + (Number(s.monthlyHistory[s.monthlyHistory.length - 1].gmv) || 0);
+        }
+        return acc + (Number(s.gmvBase) || 0);
+    }, 0);
+  }, [liveStores]);
+
+  const momGrowth = lastMonthTotalGmv > 0 
+    ? ((clientGroup.totalProjectedGmv - lastMonthTotalGmv) / lastMonthTotalGmv) * 100 
+    : 0;
 
   const activeMarketplaces = useMemo(() => {
     const active = new Set();
@@ -119,13 +196,11 @@ export default function ClientFileModal({
   const clientMktData = useMemo(() => {
     if (!liveStores) return [];
     const mktMap = {};
-    
     liveStores.forEach(s => {
       const mkt = s.marketplace ? s.marketplace.toUpperCase() : 'N/A';
       if (!mktMap[mkt]) mktMap[mkt] = { name: mkt, revenue: 0 };
       mktMap[mkt].revenue += (Number(s.currentRevenue) || 0);
     });
-    
     return Object.values(mktMap).sort((a, b) => b.revenue - a.revenue);
   }, [liveStores]);
 
@@ -187,84 +262,6 @@ export default function ClientFileModal({
     })).sort((a, b) => b.roas - a.roas)
   , [liveStores]);
 
-  const handleFormChange = (id, field, value) => {
-    setFormData(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
-  };
-
-  const handleSaveBatch = () => {
-    if (!canUseBatchEntry) return toast.error("Acesso negado. Apenas Supervisores ou Admins realizam lançamentos.");
-    if (!batchDay || batchDay < 1 || batchDay > 31) return toast.error("Dia inválido.");
-
-    const dayVal = Number(batchDay);
-    
-    const parseSafeNumber = (val) => Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
-    const parseSafeInt = (val) => {
-       if (!val) return 0;
-       const cleanStr = String(val).replace(/\./g, '');
-       return parseInt(cleanStr, 10) || 0;
-    };
-    
-    let updatedStoresGlobal = [...stores];
-
-    liveStores.forEach(s => {
-      const data = formData[s.id];
-      if (!data || (!data.currentRevenue && !data.adsInvestment && !data.orders && !data.units)) return;
-
-      const cumRev = parseSafeNumber(data.currentRevenue);
-      const cumAds = parseSafeNumber(data.adsInvestment);
-      const cumOrd = parseSafeInt(data.orders);
-      const cumUni = parseSafeInt(data.units);
-
-      let prevRev = 0, prevAds = 0;
-      const pastEntries = [...(s.history || [])].filter(h => h.day < dayVal).sort((a, b) => b.day - a.day);
-      if (pastEntries.length > 0) {
-        prevRev = pastEntries[0].revenue || 0;
-        prevAds = pastEntries[0].ads || 0;
-      }
-
-      const dailyRev = cumRev - prevRev;
-
-      const histEntry = {
-        id: Date.now() + s.id + Math.random(),
-        day: dayVal,
-        dailyRevenue: dailyRev > 0 ? dailyRev : 0,
-        revenue: cumRev,
-        ads: cumAds,
-        orders: cumOrd,
-        units: cumUni,
-        date: new Date().toLocaleDateString('pt-BR')
-      };
-
-      let newHistory = [...(s.history || [])];
-      const existingIndex = newHistory.findIndex(h => h.day === dayVal);
-      if (existingIndex >= 0) {
-        histEntry.id = newHistory[existingIndex].id;
-        newHistory[existingIndex] = histEntry;
-      } else {
-        newHistory.push(histEntry);
-      }
-
-      const finalStore = { 
-        ...s, 
-        history: newHistory.sort((a, b) => a.day - b.day)
-      };
-
-      const maxDay = Math.max(...finalStore.history.map(h => h.day));
-      if (dayVal === maxDay) {
-          finalStore.currentRevenue = cumRev;
-          finalStore.adsInvestment = cumAds;
-          finalStore.orders = cumOrd;
-          finalStore.units = cumUni;
-      }
-
-      updateStoreInCloud(finalStore);
-      updatedStoresGlobal = updatedStoresGlobal.map(gs => gs.id === s.id ? finalStore : gs);
-    });
-
-    setStores(updatedStoresGlobal);
-    toast.success(`Lançamentos do dia ${dayVal} salvos com sucesso!`);
-  };
-
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
       <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
@@ -281,12 +278,12 @@ export default function ClientFileModal({
             <p className="text-gray-400 text-sm italic">Central de Inteligência e Lançamentos do Cliente.</p>
           </div>
 
-          <div className="flex bg-black/20 p-1 rounded-full border border-white/10 shadow-inner">
-            <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'dashboard' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><PieChartIcon size={16}/> Dashboard</button>
+          <div className="flex bg-black/20 p-1 rounded-full border border-white/10 shadow-inner overflow-x-auto">
+            <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${activeTab === 'dashboard' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><PieChartIcon size={16}/> Dashboard</button>
             {canUseBatchEntry && (
-              <button onClick={() => setActiveTab('apuracao')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'apuracao' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><Zap size={16}/> Lançamentos</button>
+              <button onClick={() => setActiveTab('apuracao')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${activeTab === 'apuracao' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><Zap size={16}/> Lançamentos</button>
             )}
-            <button onClick={() => setActiveTab('historico')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'historico' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><ClipboardList size={16}/> Histórico & Notas</button>
+            <button onClick={() => setActiveTab('historico')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${activeTab === 'historico' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><ClipboardList size={16}/> Histórico & Notas</button>
           </div>
 
           {/* BOTÕES DE AÇÃO DO CABEÇALHO */}
@@ -326,19 +323,32 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Faturamento Total do Grupo</span>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Faturamento do Grupo</span>
                   <p className="text-2xl font-bold text-blue-400 mt-1">{formatCurrency(clientGroup.totalCurrentRevenue)}</p>
                   <p className="text-xs text-gray-400 mt-1">Meta Global: {formatCurrency(clientGroup.totalGmvTarget)}</p>
                 </div>
+                
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Investimento Total Ads</span>
-                  <p className="text-2xl font-bold text-amber-500 mt-1">{formatCurrency(clientGroup.totalAds)}</p>
-                  <p className="text-xs text-gray-400 mt-1">ROAS Global Médio: {clientGroup.roas}x</p>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Evolução (MoM)</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className={`text-2xl font-bold ${momGrowth >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {momGrowth > 0 ? '+' : ''}{momGrowth.toFixed(1)}%
+                    </p>
+                    {momGrowth >= 0 ? <TrendingUp size={20} className="text-emerald-400" /> : <TrendingDown size={20} className="text-rose-400" />}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Base passada: {formatCurrency(lastMonthTotalGmv)}</p>
                 </div>
+
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Pacing de Metas Global</span>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Investimento Ads</span>
+                  <p className="text-2xl font-bold text-amber-500 mt-1">{formatCurrency(clientGroup.totalAds)}</p>
+                  <p className="text-xs text-gray-400 mt-1">ROAS Médio: {clientGroup.roas}x</p>
+                </div>
+
+                <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Pacing de Metas</span>
                   <p className={`text-2xl font-bold mt-1 ${clientGroup.percentReached >= 95 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {clientGroup.percentReached.toFixed(1)}%
                   </p>
@@ -408,57 +418,76 @@ export default function ClientFileModal({
             </div>
           )}
 
-          {/* ABA 2: LANÇAMENTOS DIÁRIOS */}
+          {/* === ABA 2: LANÇAMENTOS INTELIGENTES E RETROATIVOS === */}
           {activeTab === 'apuracao' && (
-            <div className="space-y-4 animate-in fade-in">
+            <div className="space-y-6 animate-in fade-in">
               <div className="flex justify-between items-center bg-black/20 p-4 rounded-2xl border border-white/5">
                 <div>
-                  <h3 className="text-white font-bold flex items-center gap-2"><Zap className="text-amber-400" size={16}/> Lançamento Rápido</h3>
-                  <p className="text-xs text-gray-400 mt-1">Insira os dados atualizados das lojas ativas deste cliente.</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Dia Ref.</label>
-                  <input type="number" value={batchDay} onChange={(e) => setBatchDay(e.target.value)} className="w-16 bg-black/40 border border-white/10 text-white rounded-xl p-2 text-center font-bold outline-none focus:border-amber-500 transition-colors shadow-inner" min="1" max="31" />
-                  <button onClick={handleSaveBatch} className="bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 px-5 rounded-xl flex items-center gap-2 shadow-md transition-all">
-                    <Save size={16} /> Salvar Dados
-                  </button>
+                  <h3 className="text-white font-bold flex items-center gap-2"><Zap className="text-amber-400" size={16}/> Lançamentos Individuais</h3>
+                  <p className="text-xs text-gray-400 mt-1">O sistema calculará automaticamente a média diária entre o último lançamento e o dia informado.</p>
                 </div>
               </div>
 
-              <div className="bg-black/20 rounded-2xl border border-white/5 overflow-hidden">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-black/40 text-gray-400 text-xs uppercase tracking-wider border-b border-white/5">
+              <div className="bg-black/20 rounded-2xl border border-white/5 overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[700px]">
+                  <thead className="bg-black/40 text-gray-400 text-[10px] uppercase tracking-wider border-b border-white/5">
                     <tr>
                       <th className="p-4">Loja / Canal</th>
+                      <th className="p-4">Dia Ref.</th>
                       <th className="p-4 text-blue-400">Fat. Acumulado</th>
-                      <th className="p-4 text-amber-400">Ads Acum.</th>
                       <th className="p-4 text-emerald-400">Pedidos</th>
                       <th className="p-4 text-purple-400">Unidades</th>
+                      <th className="p-4 text-amber-400">Ads Acumulado</th>
+                      <th className="p-4 text-right">Ação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {liveStores.map(store => (
-                      <tr key={store.id} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="p-4">
-                          <div className="font-bold text-gray-200 cursor-pointer hover:text-indigo-400 transition-colors" onClick={() => { onClose(); openTaskModal(store); }}>{store.store}</div>
-                          <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{store.marketplace || 'Marketplace'}</div>
-                        </td>
-                        <td className="p-4">
-                          <input type="text" value={formData[store.id]?.currentRevenue || ''} onChange={(e) => handleFormChange(store.id, 'currentRevenue', e.target.value)} className="w-full bg-black/40 border border-white/10 text-blue-300 rounded-xl p-2 focus:border-indigo-500 outline-none text-sm font-bold shadow-inner" placeholder="0,00" />
-                        </td>
-                        <td className="p-4">
-                          <input type="text" value={formData[store.id]?.adsInvestment || ''} onChange={(e) => handleFormChange(store.id, 'adsInvestment', e.target.value)} className="w-full bg-black/40 border border-white/10 text-amber-300 rounded-xl p-2 focus:border-indigo-500 outline-none text-sm font-bold shadow-inner" placeholder="0,00" />
-                        </td>
-                        <td className="p-4">
-                          <input type="text" value={formData[store.id]?.orders || ''} onChange={(e) => handleFormChange(store.id, 'orders', e.target.value)} className="w-full bg-black/40 border border-white/10 text-emerald-300 rounded-xl p-2 focus:border-indigo-500 outline-none text-sm font-bold shadow-inner" placeholder="0" />
-                        </td>
-                        <td className="p-4">
-                          <input type="text" value={formData[store.id]?.units || ''} onChange={(e) => handleFormChange(store.id, 'units', e.target.value)} className="w-full bg-black/40 border border-white/10 text-purple-300 rounded-xl p-2 focus:border-indigo-500 outline-none text-sm font-bold shadow-inner" placeholder="0" />
-                        </td>
-                      </tr>
+                      <StoreEntryRow 
+                        key={store.id} 
+                        store={store} 
+                        handleSaveIndividualEntry={handleSaveIndividualEntry} 
+                      />
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* SEÇÃO NOVO: IMPORTAR HISTÓRICO PASSADO */}
+              <div className="mt-8 bg-black/20 p-5 rounded-2xl border border-white/5">
+                  <h4 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+                      <History className="text-indigo-400" size={16}/> Registrar Fechamento Anterior
+                  </h4>
+                  <p className="text-xs text-gray-400 mb-4">Insira os fechamentos passados de cada loja para estabelecer o Ponto de Partida e permitir o cálculo de crescimento MoM.</p>
+                  
+                  <div className="flex flex-col md:flex-row gap-3 items-end">
+                      <div className="flex-1 w-full">
+                          <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Loja</label>
+                          <select value={retroStoreId} onChange={e => setRetroStoreId(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
+                              <option value="">Selecione a loja...</option>
+                              {liveStores.map(s => <option key={s.id} value={s.id}>{s.store} {s.marketplace ? `- ${s.marketplace}` : ''}</option>)}
+                          </select>
+                      </div>
+                      <div className="w-full md:w-32">
+                          <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Mês/Ano</label>
+                          <input type="text" placeholder="Ex: MAI/26" value={retroMonth} onChange={e => setRetroMonth(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs text-white outline-none focus:border-indigo-500 uppercase" />
+                      </div>
+                      <div className="w-full md:w-32">
+                          <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Fat. Fechado</label>
+                          <input type="text" placeholder="0.00" value={retroGmv} onChange={e => setRetroGmv(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs text-blue-400 font-bold outline-none focus:border-blue-500" />
+                      </div>
+                      <div className="w-full md:w-32">
+                          <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Ads Investido</label>
+                          <input type="text" placeholder="0.00" value={retroAds} onChange={e => setRetroAds(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs text-amber-400 font-bold outline-none focus:border-amber-500" />
+                      </div>
+                      <button 
+                          onClick={onSaveRetro} 
+                          disabled={isSavingRetro}
+                          className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-md transition-colors"
+                      >
+                          {isSavingRetro ? 'Salvando...' : 'Registrar Mês'}
+                      </button>
+                  </div>
               </div>
             </div>
           )}
@@ -571,7 +600,6 @@ export default function ClientFileModal({
         teamMembers={teamMembers} 
       />
 
-      {/* RENDERIZAÇÃO DO NOVO MODAL */}
       <StoreManagementModal
         isOpen={isStoreManagementModalOpen}
         onClose={() => setIsStoreManagementModalOpen(false)}

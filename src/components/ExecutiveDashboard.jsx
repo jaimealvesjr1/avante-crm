@@ -208,7 +208,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             <h3 className="text-lg font-bold text-white tracking-wide">Top 5 Lojas</h3>
           </div>
           <div className="h-[300px] w-full mt-4">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="99%" height={250} minWidth={0}>
               <BarChart data={topStoresData} layout="vertical" margin={{ left: 10, right: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
                 <XAxis type="number" hide />
@@ -231,7 +231,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             <h3 className="text-lg font-bold text-white tracking-wide">Market Share (Clientes)</h3>
           </div>
           <div className="h-[300px] relative">
-            <ResponsiveContainer width="99%" height="100%">
+            <ResponsiveContainer width="99%" height={250} minWidth={0}>
               <PieChart>
                 <Pie data={pieData} cx="50%" cy="50%" innerRadius={90} outerRadius={125} paddingAngle={4} dataKey="value" stroke="none">
                   {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
@@ -258,7 +258,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             </span>
           </div>
           <div className="h-[300px]">
-            <ResponsiveContainer width="99%" height="100%">
+            <ResponsiveContainer width="99%" height={250} minWidth={0}>
               <BarChart data={roasData} layout="vertical" margin={{ left: 10, right: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
                 <XAxis type="number" hide />
@@ -283,7 +283,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             <h3 className="text-lg font-bold text-white tracking-wide">Por Canal (Mkt)</h3>
           </div>
           <div className="h-[300px] w-full mt-4">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="99%" height={250} minWidth={0}>
               <BarChart data={dashboardData.rankingMarketplaces} margin={{ top: 10, right: 5, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                 <XAxis dataKey="name" stroke="#6B7280" fontSize={12} tickLine={false} />
@@ -313,7 +313,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
             <h3 className="text-lg font-bold text-white tracking-wide">Evolução Histórica: Receita Global vs Receita Agência</h3>
           </div>
           <div className="w-full flex-1 min-h-0">
-            <ResponsiveContainer width="99%" height="100%">
+            <ResponsiveContainer width="99%" height={250} minWidth={0}>
               <LineChart data={monthlyComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                 <XAxis dataKey="month" stroke="#6B7280" fontSize={13} tickMargin={10} axisLine={false} tickLine={false} />
