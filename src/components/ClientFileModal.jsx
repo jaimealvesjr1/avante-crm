@@ -482,7 +482,7 @@ export default function ClientFileModal({
                     <div className="w-full h-px bg-white/10 sm:hidden my-1"></div>
                     
                     <div className="flex-1 w-full sm:pl-2">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Faturamento do Grupo</span>
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Neste mês</span>
                       <p className="text-2xl font-bold text-blue-400 mt-1">{formatCurrency(clientGroup.totalCurrentRevenue)}</p>
                       <p className="text-xs text-gray-400 mt-1">Meta Global: {formatCurrency(clientGroup.totalGmvTarget)}</p>
                     </div>
