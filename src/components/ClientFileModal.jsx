@@ -124,17 +124,20 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, handleSaveRetroactive
             </tr>
 
             {/* PAINEL EXPANDIDO (HISTÓRICO DA LOJA EM BLOCO ÚNICO) */}
-            {isExpanded && (
+{isExpanded && (
                 <tr className="bg-[#0B0F19]/50 border-b border-white/5">
                     <td colSpan="7" className="p-0">
                         <div className="p-5 border-l-[3px] border-indigo-500 ml-4 mb-4 mt-2 rounded-r-xl bg-black/20 shadow-inner">
                             
+                            {/* ==================================================================================== */}
+                            {/* === TODO: DEPRECATION WARNING (REMOVER APÓS PREENCHER TODO O HISTÓRICO ANTIGO) === */}
+                            {/* O bloco abaixo (Formulário de Inserção) pode ser deletado no futuro.               */}
+                            {/* ==================================================================================== */}
                             <h5 className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                                 <History size={14}/> 
                                 {editingRetroId ? 'Editando Fechamento' : 'Registrar Mês Anterior'}
                             </h5>
                             
-                            {/* LINHA 1: FORMULÁRIO DE LANÇAMENTO */}
                             <div className="flex flex-wrap gap-3 items-end">
                                 <div className="flex-1 min-w-[120px]">
                                     <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Mês/Ano</label>
@@ -149,7 +152,6 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, handleSaveRetroactive
                                     <input type="text" placeholder="0.00" value={retroAds} onChange={e => setRetroAds(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 transition-colors" />
                                 </div>
                                 
-                                {/* BOTÕES NA MESMA LINHA */}
                                 {editingRetroId && (
                                     <button onClick={cancelEditing} className="bg-white/5 hover:bg-white/10 text-gray-400 px-4 py-2.5 rounded-lg text-xs font-bold transition-colors">
                                         Cancelar
@@ -159,15 +161,18 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, handleSaveRetroactive
                                     {isSavingRetro ? '⏳' : (editingRetroId ? 'Salvar Edição' : 'Adicionar Mês')}
                                 </button>
                             </div>
+                            {/* ==================================================================================== */}
+                            {/* === FIM DO BLOCO DEPRECIADO ===                                                    */}
+                            {/* ==================================================================================== */}
 
                             {/* LINHA 2: GRID DE HISTÓRICO (3 COLUNAS) */}
+                            {/* NOTA: Este bloco abaixo deve ser MANTIDO no futuro, removendo apenas os botões de edição/exclusão, para servir como um visualizador do histórico fechado da loja. */}
                             {store.monthlyHistory && store.monthlyHistory.length > 0 && (
                                 <div className="mt-5 pt-4 border-t border-white/10">
                                     <h5 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3">Histórico Registrado</h5>
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                         {store.monthlyHistory.map((hist, index) => {
-                                            // Fallback para o highlight funcionar mesmo sem ID no histórico velho
                                             const histKey = hist.id || hist.month;
                                             
                                             return (
@@ -181,6 +186,8 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, handleSaveRetroactive
                                                             {hist.adsInvestment > 0 && <span className="text-[9px] text-amber-500 block">Ads: {formatCurrency(hist.adsInvestment)}</span>}
                                                         </div>
                                                     </div>
+                                                    
+                                                    {/* Estes botões também poderão ser deletados no futuro, transformando o card em apenas leitura (ReadOnly) */}
                                                     <div className="flex gap-1 pr-1">
                                                         <button onClick={() => startEditingRetro(hist)} className={`p-1.5 rounded transition-colors ${editingRetroId === histKey ? 'text-indigo-400 bg-indigo-500/20' : 'text-gray-400 hover:text-blue-400 hover:bg-blue-500/10'}`} title="Editar">
                                                             <Edit2 size={14}/>
