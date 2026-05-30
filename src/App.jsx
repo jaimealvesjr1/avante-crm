@@ -38,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.5.7';
+  const CURRENT_VERSION = '2.5.10';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -404,7 +404,8 @@ export default function App() {
   const handleStoreChange = (id, field, value) => {
     let finalValue = value;
     if (typeof value === 'string' && (field === 'currentRevenue' || field === 'adsInvestment' || field === 'gmvBase' || field === 'customGrowth')) {
-      finalValue = value.trim().replace(/\./g, '').replace(',', '.');
+      // Removido o .replace(/\./g, '') que destruía as casas decimais ao editar
+      finalValue = value.trim().replace(',', '.');
     }
     
     const numericValue = finalValue !== '' ? Number(finalValue) : 0;
@@ -561,27 +562,30 @@ export default function App() {
     const store = stores.find(s => s.id === storeId);
     if (!store) return;
 
-    const numGmv = Number(String(gmv).replace(/\./g, '').replace(',', '.')) || 0;
-    const numAds = Number(String(ads).replace(/\./g, '').replace(',', '.')) || 0;
+    const numGmv = Number(String(gmv).replace(',', '.')) || 0;
+    const numAds = Number(String(ads).replace(',', '.')) || 0;
     const feePercent = Number(store.feePercent) || 0;
     const fixedFee = Number(store.fixedFee) || 0;
-    const agencyRevenue = (store.feeType === 'fixed' || fixedFee > 0) ? fixedFee : numGmv * (feePercent / 100);
+    
+    const clientStoresCount = stores.filter(s => s.client === store.client && !s.arquivada).length || 1;
+    const agencyRevenue = (store.feeType === 'fixed' || fixedFee > 0) ? (fixedFee / clientStoresCount) : numGmv * (feePercent / 100);
 
     const standardMonth = normalizeMonthYear(monthStr);
 
     const isOldStringId = editId && typeof editId === 'string' && editId.includes('/');
     
     const snapshot = {
-      id: (editId && !isOldStringId) ? editId : 'retro-' + Date.now(),
-      month: standardMonth,
-      gmv: numGmv,
-      adsInvestment: numAds,
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+      month: padronizado, 
+      gmv: gmv,
+      adsInvestment: Number(store.adsInvestment) || 0,
+      orders: Number(store.orders) || 0,
+      units: Number(store.units) || 0,
       agencyRevenue: agencyRevenue,
       feeType: store.feeType || 'percent',
       feePercent: feePercent,
       fixedFee: fixedFee,
-      closedAt: new Date().toISOString(),
-      isRetroactive: true
+      closedAt: new Date().toISOString()
     };
 
     let newMonthlyHistory = [...(store.monthlyHistory || [])];
@@ -664,11 +668,12 @@ export default function App() {
         const fixedFee = Number(store.fixedFee) || 0;
         const isFixed = store.feeType === 'fixed' || fixedFee > 0;
         
-        const agencyRevenue = isFixed ? fixedFee : gmv * (feePercent / 100);
+        const clientStoresCount = stores.filter(s => s.client === store.client && !s.arquivada).length || 1;
+        const agencyRevenue = isFixed ? (fixedFee / clientStoresCount) : gmv * (feePercent / 100);
 
         const snapshot = {
           id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-          month: padronizado, // Mês padrão cravado (Ex: MAI/26)
+          month: padronizado, 
           gmv: gmv,
           agencyRevenue: agencyRevenue,
           feeType: store.feeType || 'percent',
@@ -718,52 +723,81 @@ export default function App() {
     toast.success('Backup completo (Lojas e Equipe) exportado com sucesso!');
   };
 
-  // GERADOR CENTRAL DE RELATÓRIOS (V2.2.0)
-  const generateReports = async (targetStores, monthInput, formats = { pdf: true, excel: true }, options = { showAgencyFee: true }) => {
-    const periodoApurado = `1 a ${currentDay} de ${monthInput.toUpperCase()}`;
+  const generateReports = async (targetStores, monthInput, formats = { pdf: true, excel: true }) => {
+    const targetMonth = monthInput.toUpperCase();
+    
+    const isPastMonth = targetStores.some(s => (s.monthlyHistory || []).some(h => h.month === targetMonth));
+    const periodoApurado = isPastMonth ? `Mês Fechado: ${targetMonth}` : `Parcial: 1 a ${currentDay} de ${targetMonth}`;
     const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     
+    const loadLogo = () => new Promise((resolve) => {
+        const img = new Image();
+        img.src = '/logo.jpg';
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+    });
+    
+    const logoImg = await loadLogo();
+
     try {
-      const parseSafeNumber = (val) => Number(String(val || 0).trim().replace(/\./g, '').replace(',', '.')) || 0;
+      const parseSafeNumber = (val) => {
+        if (typeof val === 'number') return val;
+        return Number(String(val || 0).trim().replace(/\./g, '').replace(',', '.')) || 0;
+      };
       const formatMoney = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
       const formatPercent = (val) => (val > 0 ? '+' : '') + (val * 100).toFixed(2) + '%';
       const formatRoas = (val) => val > 0 ? val.toFixed(2) + 'x' : '-';
 
       const clientsGroup = {};
-      targetStores.forEach(s => {
-        const cName = s.client || 'Sem Cliente';
+      
+      // FASE 1: PREPARAÇÃO INTELIGENTE DOS DADOS
+      targetStores.forEach(store => {
+        const cName = store.client || 'Sem Cliente';
         if (!clientsGroup[cName]) clientsGroup[cName] = [];
-        clientsGroup[cName].push(s);
+        
+        const pastData = (store.monthlyHistory || []).find(h => h.month === targetMonth);
+        let gmv = 0, ads = 0, orders = 0, units = 0, base = 0;
+        
+        if (pastData) {
+            gmv = parseSafeNumber(pastData.gmv);
+            ads = parseSafeNumber(pastData.adsInvestment);
+            orders = parseSafeNumber(pastData.orders);
+            units = parseSafeNumber(pastData.units);
+            const histArray = store.monthlyHistory || [];
+            const currentIndex = histArray.findIndex(h => h.id === pastData.id);
+            base = currentIndex > 0 ? parseSafeNumber(histArray[currentIndex - 1].gmv) : 0;
+        } else {
+            gmv = parseSafeNumber(store.currentRevenue);
+            ads = parseSafeNumber(store.adsInvestment);
+            orders = parseSafeNumber(store.orders);
+            units = parseSafeNumber(store.units);
+            base = parseSafeNumber(store.gmvBase);
+        }
+
+        clientsGroup[cName].push({
+           ...store, reportGmv: gmv, reportAds: ads, reportOrders: orders, reportUnits: units, reportBase: base
+        });
       });
 
       const clientNames = Object.keys(clientsGroup).sort();
 
-      // EXCEL
+      // FASE 2: GERAÇÃO DO EXCEL (Limpamos referências a comissões)
       if (formats.excel) {
         const wb = XLSX.utils.book_new();
         clientNames.forEach(clientName => {
-          const clientStores = clientsGroup[clientName].sort((a, b) => parseSafeNumber(b.currentRevenue) - parseSafeNumber(a.currentRevenue));
+          const clientStores = clientsGroup[clientName].sort((a, b) => b.reportGmv - a.reportGmv);
           let totalGmv = 0, totalBase = 0, totalUnits = 0, totalOrders = 0, totalAds = 0;
-          let isFixed = false, avanteFixedFee = 0;
           const canaisAtendidos = new Set();
           
           clientStores.forEach(s => {
-            totalGmv += parseSafeNumber(s.currentRevenue);
-            totalBase += parseSafeNumber(s.gmvBase);
-            totalUnits += parseSafeNumber(s.units);
-            totalOrders += parseSafeNumber(s.orders);
-            totalAds += parseSafeNumber(s.adsInvestment);
+            totalGmv += s.reportGmv; totalBase += s.reportBase;
+            totalUnits += s.reportUnits; totalOrders += s.reportOrders;
+            totalAds += s.reportAds;
             if (s.marketplace) canaisAtendidos.add(s.marketplace);
-            if (s.feeType === 'fixed' || parseSafeNumber(s.fixedFee) > 0) {
-              isFixed = true;
-              if (avanteFixedFee === 0) avanteFixedFee = parseSafeNumber(s.fixedFee);
-            }
           });
 
           const totalEvolucao = totalBase > 0 ? (totalGmv - totalBase) / totalBase : 0;
           const totalRoas = totalAds > 0 ? totalGmv / totalAds : 0;
-          let avanteTotalFee = isFixed ? avanteFixedFee : clientStores.reduce((acc, s) => acc + (parseSafeNumber(s.currentRevenue) * (parseSafeNumber(s.feePercent) / 100)), 0);
-          const totalClientPays = avanteTotalFee * 2; 
 
           const wsData = [
             ['RESUMO FINANCEIRO E PERFORMANCE', clientName], [],
@@ -774,19 +808,11 @@ export default function App() {
             ['Crescimento Geral (MoM)', formatPercent(totalEvolucao)],
             ['Total ADS', totalAds],
             ['ROAS Médio do Cliente', formatRoas(totalRoas)], [],
-            ['Total Faturado Cliente (100%)', totalClientPays],
-            ['Comissão B2X (50%)', avanteTotalFee],
-            ['Comissão Avante / Gestor (50%)', avanteTotalFee], [],
             ['Rk', 'Loja', 'Canal', 'GMV Base', 'Faturamento (GMV)', 'Evolução', 'Pedidos', 'Unidades', 'Invest. ADS', 'ROAS', 'CPA (Pedido)', 'CPA (Unidade)']
           ];
 
           clientStores.forEach((s, idx) => {
-            const gmv = parseSafeNumber(s.currentRevenue);
-            const base = parseSafeNumber(s.gmvBase);
-            const ads = parseSafeNumber(s.adsInvestment);
-            const orders = parseSafeNumber(s.orders);
-            const units = parseSafeNumber(s.units);
-            wsData.push([ `${idx + 1}º`, s.store || '-', s.marketplace || '-', base, gmv, formatPercent(base > 0 ? (gmv - base) / base : 0), orders, units, ads, formatRoas(ads > 0 ? gmv / ads : 0), orders > 0 ? ads / orders : 0, units > 0 ? ads / units : 0 ]);
+            wsData.push([ `${idx + 1}º`, s.store || '-', s.marketplace || '-', s.reportBase, s.reportGmv, formatPercent(s.reportBase > 0 ? (s.reportGmv - s.reportBase) / s.reportBase : 0), s.reportOrders, s.reportUnits, s.reportAds, formatRoas(s.reportAds > 0 ? s.reportGmv / s.reportAds : 0), s.reportOrders > 0 ? s.reportAds / s.reportOrders : 0, s.reportUnits > 0 ? s.reportAds / s.reportUnits : 0 ]);
           });
 
           wsData.push(['-', 'TOTAL GERAL', '-', totalBase, totalGmv, formatPercent(totalEvolucao), totalOrders, totalUnits, totalAds, formatRoas(totalRoas), '-', '-']);
@@ -795,88 +821,122 @@ export default function App() {
           ws['!cols'] = [{wch: 32}, {wch: 25}, {wch: 15}, {wch: 15}, {wch: 20}, {wch: 12}, {wch: 10}, {wch: 10}, {wch: 15}, {wch: 10}, {wch: 15}, {wch: 15}];
           XLSX.utils.book_append_sheet(wb, ws, clientName.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31) || 'Cliente');
         });
-        XLSX.writeFile(wb, `Avante_Fechamento_${monthInput.replace('/', '-')}.xlsx`);
+        XLSX.writeFile(wb, `Avante_Relatorio_${monthInput.replace('/', '-')}.xlsx`);
       }
 
-      // PDF
+      // FASE 3: GERAÇÃO DO PDF (Novo Visual Premium com Logo)
       if (formats.pdf) {
         const docPdf = new jsPDF();
         clientNames.forEach((clientName, index) => {
           if (index > 0) docPdf.addPage();
-          const clientStores = clientsGroup[clientName].sort((a, b) => parseSafeNumber(b.currentRevenue) - parseSafeNumber(a.currentRevenue));
+          const clientStores = clientsGroup[clientName].sort((a, b) => b.reportGmv - a.reportGmv);
           let totalGmv = 0, totalBase = 0, totalOrders = 0, totalUnits = 0, totalAds = 0;
-          let isFixed = false, avanteFixedFee = 0;
           const canaisAtendidos = new Set();
 
           let allTimeGmv = 0;
           clientStores.forEach(s => {
-            totalGmv += parseSafeNumber(s.currentRevenue);
+            totalGmv += s.reportGmv; totalBase += s.reportBase;
+            totalOrders += s.reportOrders; totalUnits += s.reportUnits; totalAds += s.reportAds;
+            
             allTimeGmv += parseSafeNumber(s.currentRevenue);
             (s.monthlyHistory || []).forEach(h => allTimeGmv += (Number(h.gmv) || 0));
 
-            totalBase += parseSafeNumber(s.gmvBase);
-            totalOrders += parseSafeNumber(s.orders);
-            totalUnits += parseSafeNumber(s.units);
-            totalAds += parseSafeNumber(s.adsInvestment);
             if (s.marketplace) canaisAtendidos.add(s.marketplace);
-            if (s.feeType === 'fixed' || parseSafeNumber(s.fixedFee) > 0) { isFixed = true; if (avanteFixedFee === 0) avanteFixedFee = parseSafeNumber(s.fixedFee); }
           });
 
           const totalEvolucao = totalBase > 0 ? (totalGmv - totalBase) / totalBase : 0;
           const totalRoas = totalAds > 0 ? totalGmv / totalAds : 0;
-          let avanteTotalFee = isFixed ? avanteFixedFee : clientStores.reduce((acc, s) => acc + (parseSafeNumber(s.currentRevenue) * (parseSafeNumber(s.feePercent) / 100)), 0);
 
+          // ================= CABEÇALHO DO PDF =================
+          // Fundo Azul Escuro Moderno
           docPdf.setFillColor(15, 23, 42); 
-          docPdf.rect(0, 0, 210, 40, 'F'); 
-          docPdf.setFontSize(24); docPdf.setTextColor(255, 255, 255); docPdf.text(clientName.toUpperCase(), 14, 22);
-          docPdf.setFontSize(10); docPdf.setTextColor(156, 163, 175); docPdf.text('RELATÓRIO DE PERFORMANCE B2X', 14, 30); docPdf.text(`Período Apurado: ${periodoApurado}`, 14, 35);
-          docPdf.setFontSize(8); docPdf.setTextColor(107, 114, 128); docPdf.text(`Gerado em: ${dataGeracao}`, 196, 35, { align: 'right' });
-
-          docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Faturamento no Mês:', 14, 52);
-          docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Histórico de Faturamento:', 14, 72);
-          docPdf.setFontSize(16); docPdf.setTextColor(16, 185, 129); docPdf.text(formatMoney(allTimeGmv), 14, 80);
-          docPdf.setFontSize(24); docPdf.setTextColor(16, 185, 129); docPdf.text(formatMoney(totalGmv), 14, 62);
+          docPdf.rect(0, 0, 210, 46, 'F'); 
           
-          if (options.showAgencyFee) {
-            docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); docPdf.text('Fatura da Assessoria:', 120, 52);
-            docPdf.setFontSize(24); docPdf.setTextColor(79, 70, 229); docPdf.text(formatMoney(avanteTotalFee * 2), 120, 62);
+          // Nome do Cliente
+          docPdf.setFontSize(22); 
+          docPdf.setTextColor(255, 255, 255); 
+          docPdf.text(clientName.toUpperCase(), 14, 22);
+          
+          // Subtítulo
+          docPdf.setFontSize(9); 
+          docPdf.setTextColor(148, 163, 184); 
+          docPdf.text('RELATÓRIO EXECUTIVO DE PERFORMANCE', 14, 29); 
+          
+          // Data Destacada em Amarelo
+          docPdf.setFontSize(9); 
+          docPdf.setTextColor(250, 204, 21);
+          docPdf.text(periodoApurado, 14, 35);
+
+          // Renderizando a Logo no Canto Superior Direito (se existir)
+          if (logoImg) {
+              // Ajustamos o tamanho para manter a proporção (ex: 18x18 ou similar)
+              docPdf.addImage(logoImg, 'JPEG', 178, 12, 18, 18);
+          } else {
+              docPdf.setFontSize(14); 
+              docPdf.setTextColor(255, 255, 255); 
+              docPdf.text('AVANTE', 196, 22, { align: 'right' });
           }
 
+          docPdf.setFontSize(8); 
+          docPdf.setTextColor(107, 114, 128); 
+          docPdf.text(`Gerado em: ${dataGeracao}`, 196, 40, { align: 'right' });
+
+          // ================= BLOCO DE MÉTRICAS PRINCIPAIS =================
+          // Faturamento no Mês
+          docPdf.setFontSize(11); 
+          docPdf.setTextColor(75, 85, 99); 
+          docPdf.text('Faturamento na Competência:', 14, 58);
+          docPdf.setFontSize(22); 
+          docPdf.setTextColor(16, 185, 129); // Verde
+          docPdf.text(formatMoney(totalGmv), 14, 68);
+
+          // Histórico de Parceria (Tiramos a Comissão e colocamos esse em destaque)
+          docPdf.setFontSize(11); 
+          docPdf.setTextColor(75, 85, 99); 
+          docPdf.text('Histórico Total da Parceria:', 110, 58);
+          docPdf.setFontSize(22); 
+          docPdf.setTextColor(59, 130, 246); // Azul
+          docPdf.text(formatMoney(allTimeGmv), 110, 68);
+
+          // ================= TABELA DE LOJAS =================
           const storeRows = [];
           clientStores.forEach((store, idx) => {
-            const gmv = parseSafeNumber(store.currentRevenue);
-            const ads = parseSafeNumber(store.adsInvestment);
-            const orders = parseSafeNumber(store.orders);
-            const base = parseSafeNumber(store.gmvBase);
-            storeRows.push([ `${idx + 1}º`, store.marketplace || '-', store.store || '-', formatMoney(gmv), formatPercent(base > 0 ? (gmv - base) / base : 0), `${orders} ped.`, formatMoney(ads), formatRoas(ads > 0 ? gmv / ads : 0), formatMoney(orders > 0 ? ads / orders : 0) ]);
+            storeRows.push([ `${idx + 1}º`, store.marketplace || '-', store.store || '-', formatMoney(store.reportGmv), formatPercent(store.reportBase > 0 ? (store.reportGmv - store.reportBase) / store.reportBase : 0), `${store.reportOrders} ped.`, formatMoney(store.reportAds), formatRoas(store.reportAds > 0 ? store.reportGmv / store.reportAds : 0), formatMoney(store.reportOrders > 0 ? store.reportAds / store.reportOrders : 0) ]);
           });
 
           autoTable(docPdf, {
-            startY: 75,
+            startY: 78,
             head: [['Rk', 'Canal', 'Loja', 'GMV', 'Evolução', 'Volume', 'ADS', 'ROAS', 'CPA Médio']],
             body: storeRows, theme: 'grid',
-            headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
+            headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255], fontStyle: 'bold' },
             styles: { fontSize: 7, cellPadding: 4 },
             columnStyles: { 0: { halign: 'center' }, 4: { halign: 'center' }, 7: { halign: 'center' } },
             alternateRowStyles: { fillColor: [249, 250, 251] }
           });
 
-          let finalY = docPdf.lastAutoTable.finalY + 10;
-          if (finalY + 55 > docPdf.internal.pageSize.height) { docPdf.addPage(); finalY = 20; }
+          // ================= RESUMO FINAL (RODAPÉ) =================
+          let finalY = docPdf.lastAutoTable.finalY + 12;
+          if (finalY + 50 > docPdf.internal.pageSize.height) { docPdf.addPage(); finalY = 20; }
           
-          docPdf.setFillColor(243, 244, 246); docPdf.roundedRect(14, finalY, 182, 50, 3, 3, 'F');
-          docPdf.setFontSize(12); docPdf.setTextColor(31, 41, 55); docPdf.text('Resumo Executivo do Período', 20, finalY + 8);
-          docPdf.setFontSize(10); docPdf.setTextColor(75, 85, 99);
-          docPdf.text(`Canais Atendidos: ${Array.from(canaisAtendidos).join(', ')}`, 20, finalY + 18);
+          docPdf.setFillColor(248, 250, 252); 
+          docPdf.setDrawColor(226, 232, 240);
+          docPdf.roundedRect(14, finalY, 182, 45, 3, 3, 'FD'); // Fundo clarinho com borda
+
+          docPdf.setFontSize(11); docPdf.setTextColor(30, 41, 59); 
+          docPdf.setFont('helvetica', 'bold');
+          docPdf.text('Resumo Global do Período', 20, finalY + 8);
+
+          docPdf.setFontSize(9); docPdf.setTextColor(71, 85, 105); docPdf.setFont('helvetica', 'normal');
+          docPdf.text(`Canais Ativados: ${Array.from(canaisAtendidos).join(', ')}`, 20, finalY + 18);
           docPdf.text(`Crescimento do Faturamento (MoM): ${formatPercent(totalEvolucao)}`, 20, finalY + 26);
           docPdf.text(`Total de Unidades Vendidas: ${totalUnits} unidades`, 20, finalY + 34);
-          docPdf.text(`Total de Pedidos Gerados: ${totalOrders} pedidos`, 20, finalY + 42);
-          docPdf.text(`Faturamento Histórico (Parceria): ${formatMoney(allTimeGmv)}`, 20, finalY + 50);
-          docPdf.text(`Investimento Total em ADS: ${formatMoney(totalAds)}`, 110, finalY + 26);
-          docPdf.text(`ROAS Médio Consolidado: ${formatRoas(totalRoas)}`, 110, finalY + 34);
-          docPdf.text(`CPA Médio Consolidado: ${formatMoney(totalOrders > 0 ? totalAds / totalOrders : 0)} / pedido`, 110, finalY + 42);
+          
+          docPdf.text(`Investimento Total em ADS: ${formatMoney(totalAds)}`, 110, finalY + 18);
+          docPdf.text(`ROAS Médio Consolidado: ${formatRoas(totalRoas)}`, 110, finalY + 26);
+          docPdf.text(`CPA Médio (Custo por Pedido): ${formatMoney(totalOrders > 0 ? totalAds / totalOrders : 0)}`, 110, finalY + 34);
         });
-        docPdf.save(`Avante_Relatorios_${monthInput.replace('/', '-')}.pdf`);
+        
+        docPdf.save(`Avante_Relatorio_${monthInput.replace('/', '-')}.pdf`);
       }
     } catch (error) {
       console.error(error);
@@ -1046,7 +1106,7 @@ export default function App() {
     let totalAgencyRevenue = 0, totalAgencyRevenueActual = 0, agencyTarget = 0; 
     
     const mktPerformance = {};
-    const globalHistoryAggregation = {};
+    const monthlyByClient = {};
 
     const dataAtual = new Date();
     dataAtual.setMonth(dataAtual.getMonth() - 1);
@@ -1078,27 +1138,29 @@ export default function App() {
       totalOrders += (s.orders || 0);
       totalUnits += (s.units || 0);
 
-      // === CÁLCULO DE CANAIS: Mês Atual vs Mês Passado EXATO ===
       const mktName = s.marketplace ? s.marketplace.toUpperCase() : 'N/A';
       if (!mktPerformance[mktName]) mktPerformance[mktName] = { name: mktName, atual: 0, passado: 0 };
       
       mktPerformance[mktName].atual += (Number(s.currentRevenue) || 0);
-      
       if (s.monthlyHistory && s.monthlyHistory.length > 0) {
-          // Em vez de pegar o último da fila, procura o mês cravado (Ex: "ABR/26")
           const prevData = s.monthlyHistory.find(h => h.month === mesPassadoExato);
           if (prevData) mktPerformance[mktName].passado += Number(prevData.gmv) || 0;
       }
 
-      // AGREGADOR DO GRÁFICO HISTÓRICO GLOBAL
       if (s.monthlyHistory) {
           s.monthlyHistory.forEach(hist => {
               const stdMonth = normalizeMonthYear(hist.month);
-              if (!globalHistoryAggregation[stdMonth]) {
-                  globalHistoryAggregation[stdMonth] = { month: stdMonth, ReceitaGlobal: 0, ReceitaAgencia: 0 };
+              if (!monthlyByClient[stdMonth]) monthlyByClient[stdMonth] = {};
+              
+              if (!monthlyByClient[stdMonth][s.client]) {
+                  monthlyByClient[stdMonth][s.client] = { 
+                      gmv: 0, 
+                      isFixed: s.feeType === 'fixed' || (Number(s.fixedFee) > 0), 
+                      fixedFee: Number(s.fixedFee) || 0, 
+                      feePercent: Number(s.feePercent) || 0 
+                  };
               }
-              globalHistoryAggregation[stdMonth].ReceitaGlobal += Number(hist.gmv) || 0;
-              globalHistoryAggregation[stdMonth].ReceitaAgencia += Number(hist.agencyRevenue) || 0;
+              monthlyByClient[stdMonth][s.client].gmv += Number(hist.gmv) || 0;
           });
       }
 
@@ -1109,27 +1171,6 @@ export default function App() {
       groups[s.client].totalCurrentRevenue += s.currentRevenue || 0; 
       groups[s.client].totalProjectedGmv += s.projectedGmv;
       groups[s.client].totalAds += s.adsInvestment || 0;
-    });
-
-    const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-    let historicalChartData = Object.values(globalHistoryAggregation).sort((a, b) => {
-        const [mA, yA] = a.month.split('/');
-        const [mB, yB] = b.month.split('/');
-        return (parseInt(yA, 10) * 100 + monthsOrder.indexOf(mA)) - (parseInt(yB, 10) * 100 + monthsOrder.indexOf(mB));
-    });
-
-    if (historicalChartData.length > 0) {
-        const lastPastMonth = historicalChartData[historicalChartData.length - 1];
-        lastPastMonth.ProjecaoGlobal = lastPastMonth.ReceitaGlobal;
-        lastPastMonth.MetaGlobal = lastPastMonth.ReceitaGlobal;
-    }
-
-    historicalChartData.push({
-      month: 'Atual',
-      ReceitaGlobal: totalCurrentRevenue,
-      ReceitaAgencia: totalAgencyRevenueActual,
-      ProjecaoGlobal: totalProjected,
-      MetaGlobal: totalTarget
     });
 
     const groupedClients = Object.values(groups).map(g => {
@@ -1147,6 +1188,48 @@ export default function App() {
       if (sortBy === 'name') return a.client.localeCompare(b.client);
       if (sortBy === 'status') { const w = { danger: 1, warning: 2, success: 3 }; return w[a.status] - w[b.status]; }
       return b.totalCurrentRevenue - a.totalCurrentRevenue;
+    });
+
+    const globalHistoryAggregation = {};
+    Object.entries(monthlyByClient).forEach(([month, clients]) => {
+        let globalGmv = 0;
+        let agencyRev = 0;
+        
+        Object.values(clients).forEach(clientData => {
+            globalGmv += clientData.gmv;
+            if (clientData.isFixed) {
+                agencyRev += clientData.fixedFee; 
+            } else {
+                agencyRev += clientData.gmv * (clientData.feePercent / 100);
+            }
+        });
+        
+        globalHistoryAggregation[month] = { month, ReceitaGlobal: globalGmv, ReceitaAgencia: agencyRev };
+    });
+
+    const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    let historicalChartData = Object.values(globalHistoryAggregation).sort((a, b) => {
+        const [mA, yA] = a.month.split('/');
+        const [mB, yB] = b.month.split('/');
+        return (parseInt(yA, 10) * 100 + monthsOrder.indexOf(mA)) - (parseInt(yB, 10) * 100 + monthsOrder.indexOf(mB));
+    });
+
+    if (historicalChartData.length > 0) {
+        const lastPastMonth = historicalChartData[historicalChartData.length - 1];
+        lastPastMonth.ProjecaoGlobal = lastPastMonth.ReceitaGlobal;
+        lastPastMonth.MetaGlobal = lastPastMonth.ReceitaGlobal;
+        lastPastMonth.ProjecaoAgencia = lastPastMonth.ReceitaAgencia;
+        lastPastMonth.MetaAgencia = lastPastMonth.ReceitaAgencia;
+    }
+
+    historicalChartData.push({
+      month: 'Atual',
+      ReceitaGlobal: totalCurrentRevenue,
+      ReceitaAgencia: totalAgencyRevenueActual,
+      ProjecaoGlobal: totalProjected,
+      MetaGlobal: totalTarget,
+      ProjecaoAgencia: totalAgencyRevenue,
+      MetaAgencia: agencyTarget
     });
 
     return { 
@@ -1246,6 +1329,7 @@ export default function App() {
           <div className="flex items-center gap-4">
             {canEdit && (
               <div className="hidden lg:flex gap-1 items-center">
+                
                 <button 
                   onClick={() => setIsExportModalOpen(true)} 
                   className="text-orange-600 hover:text-orange-400 p-2 rounded-full hover:bg-orange-500/10 transition-all border border-transparent hover:border-orange-500/30" 
@@ -1254,16 +1338,19 @@ export default function App() {
                   <Download size={18} />
                 </button>
 
-                <div className="w-px h-4 bg-white/10 mx-1"></div>
-
-                <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
-                <button 
-                  onClick={() => fileInputRef.current.click()} 
-                  className="text-gray-400 hover:text-gray-200 p-2 rounded-full hover:bg-gray-700/50 transition-all border border-transparent hover:border-gray-600" 
-                  title="Restaurar Backup"
-                >
-                  <ArchiveRestore size={18} />
-                </button>
+                {isManager && (
+                  <>
+                    <div className="w-px h-4 bg-white/10 mx-1"></div>
+                    <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
+                    <button 
+                      onClick={() => fileInputRef.current.click()} 
+                      className="text-gray-400 hover:text-gray-200 p-2 rounded-full hover:bg-gray-700/50 transition-all border border-transparent hover:border-gray-600" 
+                      title="Restaurar Backup"
+                    >
+                      <ArchiveRestore size={18} />
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
@@ -1574,6 +1661,7 @@ export default function App() {
         onClose={() => setIsExportModalOpen(false)} 
         onExport={handleCustomExport}
         filterCount={dashboardData.flatFilteredStores.length}
+        allowJson={isManager} 
       />
     </div>
   );

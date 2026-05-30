@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, PieChartIcon, Award } from 'lucide-react';
+import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, Award } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Area, Line, Legend } from 'recharts';
 
 export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieData, roasData, COLORS, currentDay, daysInMonth }) {
@@ -23,57 +23,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
         client: s.client
       }));
   }, [dashboardData.flatFilteredStores]);
-
-  // === NOVO AGREGADOR DE HISTÓRICO GLOBAL (Com Bifurcação no Mês Atual) ===
-  const historicalChartData = useMemo(() => {
-    const monthlyStats = {};
-
-    // 1. Somar todo o histórico de todas as lojas ativas no filtro
-    dashboardData.flatFilteredStores.forEach(store => {
-      const isFixed = store.feeType === 'fixed' || Number(store.fixedFee) > 0;
-      const feePercent = Number(store.feePercent) || 0;
-      const fixedFee = Number(store.fixedFee) || 0;
-
-      (store.monthlyHistory || []).forEach(hist => {
-        if (!monthlyStats[hist.month]) {
-          monthlyStats[hist.month] = { month: hist.month, ReceitaGlobal: 0, ReceitaAgencia: 0 };
-        }
-        monthlyStats[hist.month].ReceitaGlobal += Number(hist.gmv) || 0;
-        
-        // Garante a receita da agência (caso o histórico seja muito antigo e não tenha)
-        const agencyRev = hist.agencyRevenue !== undefined ? Number(hist.agencyRevenue) : (isFixed ? fixedFee : (Number(hist.gmv) || 0) * (feePercent / 100));
-        monthlyStats[hist.month].ReceitaAgencia += agencyRev;
-      });
-    });
-
-    // 2. Colocar na ordem cronológica correta
-    const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-    let data = Object.values(monthlyStats).sort((a, b) => {
-      const [mA, yA] = (a.month || '').split('/');
-      const [mB, yB] = (b.month || '').split('/');
-      const valA = parseInt(yA || 0, 10) * 100 + monthsOrder.indexOf(mA);
-      const valB = parseInt(yB || 0, 10) * 100 + monthsOrder.indexOf(mB);
-      return valA - valB;
-    });
-
-    // 3. Ponto de Bifurcação (Conecta o mês passado com a Projeção e Meta do mês atual)
-    if (data.length > 0) {
-        const lastPastMonth = data[data.length - 1];
-        lastPastMonth.ProjecaoGlobal = lastPastMonth.ReceitaGlobal;
-        lastPastMonth.MetaGlobal = lastPastMonth.ReceitaGlobal;
-    }
-
-    // 4. Adiciona o Mês Atual
-    data.push({
-      month: 'Atual',
-      ReceitaGlobal: dashboardData.totalCurrentRevenue,
-      ReceitaAgencia: dashboardData.totalAgencyRevenueActual,
-      ProjecaoGlobal: dashboardData.totalProjected,
-      MetaGlobal: dashboardData.totalTarget
-    });
-
-    return data;
-  }, [dashboardData]);
 
   const changeLogs = useMemo(() => {
     return dashboardData.groupedClients.filter(g => g.status !== 'success').map(g => ({
@@ -323,9 +272,9 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
           </div>
           
           <div className="flex-1 w-full relative">
-            {historicalChartData.length > 0 ? (
+            {dashboardData.historicalChartData.length > 0 ? (
               <ResponsiveContainer width="99%" height="100%" minWidth={0}>
-                <ComposedChart data={historicalChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                <ComposedChart data={dashboardData.historicalChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorGlobal" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
@@ -342,19 +291,48 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                   
                   <Tooltip 
-                    cursor={{ fill: 'rgba(255,255,255,0.02)' }} 
-                    contentStyle={glassTooltipStyle} 
-                    itemStyle={{ color: '#fff', fontWeight: 'bold' }} 
-                    formatter={(value) => formatCurrency(value)} 
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div style={glassTooltipStyle} className="p-3 min-w-[220px]">
+                            <p className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider border-b border-white/10 pb-2">
+                              {label}
+                            </p>
+                            <div className="flex flex-col gap-2">
+                              {payload.map((entry, index) => {
+                                if (label !== 'Atual' && (entry.name.includes('Projeção') || entry.name.includes('Meta'))) {
+                                  return null;
+                                }
+                                
+                                return (
+                                  <div key={index} className="flex items-center justify-between text-sm">
+                                    <div className="flex items-center gap-2">
+                                      <span style={{ color: entry.color }}>●</span>
+                                      <span className="text-gray-300">{entry.name}</span>
+                                    </div>
+                                    <span className="font-bold text-white ml-4">
+                                      {formatCurrency(entry.value)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }} 
                   />
-                  
-                  <Legend verticalAlign="top" height={36} iconType="circle"/>
-                  
-                  <Area yAxisId="left" type="monotone" dataKey="ReceitaGlobal" name="Receita Realizada" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorGlobal)" />
-                  <Area yAxisId="right" type="monotone" dataKey="ReceitaAgencia" name="Receita Avante" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#colorAgency)" />
+                  {/* ======================================================== */}
 
-                  <Line yAxisId="left" type="monotone" dataKey="ProjecaoGlobal" name="Projeção (Fim do Mês)" stroke="#F59E0B" strokeDasharray="5 5" strokeWidth={3} dot={{r:4}} connectNulls={true} />
-                  <Line yAxisId="left" type="monotone" dataKey="MetaGlobal" name="Meta (Fim do Mês)" stroke="#8B5CF6" strokeDasharray="5 5" strokeWidth={3} dot={{r:4}} connectNulls={true} />
+                  <Legend verticalAlign="top" height={36}/>
+                  
+                  <Area yAxisId="left" type="monotone" dataKey="ReceitaGlobal" name="Receita dos Clientes" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorGlobal)" />
+                  
+                  <Area yAxisId="right" type="monotone" dataKey="ReceitaAgencia" name="Receita Real" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#colorAgency)" />
+                  <Line yAxisId="right" type="monotone" dataKey="ProjecaoAgencia" name="Projeção Atual" stroke="#F59E0B" strokeDasharray="5 5" strokeWidth={3} dot={{r:4}} connectNulls={true} />
+                  <Line yAxisId="right" type="monotone" dataKey="MetaAgencia" name="Meta Avante" stroke="#8B5CF6" strokeDasharray="5 5" strokeWidth={3} dot={{r:4}} connectNulls={true} />
+                  
                 </ComposedChart>
               </ResponsiveContainer>
             ) : (
@@ -371,7 +349,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
           
           <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
             {changeLogs.map((log, i) => (
-              <div key={i} className={`flex flex-col gap-3 p-4 rounded-2xl border backdrop-blur-md transition-all ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
+              <div key={i} className={`flex flex-col gap-3 p-4 rounded-2xl border backdrop-blur-md transition-all hover:scale-[1.02] ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
                 <div className="flex items-start gap-3">
                   <div className={`p-2.5 rounded-xl mt-0.5 ${log.type === 'danger' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
                     {log.type === 'danger' ? <AlertCircle size={18} /> : <Clock size={18} />}

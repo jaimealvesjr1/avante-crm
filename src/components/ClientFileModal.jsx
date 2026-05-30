@@ -32,8 +32,8 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, handleSaveRetroactive
         if (!day || rev === '') return toast.error("Dia e Faturamento são obrigatórios.");
         setIsSaving(true);
 
-        const numRev = Number(String(rev).replace(/\./g, '').replace(',', '.'));
-        const numAds = Number(String(ads).replace(/\./g, '').replace(',', '.')) || 0;
+        const numRev = Number(String(rev).replace(',', '.'));
+        const numAds = Number(String(ads).replace(',', '.')) || 0;
         const numOrd = Number(ord) || 0;
         const numUni = Number(uni) || 0;
 

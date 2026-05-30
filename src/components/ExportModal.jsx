@@ -1,34 +1,42 @@
 import React, { useState } from 'react';
 import { X, Download, FileJson, FileText, FileSpreadsheet, CalendarDays } from 'lucide-react';
+import { toast } from 'react-hot-toast'; 
 
-export default function ExportModal({ isOpen, onClose, onExport, filterCount }) {
+export default function ExportModal({ isOpen, onClose, onExport, filterCount, allowJson }) {
   const [pdf, setPdf] = useState(true);
   const [excel, setExcel] = useState(true);
   const [json, setJson] = useState(false);
-  const [showAgencyFee, setShowAgencyFee] = useState(true);
-  const [monthInput, setMonthInput] = useState('');
+  
+  const [monthInput, setMonthInput] = useState(() => {
+    const today = new Date();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    return `${today.getFullYear()}-${m}`;
+  });
 
   if (!isOpen) return null;
 
-  // Traduz o input do calendário para o padrão oficial (Ex: "2026-04" -> "ABR/26")
   const formatToBankMonth = (yyyyMm) => {
-      if (!yyyyMm) return '';
+      if (!yyyyMm || typeof yyyyMm !== 'string' || !yyyyMm.includes('-')) return '';
       const [year, month] = yyyyMm.split('-');
       const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
       return `${months[parseInt(month, 10) - 1]}/${year.slice(-2)}`;
   };
 
   const handleExport = () => {
+    if (!pdf && !excel && !json) {
+       return toast.error("Selecione pelo menos um formato de exportação.");
+    }
+
     if ((pdf || excel) && !monthInput) {
-        return alert("Por favor, selecione a Competência (Mês/Ano) para gerar os relatórios.");
+        return toast.error("Por favor, selecione a Competência (Mês/Ano) para gerar os relatórios.");
     }
     
+    // Removido o parâmetro "showAgencyFee"
     onExport({ 
         json, 
         pdf, 
         excel, 
-        monthInput: monthInput ? formatToBankMonth(monthInput) : '', 
-        showAgencyFee 
+        monthInput: (pdf || excel) ? formatToBankMonth(monthInput) : ''
     });
     
     onClose();
@@ -67,25 +75,27 @@ export default function ExportModal({ isOpen, onClose, onExport, filterCount }) 
             </div>
           </label>
 
-          <label className="flex items-center gap-3 p-3 rounded-xl border border-gray-700 bg-black/20 cursor-pointer hover:bg-white/5 transition-colors">
-            <input type="checkbox" checked={json} onChange={e => setJson(e.target.checked)} className="w-5 h-5 rounded text-orange-500 bg-gray-800 border-gray-600 focus:ring-orange-500 focus:ring-offset-gray-900" />
-            <div className="flex items-center gap-2">
-              <FileJson size={18} className="text-yellow-400" />
-              <div>
-                <span className="text-sm font-bold text-white block">Backup Completo (JSON)</span>
-                <span className="text-[10px] text-gray-500">Dados brutos para restauração do sistema</span>
+          {allowJson && (
+            <label className="flex items-center gap-3 p-3 rounded-xl border border-gray-700 bg-black/20 cursor-pointer hover:bg-white/5 transition-colors">
+              <input type="checkbox" checked={json} onChange={e => setJson(e.target.checked)} className="w-5 h-5 rounded text-orange-500 bg-gray-800 border-gray-600 focus:ring-orange-500 focus:ring-offset-gray-900" />
+              <div className="flex items-center gap-2">
+                <FileJson size={18} className="text-yellow-400" />
+                <div>
+                  <span className="text-sm font-bold text-white block">Backup Completo (JSON)</span>
+                  <span className="text-[10px] text-gray-500">Dados brutos para restauração do sistema</span>
+                </div>
               </div>
-            </div>
-          </label>
+            </label>
+          )}
         </div>
 
         {(pdf || excel) && (
-          <div className="bg-black/40 p-4 rounded-xl border border-white/5 mb-6">
+          <div className="bg-black/40 p-4 rounded-xl border border-white/5 mb-6 animate-in slide-in-from-top-2">
             <h4 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2">
               <CalendarDays size={14} /> Configurações do Relatório
             </h4>
             
-            <div className="mb-4">
+            <div className="mb-2">
               <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Competência</label>
               <input 
                 type="month" 
@@ -94,11 +104,6 @@ export default function ExportModal({ isOpen, onClose, onExport, filterCount }) 
                 className="w-full bg-gray-950 border border-gray-700 rounded-lg p-2.5 text-sm text-white outline-none focus:border-orange-500 transition-colors cursor-pointer" 
               />
             </div>
-
-            <label className="flex items-center gap-2 cursor-pointer mt-4">
-              <input type="checkbox" checked={showAgencyFee} onChange={e => setShowAgencyFee(e.target.checked)} className="w-4 h-4 rounded text-orange-500 bg-gray-800 border-gray-600 focus:ring-orange-500 focus:ring-offset-gray-900" />
-              <span className="text-xs font-medium text-gray-300">Incluir Fatura da Assessoria (B2X) no PDF</span>
-            </label>
           </div>
         )}
 
