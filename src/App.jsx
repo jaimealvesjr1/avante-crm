@@ -27,6 +27,8 @@ import { useAvanteData } from './hooks/useAvanteData';
 import TeamFeedView from './components/TeamFeedView';
 import ExportModal from './components/ExportModal';
 import FinanceDashboard from './components/FinanceDashboard';
+import { normalizeMonthYear } from './utils/dateUtils';
+import { formatCurrency, formatNumber } from './utils/financeUtils';
 
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
@@ -353,7 +355,7 @@ export default function App() {
     } catch (error) { toast.error('❌ Erro ao criar acesso. Verifique a senha ou se o e-mail já existe.'); }
   };
 
-  const handleUpdateUser = async (emailToUpdate, newNameCompleto, newColor, newAvatarUrl) => {
+  const handleUpdateUser = async (emailToUpdate, newNameCompleto, newColor, newAvatarUrl, paymentConfig) => {
     if (!canEdit) return;
     try {
       const userDocRef = doc(db, "equipe", emailToUpdate.toLowerCase());
@@ -362,6 +364,7 @@ export default function App() {
       
       if (newColor) updateData.avatarColor = newColor;
       if (newAvatarUrl !== undefined) updateData.avatarUrl = newAvatarUrl;
+      if (paymentConfig !== undefined) updateData.paymentConfig = paymentConfig;
 
       await setDoc(userDocRef, updateData, { merge: true });
       toast.success('Usuário atualizado com sucesso!');
@@ -548,25 +551,6 @@ export default function App() {
     setStores(localStores);
     
     toast.success(`Loja atualizada! Dados distribuídos do dia ${startDay} ao ${targetDay} 🚀`);
-  };
-
-  const normalizeMonthYear = (str) => {
-    if (!str) return '';
-    if (/^\d{4}-\d{2}$/.test(str)) { // Formato do input type="month" (2026-04)
-        const [y, m] = str.split('-');
-        const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-        return `${months[parseInt(m, 10) - 1]}/${y.slice(-2)}`;
-    }
-    let cleanStr = String(str).toUpperCase().replace(/\s+/g, '');
-    cleanStr = cleanStr.replace('ABRI', 'ABR'); // Corrige o erro comum de ABRI
-    const match = cleanStr.match(/^([A-Z]{3,4})\/?(\d{2,4})$/);
-    if (match) {
-        let m = match[1].substring(0, 3);
-        let y = match[2];
-        if (y.length === 4) y = y.slice(-2);
-        return `${m}/${y}`;
-    }
-    return str.toUpperCase();
   };
 
   const handleSaveRetroactiveMonth = async (storeId, monthStr, gmv, ads, editId = null) => {
@@ -860,39 +844,32 @@ export default function App() {
         const wb = XLSX.utils.book_new();
         clientNames.forEach(clientName => {
           const clientStores = clientsGroup[clientName].sort((a, b) => b.reportGmv - a.reportGmv);
-          let totalGmv = 0, totalBase = 0, totalUnits = 0, totalOrders = 0, totalAds = 0;
-          const canaisAtendidos = new Set();
+          let totalGmv = 0, totalUnits = 0;
           
           clientStores.forEach(s => {
-            totalGmv += s.reportGmv; totalBase += s.reportBase;
-            totalUnits += s.reportUnits; totalOrders += s.reportOrders;
-            totalAds += s.reportAds;
-            if (s.marketplace) canaisAtendidos.add(s.marketplace);
+            totalGmv += s.reportGmv;
+            totalUnits += s.reportUnits;
           });
-
-          const totalEvolucao = totalBase > 0 ? (totalGmv - totalBase) / totalBase : 0;
-          const totalRoas = totalAds > 0 ? totalGmv / totalAds : 0;
 
           const wsData = [
-            ['RESUMO FINANCEIRO E PERFORMANCE', clientName], [],
-            ['Marketplaces Atendidos', Array.from(canaisAtendidos).join(', ')],
-            ['Total Unidades / Pedidos', `${totalUnits} un. / ${totalOrders} ped.`],
-            ['Faturamento Base Anterior', totalBase],
-            ['Total Faturado Atual (GMV)', totalGmv],
-            ['Crescimento Geral (MoM)', formatPercent(totalEvolucao)],
-            ['Total ADS', totalAds],
-            ['ROAS Médio do Cliente', formatRoas(totalRoas)], [],
-            ['Rk', 'Loja', 'Canal', 'GMV Base', 'Faturamento (GMV)', 'Evolução', 'Pedidos', 'Unidades', 'Invest. ADS', 'ROAS', 'CPA (Pedido)', 'CPA (Unidade)']
+            ['RESUMO FINANCEIRO', clientName], [],
+            ['Canal', 'Loja', 'Faturamento Total', 'Unidades']
           ];
 
-          clientStores.forEach((s, idx) => {
-            wsData.push([ `${idx + 1}º`, s.store || '-', s.marketplace || '-', s.reportBase, s.reportGmv, formatPercent(s.reportBase > 0 ? (s.reportGmv - s.reportBase) / s.reportBase : 0), s.reportOrders, s.reportUnits, s.reportAds, formatRoas(s.reportAds > 0 ? s.reportGmv / s.reportAds : 0), s.reportOrders > 0 ? s.reportAds / s.reportOrders : 0, s.reportUnits > 0 ? s.reportAds / s.reportUnits : 0 ]);
+          clientStores.forEach(s => {
+            wsData.push([
+              s.marketplace || '-',
+              s.store || '-',
+              s.reportGmv,
+              s.reportUnits
+            ]);
           });
 
-          wsData.push(['-', 'TOTAL GERAL', '-', totalBase, totalGmv, formatPercent(totalEvolucao), totalOrders, totalUnits, totalAds, formatRoas(totalRoas), '-', '-']);
+          wsData.push(['-', 'TOTAL GERAL', totalGmv, totalUnits]);
           
           const ws = XLSX.utils.aoa_to_sheet(wsData);
-          ws['!cols'] = [{wch: 32}, {wch: 25}, {wch: 15}, {wch: 15}, {wch: 20}, {wch: 12}, {wch: 10}, {wch: 10}, {wch: 15}, {wch: 10}, {wch: 15}, {wch: 15}];
+          // Ajusta a largura das colunas
+          ws['!cols'] = [{wch: 20}, {wch: 35}, {wch: 20}, {wch: 15}];
           XLSX.utils.book_append_sheet(wb, ws, clientName.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31) || 'Cliente');
         });
         XLSX.writeFile(wb, `Avante_Relatorio_${monthInput.replace('/', '-')}.xlsx`);
@@ -1164,9 +1141,6 @@ export default function App() {
       toast.success(`Loja ${storeName} apagada!`);
     } 
   };
-
-  const formatCurrency = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value || 0);
-  const formatNumber = (value) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value || 0);
 
   const generateStoreWhatsAppLink = (row) => `https://wa.me/?text=${encodeURIComponent(`Olá, equipe da *${row.client}*!\nAvaliamos a loja *${row.store}* até o dia ${currentDay}.\nProjeção: ${formatCurrency(row.projectedGmv)} / Meta: ${formatCurrency(row.gmvTarget)}.\n${row.status === 'danger' ? 'Precisamos alinhar ações urgentes de Ads/Estoque.' : row.status === 'warning' ? 'Podemos otimizar as campanhas da semana?' : 'Vocês estão voando! Vamos manter a tração.'}`)}`;
   
@@ -1558,8 +1532,9 @@ export default function App() {
           <TeamFeedView 
             currentUserData={currentUserData} 
             user={user} 
-            stores={stores} 
+            stores={stores}
             teamMembers={teamMembers}
+            searchTerm={searchTerm}
             openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
           />
         )}
@@ -1628,6 +1603,7 @@ export default function App() {
             dashboardData={dashboardData} 
             formatCurrency={formatCurrency}
             canEdit={canEdit}
+            teamMembers={teamMembers}
           />
         )}
 

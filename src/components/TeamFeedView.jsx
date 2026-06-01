@@ -4,7 +4,7 @@ import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
 
-export default function TeamFeedView({ currentUserData, user, stores, openTaskModal, teamMembers }) {
+export default function TeamFeedView({ currentUserData, user, stores, teamMembers, openTaskModal, searchTerm }) {
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
     const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
     
@@ -318,11 +318,21 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                 }
                 return true; // 'all' retorna tudo
             })
-            // 3. Ordena os eventos por cronologia (mais recente no topo)
+            // 3. NOVO: Aplica o filtro de texto da Busca Global
+            .filter(l => {
+                if (!searchTerm) return true; // Se não digitou nada, mostra tudo
+                const termo = searchTerm.toLowerCase();
+                // Busca em comentários, lojas, clientes ou pelo nome de quem comentou
+                return l.texto?.toLowerCase().includes(termo) || 
+                       l.storeName?.toLowerCase().includes(termo) || 
+                       l.clientName?.toLowerCase().includes(termo) ||
+                       l.author?.toLowerCase().includes(termo);
+            })
+            // 4. Ordena os eventos por cronologia (mais recente no topo)
             .sort((a, b) => b.id - a.id)
-            // 4. Limita a quantidade para garantir o desempenho visual
+            // 5. Limita a quantidade para garantir o desempenho visual
             .slice(0, 100);
-    }, [allLogs, feedClearedAt, feedFilter, myName]);
+    }, [allLogs, feedClearedAt, feedFilter, myName, searchTerm]);
     
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">

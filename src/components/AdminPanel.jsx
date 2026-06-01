@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserPlus, Shield, Users, Mail, Clock, Edit2, Check, X, Palette, Eye, Flame, Trash2 } from 'lucide-react';
+import { UserPlus, Shield, Users, Mail, Clock, Edit2, Check, X, Palette, Eye, Flame, Trash2, DollarSign, Calendar, Percent, Target } from 'lucide-react';
 import { getVisualRole } from '../App';
 
 const AVATAR_COLORS = [
@@ -26,11 +26,24 @@ export default function AdminPanel({
   isSimulating
 }) {
   const [editingUser, setEditingUser] = useState(null);
+  
+  // Estados de Perfil Básicos
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
   const [editAvatarUrl, setEditAvatarUrl] = useState('');
 
-  // Lógica para Iniciais
+  // ==========================================
+  // NOVOS ESTADOS: Regras Financeiras do Usuário
+  // ==========================================
+  const [editSalarioFixo, setEditSalarioFixo] = useState(0);
+  const [editDiaFixo, setEditDiaFixo] = useState('');
+  const [editPercentual, setEditPercentual] = useState(0);
+  const [editBaseCalculo, setEditBaseCalculo] = useState('LT'); // LT (Bruto) ou LL (Líquido)
+  const [editGatilho, setEditGatilho] = useState(0); // Valor a exceder (Ex: 16000 do Jaime)
+  const [editDiaVariavel, setEditDiaVariavel] = useState('');
+  const [editFrequencia, setEditFrequencia] = useState('mensal'); // mensal, fracionado, semanal, quinzenal
+
+  // Lógica para Iniciais e Cores
   const getInitials = (name) => {
     if (!name) return 'U';
     const parts = name.trim().split(' ');
@@ -38,7 +51,6 @@ export default function AdminPanel({
     return name.substring(0, 2).toUpperCase();
   };
 
-  // Cor de fallback automática (caso não tenha escolhido nenhuma)
   const getFallbackColor = (name) => {
     if (!name) return AVATAR_COLORS[6];
     let hash = 0;
@@ -46,25 +58,45 @@ export default function AdminPanel({
     return AVATAR_COLORS[Math.abs(hash) % (AVATAR_COLORS.length - 1)];
   };
 
+  // Carrega os dados atuais do usuário para os inputs
   const startEditing = (member) => {
     setEditingUser(member.email);
     setEditName(member.nomeCompleto || member.nome || '');
     setEditColor(member.avatarColor || getFallbackColor(member.nomeCompleto || member.nome));
     setEditAvatarUrl(member.avatarUrl || '');
+
+    // Carrega a configuração financeira (se existir)
+    const pConfig = member.paymentConfig || {};
+    setEditSalarioFixo(pConfig.salarioFixo || 0);
+    setEditDiaFixo(pConfig.diaFixo || '');
+    setEditPercentual(pConfig.percentual || 0);
+    setEditBaseCalculo(pConfig.baseCalculo || 'LT');
+    setEditGatilho(pConfig.gatilho || 0);
+    setEditDiaVariavel(pConfig.diaVariavel || '');
+    setEditFrequencia(pConfig.frequencia || 'mensal');
   };
 
   const saveEdit = (email) => {
     if(editName.trim()) {
-      // Passamos agora a cor escolhida como 3º parâmetro
-      handleUpdateUser(email, editName, editColor, editAvatarUrl);
+      // Montamos o objeto de configuração financeira que será salvo no Firebase
+      const paymentConfig = {
+        salarioFixo: Number(editSalarioFixo),
+        diaFixo: editDiaFixo,
+        percentual: Number(editPercentual),
+        baseCalculo: editBaseCalculo,
+        gatilho: Number(editGatilho),
+        diaVariavel: editDiaVariavel,
+        frequencia: editFrequencia
+      };
+
+      // ATENÇÃO: Adicionamos paymentConfig como o 5º parâmetro da função
+      handleUpdateUser(email, editName, editColor, editAvatarUrl, paymentConfig);
     }
     setEditingUser(null);
   };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-
-
       <div className="flex justify-end mb-4">
           <button 
             onClick={closeMonth} 
@@ -76,7 +108,6 @@ export default function AdminPanel({
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
         
-        {/* LADO ESQUERDO: FORMULÁRIO DE CRIAÇÃO (Ocupa 2/5) */}
         <div className="lg:col-span-2">
           <form onSubmit={handleCreateUser} className="bg-black/20 p-6 rounded-3xl border border-white/5 shadow-inner h-full flex flex-col">
             <h3 className="text-lg font-bold text-indigo-400 uppercase tracking-wide mb-6 flex items-center gap-2">
@@ -106,24 +137,22 @@ export default function AdminPanel({
           </form>
         </div>
 
-        {/* LADO DIREITO: LISTA DE USUÁRIOS (Ocupa 3/5) */}
         <div className="lg:col-span-3">
           <div className="bg-black/20 p-6 rounded-3xl border border-white/5 shadow-inner h-full flex flex-col min-h-[450px]">
             <h3 className="text-lg font-bold text-gray-300 uppercase tracking-wide mb-6 flex items-center gap-2">
               <Users size={16} className="text-gray-400"/> Membros da Equipe ({teamMembers?.length || 0})
             </h3>
             
-            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4">
               {teamMembers?.map((member, idx) => {
                 const displayRole = member.role === 'Visualizador' ? 'Operacional' : (member.role || 'Operacional');
                 const isEditing = editingUser === member.email;
                 const userColor = member.avatarColor || getFallbackColor(member.nomeCompleto || member.nome);
                 
                 return (
-                  <div key={idx} className="bg-white/[0.03] hover:bg-white/[0.05] p-4 rounded-2xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors">
+                  <div key={idx} className={`bg-white/[0.03] hover:bg-white/[0.05] p-4 rounded-2xl border border-white/5 flex flex-col transition-colors ${isEditing ? 'ring-1 ring-indigo-500/50' : ''}`}>
                     
                     <div className="flex items-start sm:items-center gap-4 w-full">
-                      {/* AVATAR COM COR E IMAGEM DINÂMICA */}
                       <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${isEditing ? editColor : userColor} flex items-center justify-center font-bold text-white shadow-sm border border-white/20 shrink-0 text-lg transition-all overflow-hidden`}>
                         {member.avatarUrl && !isEditing ? (
                           <img src={member.avatarUrl} alt="Perfil" className="w-full h-full object-cover" />
@@ -133,75 +162,108 @@ export default function AdminPanel({
                       </div>
                       
                       <div className="flex-1">
-                        {isEditing ? (
-                          <div className="flex flex-col gap-2 animate-in fade-in zoom-in-95 w-full">
-                            <input 
-                              type="text" 
-                              value={editName} 
-                              onChange={e => setEditName(e.target.value)} 
-                              className="bg-black/40 border border-indigo-500/50 text-white text-sm font-bold rounded-lg px-3 py-1.5 outline-none w-full max-w-[250px]"
-                              placeholder="Nome completo"
-                              autoFocus
-                            />
-                            
-                            {/* NOVO CAMPO DE LINK DA FOTO */}
-                            <input 
-                              type="text" 
-                              value={editAvatarUrl} 
-                              onChange={e => setEditAvatarUrl(e.target.value)} 
-                              className="bg-black/40 border border-white/10 text-gray-300 text-xs rounded-lg px-3 py-1.5 outline-none w-full max-w-[250px] focus:border-indigo-500"
-                              placeholder="Link da foto (ImgBB, etc)"
-                            />
-
-                            {/* PALETA DE CORES */}
-                            <div className="flex items-center gap-1.5 bg-black/40 p-1.5 rounded-lg border border-white/10 w-max">
-                              <Palette size={12} className="text-gray-500 mx-1" />
-                              {AVATAR_COLORS.map(colorClass => (
-                                <button
-                                  key={colorClass}
-                                  onClick={() => setEditColor(colorClass)}
-                                  className={`w-5 h-5 rounded-full bg-gradient-to-br ${colorClass} transition-transform ${editColor === colorClass ? 'scale-125 border-2 border-white shadow-[0_0_8px_rgba(255,255,255,0.5)]' : 'border border-white/20 hover:scale-110'}`}
-                                  title="Escolher cor"
-                                />
-                              ))}
-                            </div>
-                            <div className="flex gap-2 mt-1">
-                              <button onClick={() => saveEdit(member.email)} className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 px-3 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"><Check size={14}/> Salvar</button>
-                              <button onClick={() => setEditingUser(null)} className="bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white px-3 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"><X size={14}/> Cancelar</button>
-                            </div>
-                          </div>
-                        ) : (
+                        {!isEditing ? (
                           <>
                             <div className="flex items-center gap-2 group mb-0.5">
                               <p className="text-sm font-bold text-white leading-none">{member.nomeCompleto || member.nome || 'Sem Nome'}</p>
 
-                              <button 
-                                onClick={() => startSimulation(member)}
-                                disabled={isSimulating}
-                                className="text-gray-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md"
-                                title="Ver o sistema como este usuário"
-                              >
-                                <Eye size={12} /> <span className="hidden md:inline"></span>
+                              <button onClick={() => startSimulation(member)} disabled={isSimulating} className="text-gray-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Ver o sistema como este usuário">
+                                <Eye size={12} />
                               </button>
 
-                              <button onClick={() => startEditing(member)} className="text-gray-500 hover:text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Editar Usuário">
+                              <button onClick={() => startEditing(member)} className="text-gray-500 hover:text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Editar Usuário e Financeiro">
                                 <Edit2 size={12} />
                               </button>
 
-                              {!isEditing && (
-                                <button onClick={() => handleDeleteUser(member.email)} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Excluir Usuário permanentemente">
-                                  <Trash2 size={12} />
-                                </button>
-                              )}                  
+                              <button onClick={() => handleDeleteUser(member.email)} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded-md" title="Excluir Usuário permanentemente">
+                                <Trash2 size={12} />
+                              </button>
                             </div>
-                            
                             <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-1">
                               <Mail size={12} /> {member.email}
                             </p>
+                            
+                            {/* Resumo visual financeiro quando não está editando */}
+                            {member.paymentConfig && member.paymentConfig.salarioFixo >= 0 && (
+                               <div className="mt-2 flex gap-2 flex-wrap">
+                                  <span className="text-[10px] bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <DollarSign size={10}/> R$ {member.paymentConfig.salarioFixo}
+                                  </span>
+                                  {member.paymentConfig.percentual > 0 && (
+                                      <span className="text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        <Percent size={10}/> {member.paymentConfig.percentual}% do {member.paymentConfig.baseCalculo}
+                                      </span>
+                                  )}
+                               </div>
+                            )}
                           </>
+                        ) : (
+                          <div className="animate-in fade-in zoom-in-95 w-full">
+                            <div className="flex flex-col gap-2 mb-4">
+                              <input type="text" value={editName} onChange={e => setEditName(e.target.value)} className="bg-black/40 border border-indigo-500/50 text-white text-sm font-bold rounded-lg px-3 py-1.5 outline-none w-full" placeholder="Nome completo" autoFocus />
+                              <input type="text" value={editAvatarUrl} onChange={e => setEditAvatarUrl(e.target.value)} className="bg-black/40 border border-white/10 text-gray-300 text-xs rounded-lg px-3 py-1.5 outline-none w-full focus:border-indigo-500" placeholder="Link da foto (ImgBB, etc)" />
+                              
+                              <div className="flex items-center gap-1.5 bg-black/40 p-1.5 rounded-lg border border-white/10 w-max">
+                                <Palette size={12} className="text-gray-500 mx-1" />
+                                {AVATAR_COLORS.map(colorClass => (
+                                  <button key={colorClass} onClick={() => setEditColor(colorClass)} className={`w-5 h-5 rounded-full bg-gradient-to-br ${colorClass} transition-transform ${editColor === colorClass ? 'scale-125 border-2 border-white shadow-[0_0_8px_rgba(255,255,255,0.5)]' : 'border border-white/20 hover:scale-110'}`} />
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="bg-black/30 p-4 rounded-xl border border-white/10 mt-2">
+                              <h4 className="text-xs font-bold text-green-400 mb-3 flex items-center gap-1 uppercase tracking-wider"><DollarSign size={14}/> Configuração de Remuneração</h4>
+                              
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                                <div className="col-span-2">
+                                  <label className="block text-[10px] text-gray-400 mb-1">Frequência de Pagto</label>
+                                  <select value={editFrequencia} onChange={e => setEditFrequencia(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white text-xs rounded-lg px-2 py-1.5 outline-none">
+                                    <option value="mensal">Mensal Único</option>
+                                    <option value="fracionado">Mensal Fracionado (Fixo e Var separados)</option>
+                                    <option value="quinzenal">Quinzenal</option>
+                                    <option value="semanal">Semanal</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-gray-400 mb-1">Fixo (R$)</label>
+                                  <input type="number" value={editSalarioFixo} onChange={e => setEditSalarioFixo(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white text-xs rounded-lg px-2 py-1.5 outline-none" placeholder="0.00"/>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-gray-400 mb-1">Dia Pagto Fixo</label>
+                                  <input type="text" value={editDiaFixo} onChange={e => setEditDiaFixo(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white text-xs rounded-lg px-2 py-1.5 outline-none" placeholder="Ex: 5 ou Sexta"/>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div>
+                                  <label className="block text-[10px] text-gray-400 mb-1">Comissão (%)</label>
+                                  <input type="number" value={editPercentual} onChange={e => setEditPercentual(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white text-xs rounded-lg px-2 py-1.5 outline-none" placeholder="0"/>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-gray-400 mb-1">Base do Cálculo</label>
+                                  <select value={editBaseCalculo} onChange={e => setEditBaseCalculo(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white text-xs rounded-lg px-2 py-1.5 outline-none">
+                                    <option value="LT">Fat. Bruto (LT)</option>
+                                    <option value="LL">Lucro Líq. (LL)</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-gray-400 mb-1" title="Só paga % do que passar deste valor">Gatilho / Acima de</label>
+                                  <input type="number" value={editGatilho} onChange={e => setEditGatilho(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white text-xs rounded-lg px-2 py-1.5 outline-none" placeholder="Ex: 16000"/>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-gray-400 mb-1">Dia Pagto Var</label>
+                                  <input type="text" value={editDiaVariavel} onChange={e => setEditDiaVariavel(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white text-xs rounded-lg px-2 py-1.5 outline-none" placeholder="Ex: 20"/>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2 mt-4 justify-end">
+                              <button onClick={() => setEditingUser(null)} className="bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"><X size={14}/> Cancelar</button>
+                              <button onClick={() => saveEdit(member.email)} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors shadow-md flex items-center gap-1"><Check size={14}/> Salvar Regras</button>
+                            </div>
+                          </div>
                         )}
                       </div>
-                    </div>
 
                     {!isEditing && (
                       <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center w-full sm:w-auto border-t sm:border-t-0 border-white/5 pt-3 sm:pt-0 mt-2 sm:mt-0 shrink-0">
@@ -224,19 +286,13 @@ export default function AdminPanel({
                         </span>
                       </div>
                     )}
+                    </div>
                   </div>
                 );
               })}
-              {(!teamMembers || teamMembers.length === 0) && (
-                <div className="flex flex-col items-center justify-center p-12 bg-white/[0.01] border border-white/5 rounded-2xl border-dashed">
-                  <Users size={48} className="text-gray-600 mb-4" />
-                  <p className="text-gray-400 text-sm font-medium">Nenhum usuário encontrado.</p>
-                </div>
-              )}
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

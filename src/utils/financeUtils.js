@@ -1,37 +1,28 @@
 /**
- * Calcula a comissão da agência com base no faturamento do cliente e sua regra específica.
- * 
- * @param {Object} faturamento - Dados do lançamento (receita bruta, custos, etc.)
- * @param {Object} regraComissao - Regra cadastrada no perfil do cliente
- * @returns {Number} - Valor final da comissão gerada
+ * src/utils/financeUtils.js
+ * Utilitários gerais para lidar com moedas, números e cálculos financeiros da agência.
  */
-export const calcularComissao = (faturamento, regraComissao) => {
-  const { receitaBruta, custos } = faturamento;
-  const receitaLiquida = receitaBruta - custos;
 
-  let valorComissao = 0;
+// Formata valores para a moeda Real Brasileira (R$)
+export const formatCurrency = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value || 0);
 
-  // Verifica qual é o tipo de contrato/comissão do cliente
-  switch (regraComissao.tipo) {
-    case 'PERCENTUAL_FATURAMENTO':
-      // Ex: 10% sobre todo o dinheiro que entrou
-      valorComissao = receitaBruta * (regraComissao.percentual / 100);
-      break;
+// Formata números gerais com padrão brasileiro
+export const formatNumber = (value) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value || 0);
 
-    case 'PERCENTUAL_LUCRO':
-      // Ex: 20% apenas sobre o que sobrou após os custos da campanha
-      valorComissao = receitaLiquida * (regraComissao.percentual / 100);
-      break;
+// Motor de cálculo inteligente da folha de pagamento da equipe
+export const calcularFolhaMembro = (membro, faturamentoBruto, custoOperacional, bonusManual = 0) => {
+  if (!membro.paymentConfig) return null;
+  
+  const config = membro.paymentConfig;
+  const bruto = Number(faturamentoBruto) || 0;
+  const custo = Number(custoOperacional) || 0;
+  const lucroLiquido = Math.max(0, bruto - custo);
 
-    case 'FIXO_MAIS_VARIAVEL':
-      // Ex: Fee mensal de R$ 1000 + 5% do lucro
-      const variavel = receitaLiquida * (regraComissao.percentual / 100);
-      valorComissao = regraComissao.valorFixo + variavel;
-      break;
+  const baseDoCalculo = config.baseCalculo === 'LL' ? lucroLiquido : bruto;
+  const valorElegivel = Math.max(0, baseDoCalculo - (Number(config.gatilho) || 0));
+  const comissao = valorElegivel * ((Number(config.percentual) || 0) / 100);
+  const fixo = Number(config.salarioFixo) || 0;
+  const total = fixo + comissao + Number(bonusManual);
 
-    default:
-      valorComissao = 0;
-  }
-
-  return valorComissao;
+  return { fixo, comissao, bonus: Number(bonusManual), total };
 };
