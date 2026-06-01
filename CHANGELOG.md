@@ -1,6 +1,25 @@
 # Changelog (Histórico de Atualizações)
 Todas as mudanças notáveis no projeto Avante HUB serão documentadas neste arquivo.
 
+## [2.5.10] - 2026-05-30
+### Adicionado
+- **Controle de Versão:** Criação e inclusão do sistema de Changelog para documentar o histórico de atualizações e mudanças da plataforma.
+
+### Modificado
+- **Painel do Cliente (`ClientFileModal`):** Otimização e simplificação na conversão de números de faturamento e anúncios, evitando bugs com separadores de milhar na edição.
+- **Dashboard Executivo (`ExecutiveDashboard`):** 
+  - Removido o cálculo do gráfico histórico de dentro do componente visual. Agora o Dashboard recebe a métrica de evolução diretamente do motor central (`dashboardData`), aumentando a performance.
+  - Aprimoramento da inteligência do Tooltip (caixa de informações flutuante) para ocultar metas em meses passados, garantindo uma leitura de dados mais clara.
+- **Exportação (`ExportModal`):** Refinamento no manuseio da data de competência e melhoria na lógica para incluir/ocultar a exportação do backup (JSON) dependendo do nível de acesso.
+
+---
+
+## [2.5.9] - 2026-05-29
+### Modificado
+- Melhoria contínua e blindagem no tratamento de dados e proteção de conversão numérica nos componentes principais da aplicação (`App`, `ClientFileModal`, `ExecutiveDashboard` e `ExportModal`).
+
+---
+
 ## [2.5.7] - 2026-05-29
 ### Adicionado
 - **Fechamento de Mês:** Implementação do modal de fechamento de mês com input nativo de calendário.

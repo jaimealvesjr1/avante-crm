@@ -212,25 +212,27 @@ export default function TeamFeedView({ currentUserData, user, stores, openTaskMo
                     let statusColor = 'blue'; 
                     let timeLabel = 'Sem Prazo';
 
-                    if (task.data) {
+                    if (task.data && !task.data.includes('NaN')) {
                         const timeString = task.hora || '23:59';
                         const deadlineDate = new Date(`${task.data}T${timeString}:00`);
                         timeDiff = deadlineDate.getTime() - rightNow.getTime();
                         
-                        const isPast = timeDiff < 0;
-                        const absDiff = Math.abs(timeDiff);
-                        const hours = Math.floor(absDiff / (1000 * 60 * 60));
-                        const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
+                        if (!isNaN(timeDiff)) {
+                            const isPast = timeDiff < 0;
+                            const absDiff = Math.abs(timeDiff);
+                            const hours = Math.floor(absDiff / (1000 * 60 * 60));
+                            const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
 
-                        if (isPast) {
-                            statusColor = 'red';
-                            timeLabel = `Atraso: ${hours}h ${minutes}m`;
-                        } else if (hours < 24) {
-                            statusColor = 'orange';
-                            timeLabel = `Vence em: ${hours}h ${minutes}m`;
-                        } else {
-                            statusColor = 'blue';
-                            timeLabel = `Vence em: ${Math.floor(hours / 24)} dias`;
+                            if (isPast) {
+                                statusColor = 'red';
+                                timeLabel = `Atraso: ${hours}h ${minutes}m`;
+                            } else if (hours < 24) {
+                                statusColor = 'orange';
+                                timeLabel = `Vence em: ${hours}h ${minutes}m`;
+                            } else {
+                                statusColor = 'blue';
+                                timeLabel = `Vence em: ${Math.floor(hours / 24)} dias`;
+                            }
                         }
                     }
 

@@ -38,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.5.10';
+  const CURRENT_VERSION = '2.5.11';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -449,9 +449,22 @@ export default function App() {
     const { text, resp, data, hora, recorrencia } = taskData;
     const creatorName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
 
+    let dataLimpa = data || '';
+    if (dataLimpa.includes('NaN')) dataLimpa = '';
+
     const batchStores = stores.map(store => {
       if (storeIds.includes(store.id)) {
-        const newTask = { id: Date.now() + Math.random(), texto: text, feita: false, responsavel: resp.trim(), criadoPor: creatorName, dataCriacao: new Date().toLocaleDateString('pt-BR'), data: data || '', hora: hora || '', recorrencia: recorrencia || 'none' };
+        const newTask = { 
+            id: Date.now() + Math.random(), 
+            texto: text, 
+            feita: false, 
+            responsavel: resp.trim(), 
+            criadoPor: creatorName, 
+            dataCriacao: new Date().toLocaleDateString('pt-BR'), 
+            data: dataLimpa,
+            hora: hora || '', 
+            recorrencia: recorrencia || 'none' 
+        };
         const updatedChecklists = [...(store.checklists || []), newTask];
         let nextAccessStr = store.dataProximoAcesso || '';
         const pendingWithDate = updatedChecklists.filter(t => !t.feita && t.data);
@@ -1629,7 +1642,7 @@ export default function App() {
             setBulkTaskInitialData(null);
         }}
         initialData={bulkTaskInitialData}
-        stores={stores}
+        stores={stores.filter(store => !store.arquivada)} 
         onSave={handleSaveBulkTasks}
         teamMembers={teamMembers}
       />
