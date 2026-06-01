@@ -38,7 +38,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.5.11';
+  const CURRENT_VERSION = '2.5.11b';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -739,13 +739,27 @@ export default function App() {
   const generateReports = async (targetStores, monthInput, formats = { pdf: true, excel: true }) => {
     const targetMonth = monthInput.toUpperCase();
     
+    const today = new Date();
+    const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    const systemCurrentMonth = `${meses[today.getMonth()]}/${String(today.getFullYear()).slice(-2)}`;
+
     const isPastMonth = targetStores.some(s => (s.monthlyHistory || []).some(h => h.month === targetMonth));
-    const periodoApurado = isPastMonth ? `Mês Fechado: ${targetMonth}` : `Parcial: 1 a ${currentDay} de ${targetMonth}`;
+    
+    let periodoApurado = '';
+    if (isPastMonth) {
+        periodoApurado = `Mês Fechado: ${targetMonth}`;
+    } else if (targetMonth !== systemCurrentMonth) {
+        periodoApurado = `Período Consolidado: ${targetMonth}`;
+    } else {
+        periodoApurado = `Parcial: 1 a ${currentDay} de ${targetMonth}`;
+    }
+
     const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     
+    // Passo 1: Alteração da Logo
     const loadLogo = () => new Promise((resolve) => {
         const img = new Image();
-        img.src = '/logo.jpg';
+        img.src = '/logo b2x.jpg'; 
         img.onload = () => resolve(img);
         img.onerror = () => resolve(null);
     });
@@ -794,7 +808,7 @@ export default function App() {
 
       const clientNames = Object.keys(clientsGroup).sort();
 
-      // FASE 2: GERAÇÃO DO EXCEL (Limpamos referências a comissões)
+      // FASE 2: GERAÇÃO DO EXCEL
       if (formats.excel) {
         const wb = XLSX.utils.book_new();
         clientNames.forEach(clientName => {
@@ -846,13 +860,9 @@ export default function App() {
           let totalGmv = 0, totalBase = 0, totalOrders = 0, totalUnits = 0, totalAds = 0;
           const canaisAtendidos = new Set();
 
-          let allTimeGmv = 0;
           clientStores.forEach(s => {
             totalGmv += s.reportGmv; totalBase += s.reportBase;
             totalOrders += s.reportOrders; totalUnits += s.reportUnits; totalAds += s.reportAds;
-            
-            allTimeGmv += parseSafeNumber(s.currentRevenue);
-            (s.monthlyHistory || []).forEach(h => allTimeGmv += (Number(h.gmv) || 0));
 
             if (s.marketplace) canaisAtendidos.add(s.marketplace);
           });
@@ -882,12 +892,12 @@ export default function App() {
 
           // Renderizando a Logo no Canto Superior Direito (se existir)
           if (logoImg) {
-              // Ajustamos o tamanho para manter a proporção (ex: 18x18 ou similar)
               docPdf.addImage(logoImg, 'JPEG', 178, 12, 18, 18);
           } else {
               docPdf.setFontSize(14); 
               docPdf.setTextColor(255, 255, 255); 
-              docPdf.text('AVANTE', 196, 22, { align: 'right' });
+              // Passo 1 (Bônus): Texto de fallback alterado para B2X
+              docPdf.text('B2X', 196, 22, { align: 'right' });
           }
 
           docPdf.setFontSize(8); 
@@ -895,7 +905,6 @@ export default function App() {
           docPdf.text(`Gerado em: ${dataGeracao}`, 196, 40, { align: 'right' });
 
           // ================= BLOCO DE MÉTRICAS PRINCIPAIS =================
-          // Faturamento no Mês
           docPdf.setFontSize(11); 
           docPdf.setTextColor(75, 85, 99); 
           docPdf.text('Faturamento na Competência:', 14, 58);
@@ -903,23 +912,27 @@ export default function App() {
           docPdf.setTextColor(16, 185, 129); // Verde
           docPdf.text(formatMoney(totalGmv), 14, 68);
 
-          // Histórico de Parceria (Tiramos a Comissão e colocamos esse em destaque)
-          docPdf.setFontSize(11); 
-          docPdf.setTextColor(75, 85, 99); 
-          docPdf.text('Histórico Total da Parceria:', 110, 58);
-          docPdf.setFontSize(22); 
-          docPdf.setTextColor(59, 130, 246); // Azul
-          docPdf.text(formatMoney(allTimeGmv), 110, 68);
 
           // ================= TABELA DE LOJAS =================
           const storeRows = [];
           clientStores.forEach((store, idx) => {
-            storeRows.push([ `${idx + 1}º`, store.marketplace || '-', store.store || '-', formatMoney(store.reportGmv), formatPercent(store.reportBase > 0 ? (store.reportGmv - store.reportBase) / store.reportBase : 0), `${store.reportOrders} ped.`, formatMoney(store.reportAds), formatRoas(store.reportAds > 0 ? store.reportGmv / store.reportAds : 0), formatMoney(store.reportOrders > 0 ? store.reportAds / store.reportOrders : 0) ]);
+            storeRows.push([ 
+              `${idx + 1}º`, 
+              store.marketplace || '-', 
+              store.store || '-', 
+              formatMoney(store.reportGmv), 
+              formatPercent(store.reportBase > 0 ? (store.reportGmv - store.reportBase) / store.reportBase : 0), 
+              `${store.reportOrders} ped.`, 
+              formatMoney(store.reportAds), 
+              formatRoas(store.reportAds > 0 ? store.reportGmv / store.reportAds : 0), 
+              formatMoney(store.reportUnits > 0 ? store.reportAds / store.reportUnits : 0) 
+            ]);
           });
 
+          // Passo 2 e 3: Títulos das colunas atualizados
           autoTable(docPdf, {
             startY: 78,
-            head: [['Rk', 'Canal', 'Loja', 'GMV', 'Evolução', 'Volume', 'ADS', 'ROAS', 'CPA Médio']],
+            head: [['Rk', 'Canal', 'Loja', 'Faturamento', 'Evolução', 'Volume', 'ADS', 'ROAS', 'Custo por Conversão']],
             body: storeRows, theme: 'grid',
             headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255], fontStyle: 'bold' },
             styles: { fontSize: 7, cellPadding: 4 },
@@ -933,7 +946,7 @@ export default function App() {
           
           docPdf.setFillColor(248, 250, 252); 
           docPdf.setDrawColor(226, 232, 240);
-          docPdf.roundedRect(14, finalY, 182, 45, 3, 3, 'FD'); // Fundo clarinho com borda
+          docPdf.roundedRect(14, finalY, 182, 45, 3, 3, 'FD');
 
           docPdf.setFontSize(11); docPdf.setTextColor(30, 41, 59); 
           docPdf.setFont('helvetica', 'bold');
@@ -946,10 +959,10 @@ export default function App() {
           
           docPdf.text(`Investimento Total em ADS: ${formatMoney(totalAds)}`, 110, finalY + 18);
           docPdf.text(`ROAS Médio Consolidado: ${formatRoas(totalRoas)}`, 110, finalY + 26);
-          docPdf.text(`CPA Médio (Custo por Pedido): ${formatMoney(totalOrders > 0 ? totalAds / totalOrders : 0)}`, 110, finalY + 34);
+          docPdf.text(`CPA Médio (Custo por Unidade): ${formatMoney(totalUnits > 0 ? totalAds / totalUnits : 0)}`, 110, finalY + 34);
         });
         
-        docPdf.save(`Avante_Relatorio_${monthInput.replace('/', '-')}.pdf`);
+        docPdf.save(`B2X_Relatorio_${monthInput.replace('/', '-')}.pdf`); // Mudei o nome do arquivo aqui também de Avante para B2X para combinar com a nova marca
       }
     } catch (error) {
       console.error(error);
