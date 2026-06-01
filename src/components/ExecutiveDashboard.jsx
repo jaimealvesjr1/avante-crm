@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, Award } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Area, Line, Legend } from 'recharts';
 
-export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieData, roasData, COLORS, currentDay, daysInMonth }) {
+export default function ExecutiveDashboard({ dashboardData, formatCurrency, formatNumber, pieData, roasData, COLORS, currentDay, daysInMonth }) {
   
   const predictedOrders = currentDay > 0 ? Math.round((dashboardData.totalOrders / currentDay) * daysInMonth) : 0;
   const avgAdsCostPerOrder = dashboardData.totalOrders > 0 ? dashboardData.totalGlobalAds / dashboardData.totalOrders : 0;
@@ -88,7 +88,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
           <div className="space-y-5 relative z-10">
             <div>
               <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1.5">Projeção de Pedidos</p>
-              <p className="text-4xl font-bold text-white tracking-tight">{predictedOrders} <span className="text-lg text-gray-500 font-medium tracking-normal">un</span></p>
+              <p className="text-4xl font-bold text-white tracking-tight">{formatNumber(predictedOrders)} <span className="text-lg text-gray-500 font-medium tracking-normal">UN</span></p>
             </div>
             <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-5">
               <div>
@@ -96,8 +96,8 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, pieD
                 <p className="text-base font-bold text-emerald-300">{formatCurrency(ticketMedioGlobal)}</p>
               </div>
               <div>
-                <p className="text-[11px] text-gray-500 uppercase font-bold tracking-wider mb-1">Unid. Físicas</p>
-                <p className="text-base font-bold text-gray-300">{dashboardData.totalUnits}</p>
+                <p className="text-[11px] text-gray-500 uppercase font-bold tracking-wider mb-1">Unidades Físicas</p>
+                <p className="text-base font-bold text-gray-300">{formatNumber(dashboardData.totalUnits)}</p>
               </div>
             </div>
           </div>

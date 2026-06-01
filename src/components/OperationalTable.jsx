@@ -1,13 +1,21 @@
 import React from 'react';
-import { Plus, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, MessageCircle, BarChart2, ShoppingBag, Briefcase } from 'lucide-react';
+import { Plus, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, MessageCircle, ShoppingBag, Edit2, Save, Trash2, X } from 'lucide-react';
+
+const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
 
 export default function OperationalTable({
   canEdit, dashboardData, expandedClients, toggleClientExpansion, 
   addNewStoreToClient, openHistoryModal, openClientFile, globalGrowth, formatCurrency, 
-  generateClientWhatsAppLink, generateStoreWhatsAppLink
+  generateClientWhatsAppLink, generateStoreWhatsAppLink,
+  startEditingStore, editingStoreId, setEditingStoreId, storeEditData, setStoreEditData, saveStoreEdit, deleteStore
 }) {
 
   const filteredGroups = dashboardData.groupedClients;
+
+  const dataAtual = new Date();
+  dataAtual.setMonth(dataAtual.getMonth() - 1);
+  const mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+  const mesPassadoExato = `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`;
 
   const getStatusColor = (status) => {
     if (status === 'success') return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
@@ -65,7 +73,19 @@ export default function OperationalTable({
                   <span className="text-xl font-bold text-white">{formatCurrency(group.totalCurrentRevenue)}</span>
                   <span className="text-xs text-gray-400 font-medium">/ {formatCurrency(group.totalGmvTarget)}</span>
                 </div>
-                <p className="text-[11px] text-gray-400 mt-0.5">Base: <span className="text-gray-300">{formatCurrency(group.totalGmvBase)}</span> | Ads: <span className="text-amber-400 font-medium">{formatCurrency(group.totalAds)}</span></p>
+                {(() => {
+                // Calcula a soma do mês anterior para todas as lojas deste cliente
+                const gmvAnteriorGrupo = group.stores.reduce((acc, store) => {
+                    const hist = (store.monthlyHistory || []).find(h => h.month === mesPassadoExato);
+                    return acc + (hist ? Number(hist.gmv) : 0);
+                }, 0);
+
+                return (
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Mês Anterior: <span className="text-gray-300">{formatCurrency(gmvAnteriorGrupo)}</span> | Ads: <span className="text-amber-400 font-medium">{formatCurrency(group.totalAds)}</span>
+                  </p>
+                );
+              })()}
               </div>
 
               <div className="flex flex-col flex-1 min-w-[200px]">
@@ -95,78 +115,173 @@ export default function OperationalTable({
               </div>
             </div>
 
-            {/* LOJAS DO CLIENTE EM GRID COM NOVOS CARDS */}
+            {/* LOJAS DO CLIENTE EM GRID COM NOVOS CARDS (E EDIÇÃO INLINE) */}
             {isExpanded && (
               <div className="bg-black/20 border-t border-white/5 p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                {group.stores.map((row) => (
-                  <div key={row.id} className="group/store flex flex-col bg-white/[0.03] hover:bg-white/[0.06] p-5 rounded-2xl border border-white/5 transition-all shadow-sm relative overflow-hidden">
-                      
+                {group.stores.map((row) => {
+                  const isEditing = editingStoreId === row.id;
+
+                  return (
+                    <div key={row.id} className="group/store flex flex-col bg-white/[0.03] hover:bg-white/[0.06] p-5 rounded-2xl border border-white/5 transition-all shadow-sm relative overflow-hidden min-h-[320px]">
+                        
                       {/* Status Line */}
                       <div className={`absolute top-0 left-0 w-full h-1.5 ${row.status === 'success' ? 'bg-emerald-500' : row.status === 'warning' ? 'bg-amber-500' : 'bg-red-500'}`}></div>
 
-                      {/* Header */}
-                      <div className="flex justify-between items-start mb-4 mt-1">
+                      {isEditing ? (
+                        // ==========================================
+                        // MODO DE EDIÇÃO INLINE
+                        // ==========================================
+                        <div className="flex flex-col h-full justify-between animate-in fade-in">
                           <div>
-                              <div className="flex items-center gap-2 mb-1.5">
-                                  <span className="font-bold text-gray-100 text-lg">{row.store}</span>
-                                  {row.marketplace && <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded text-xs uppercase font-bold tracking-wider">{row.marketplace}</span>}
+                            <div className="flex items-center gap-2 mb-4">
+                              <Edit2 size={18} className="text-indigo-400" />
+                              <h4 className="text-base font-bold text-white">Editando Loja</h4>
+                            </div>
+                            
+                            <div className="space-y-3">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray-500 uppercase">Nome da Loja</label>
+                                <input 
+                                  type="text" 
+                                  value={storeEditData.store || ''} 
+                                  onChange={e => setStoreEditData({...storeEditData, store: e.target.value})} 
+                                  className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2.5 outline-none focus:border-indigo-500 text-sm font-bold uppercase" 
+                                />
                               </div>
-                              <div className="flex items-center gap-2">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${row.tier === 'A' ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' : 'bg-white/5 text-gray-400 border-white/10'}`}>
-                                  Tier {row.tier}
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray-500 uppercase">Marketplace</label>
+                                <select 
+                                  value={storeEditData.marketplace?.toLowerCase() || ''} 
+                                  onChange={e => setStoreEditData({...storeEditData, marketplace: e.target.value.toUpperCase()})} 
+                                  className="w-full bg-black/40 border border-white/10 text-indigo-300 rounded-lg p-2.5 outline-none focus:border-indigo-500 text-sm font-bold uppercase cursor-pointer"
+                                >
+                                  <option value="" className="bg-gray-900 text-gray-400">Selecione...</option>
+                                  {ALL_MARKETPLACES.map(mkt => (
+                                    <option key={mkt} value={mkt} className="bg-gray-900 text-white">{mkt.toUpperCase()}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray-500 uppercase">GMV Base (Ponto de Partida)</label>
+                                <input 
+                                  type="number" 
+                                  value={storeEditData.gmvBase !== undefined ? storeEditData.gmvBase : ''} 
+                                  onChange={e => setStoreEditData({...storeEditData, gmvBase: e.target.value})} 
+                                  className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2.5 outline-none focus:border-indigo-500 text-sm font-bold" 
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center mt-4 pt-4 border-t border-white/10">
+                            <button 
+                              onClick={() => deleteStore(row.id, row.store)} 
+                              className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors" 
+                              title="Excluir/Arquivar Loja"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => setEditingStoreId(null)} 
+                                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold rounded-lg transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                              <button 
+                                onClick={() => saveStoreEdit(row.id)} 
+                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg flex items-center gap-2 transition-colors shadow-md"
+                              >
+                                <Save size={14} /> Salvar
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        // ==========================================
+                        // MODO DE VISUALIZAÇÃO (Padrão)
+                        // ==========================================
+                        <>
+                          {/* Header */}
+                          <div className="flex justify-between items-start mb-4 mt-1">
+                              <div>
+                                  <div className="flex items-center gap-2 mb-1.5">
+                                      <span className="font-bold text-gray-100 text-lg">{row.store}</span>
+                                      {row.marketplace && <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded text-xs uppercase font-bold tracking-wider">{row.marketplace}</span>}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${row.tier === 'A' ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' : 'bg-white/5 text-gray-400 border-white/10'}`}>
+                                      Tier {row.tier}
+                                      </span>
+                                      <span className="text-xs text-gray-400 font-medium">{row.client}</span>
+                                  </div>
+                              </div>
+                              <div className="flex gap-2">
+                                  {canEdit && (
+                                    <button 
+                                      onClick={() => startEditingStore(row)} 
+                                      className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 rounded-xl transition-all shadow-sm"
+                                      title="Editar Loja"
+                                    >
+                                      <Edit2 size={16} />
+                                    </button>
+                                  )}
+                                  <a href={generateStoreWhatsAppLink(row)} target="_blank" rel="noopener noreferrer" className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-xl transition-all shadow-sm"><MessageCircle size={16} /></a>
+                              </div>
+                          </div>
+
+                          {/* Progress Section */}
+                          <div className="mb-5 bg-black/30 p-3.5 rounded-xl border border-white/5">
+                              <div className="flex justify-between text-xs mb-2.5">
+                                  <span className="text-gray-400 font-medium">Progresso da Meta</span>
+                                  <span className="font-bold text-white">{row.percentReached?.toFixed(1)}%</span>
+                              </div>
+                              <div className="w-full bg-black/50 rounded-full h-3 shadow-inner">
+                                  <div className={`h-full rounded-full transition-all duration-1000 ${row.status === 'success' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : row.status === 'warning' ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]'}`} style={{ width: `${Math.min(row.percentReached || 0, 100)}%` }}></div>
+                              </div>
+                              <div className="flex justify-between mt-2.5">
+                                  <span className="text-xs text-gray-400">Atual: <strong className="text-white">{formatCurrency(row.currentRevenue)}</strong></span>
+                                  <span className="text-xs text-gray-400">Meta: <strong className="text-gray-300">{formatCurrency(row.gmvTarget)}</strong></span>
+                              </div>
+                          </div>
+
+                          {/* Ads and Orders Metrics */}
+                          <div className="grid grid-cols-2 gap-3 mb-4">
+                              <div className="flex flex-col gap-1 border-r border-white/10 pr-2">
+                                  <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Ads & ROAS</span>
+                                  <span className="font-bold text-amber-400 text-sm">{formatCurrency(row.adsInvestment)}</span>
+                                  <span className="text-xs text-gray-400">ROAS: {row.adsInvestment > 0 ? (row.currentRevenue / row.adsInvestment).toFixed(1) : 0}x</span>
+                              </div>
+                              <div className="flex flex-col gap-1 pl-2">
+                                  <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Tração e Volume</span>
+                                  <span className="font-bold text-emerald-400 text-sm">{row.orders || 0} ped</span>
+                                  <span className="text-xs text-gray-400">{row.units || 0} unidades</span>
+                              </div>
+                          </div>
+
+                          {/* Footer */}
+                          <div className="mt-auto flex items-center justify-between pt-4 border-t border-white/10">
+                              <div className="flex flex-col">
+                                <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-0.5">Fechamento ({mesPassadoExato})</span>
+                                <span className="text-sm font-bold text-gray-400">
+                                    {(() => {
+                                        const histAnterior = (row.monthlyHistory || []).find(h => h.month === mesPassadoExato);
+                                        return formatCurrency(histAnterior ? Number(histAnterior.gmv) : 0);
+                                    })()}
+                                </span>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                  <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-0.5">Projeção Final</span>
+                                  <span className={`font-bold text-xl leading-none tracking-tight ${row.status === 'success' ? 'text-emerald-400' : row.status === 'warning' ? 'text-amber-400' : 'text-red-400'}`}>
+                                  {formatCurrency(row.projectedGmv)}
                                   </span>
-                                  <span className="text-xs text-gray-400 font-medium">{row.client}</span>
                               </div>
                           </div>
-                          <div className="flex gap-2">
-                              <a href={generateStoreWhatsAppLink(row)} target="_blank" rel="noopener noreferrer" className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-xl transition-all shadow-sm"><MessageCircle size={16} /></a>
-                          </div>
-                      </div>
-
-                      {/* Progress Section */}
-                      <div className="mb-5 bg-black/30 p-3.5 rounded-xl border border-white/5">
-                          <div className="flex justify-between text-xs mb-2.5">
-                              <span className="text-gray-400 font-medium">Progresso da Meta</span>
-                              <span className="font-bold text-white">{row.percentReached?.toFixed(1)}%</span>
-                          </div>
-                          <div className="w-full bg-black/50 rounded-full h-3 shadow-inner">
-                              <div className={`h-full rounded-full transition-all duration-1000 ${row.status === 'success' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : row.status === 'warning' ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]'}`} style={{ width: `${Math.min(row.percentReached || 0, 100)}%` }}></div>
-                          </div>
-                          <div className="flex justify-between mt-2.5">
-                              <span className="text-xs text-gray-400">Atual: <strong className="text-white">{formatCurrency(row.currentRevenue)}</strong></span>
-                              <span className="text-xs text-gray-400">Meta: <strong className="text-gray-300">{formatCurrency(row.gmvTarget)}</strong></span>
-                          </div>
-                      </div>
-
-                      {/* Ads and Orders Metrics */}
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                          <div className="flex flex-col gap-1 border-r border-white/10 pr-2">
-                              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Ads & ROAS</span>
-                              <span className="font-bold text-amber-400 text-sm">{formatCurrency(row.adsInvestment)}</span>
-                              <span className="text-xs text-gray-400">ROAS: {row.adsInvestment > 0 ? (row.currentRevenue / row.adsInvestment).toFixed(1) : 0}x</span>
-                          </div>
-                          <div className="flex flex-col gap-1 pl-2">
-                              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Tração e Volume</span>
-                              <span className="font-bold text-emerald-400 text-sm">{row.orders || 0} ped</span>
-                              <span className="text-xs text-gray-400">{row.units || 0} unidades</span>
-                          </div>
-                      </div>
-
-                      {/* Footer */}
-                      <div className="mt-auto flex items-center justify-between pt-4 border-t border-white/10">
-                          <div className="flex flex-col">
-                              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-0.5">Base Histórica</span>
-                              <span className="text-sm font-bold text-gray-400">{formatCurrency(row.gmvBase)}</span>
-                          </div>
-                          <div className="flex flex-col items-end">
-                              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-0.5">Projeção Final</span>
-                              <span className={`font-bold text-xl leading-none tracking-tight ${row.status === 'success' ? 'text-emerald-400' : row.status === 'warning' ? 'text-amber-400' : 'text-red-400'}`}>
-                              {formatCurrency(row.projectedGmv)}
-                              </span>
-                          </div>
-                      </div>
-                  </div>
-                ))}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

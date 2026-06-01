@@ -26,6 +26,7 @@ import BulkTaskModal from './components/BulkTaskModal';
 import { useAvanteData } from './hooks/useAvanteData';
 import TeamFeedView from './components/TeamFeedView';
 import ExportModal from './components/ExportModal';
+import FinanceDashboard from './components/FinanceDashboard';
 
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
@@ -38,7 +39,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.5.11b';
+  const CURRENT_VERSION = '2.6.0';
   
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
@@ -76,9 +77,6 @@ export default function App() {
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createModalClient, setCreateModalClient] = useState('');
-  
-  const [editingClient, setEditingClient] = useState(null);
-  const [clientEditData, setClientEditData] = useState({ name: '', feeType: 'percent', feePercent: 3, fixedFee: 0 });
   
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [activeTaskStoreId, setActiveTaskStoreId] = useState(null);
@@ -661,18 +659,21 @@ export default function App() {
   const executeCloseMonth = async () => {
     if (!closeMonthValue) return toast.error("Selecione a competência para fechar o mês.");
 
-    // Passa o valor do calendário (ex: 2026-05) pelo nosso Padronizador Oficial!
     const padronizado = normalizeMonthYear(closeMonthValue);
 
-    if (!window.confirm(`ATENÇÃO! Tem certeza que deseja FECHAR O MÊS de ${padronizado}?\n\n1. Os relatórios em PDF e Excel serão baixados.\n2. O histórico financeiro será salvo.\n3. O faturamento de TODAS as lojas será zerado.`)) return;
+    if (!window.confirm(`ATENÇÃO! Tem certeza que deseja FECHAR O MÊS de ${padronizado}?\n\n1. Os relatórios em PDF e Excel serão baixados.\n2. O histórico financeiro será salvo.\n3. O faturamento será zerado.\n4. As faturas de cobrança da agência serão geradas.`)) return;
 
     setIsCloseMonthModalOpen(false); // Fecha o modal
-    toast.loading("Processando fechamento do mês e gravando histórico...", { id: 'close-month' });
+    toast.loading("Processando fechamento do mês, gravando histórico e gerando faturas...", { id: 'close-month' });
 
     try {
       await generateReports(stores, padronizado, { pdf: true, excel: true });
       
       const batch = writeBatch(db);
+      
+      // Objeto temporário para agrupar o valor a receber por cliente
+      const faturasPorCliente = {};
+
       stores.forEach(store => {
         const storeRef = doc(db, 'stores', store.id.toString());
         
@@ -683,6 +684,12 @@ export default function App() {
         
         const clientStoresCount = stores.filter(s => s.client === store.client && !s.arquivada).length || 1;
         const agencyRevenue = isFixed ? (fixedFee / clientStoresCount) : gmv * (feePercent / 100);
+
+        // Agrupando os valores para a Fatura do Cliente
+        if (!faturasPorCliente[store.client]) {
+            faturasPorCliente[store.client] = { valorTotalAgencia: 0 };
+        }
+        faturasPorCliente[store.client].valorTotalAgencia += agencyRevenue;
 
         const snapshot = {
           id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
@@ -710,30 +717,70 @@ export default function App() {
         });
       });
 
+      const vencimentoPadrao = new Date();
+      vencimentoPadrao.setDate(vencimentoPadrao.getDate() + 10); // Vence em 10 dias após o fechamento
+
+      Object.keys(faturasPorCliente).forEach(clienteNome => {
+          const valorFatura = faturasPorCliente[clienteNome].valorTotalAgencia;
+          
+          if (valorFatura > 0) {
+              const faturaRef = doc(collection(db, 'financeiro_recebimentos'));
+              batch.set(faturaRef, {
+                  id: faturaRef.id,
+                  cliente: clienteNome,
+                  mesReferencia: padronizado,
+                  valorAgencia: valorFatura,
+                  status: 'Pendente',
+                  dataEmissao: new Date().toISOString(),
+                  dataVencimento: vencimentoPadrao.toISOString()
+              });
+          }
+      });
+
       await batch.commit();
-      toast.success("Mês fechado com sucesso! Relatórios baixados e histórico atualizado.", { id: 'close-month' });
+      toast.success("Mês fechado com sucesso! Relatórios baixados, histórico atualizado e Faturas geradas.", { id: 'close-month' });
     } catch (error) {
       console.error(error);
       toast.error("Erro fatal ao fechar o mês: " + error.message, { id: 'close-month' });
     }
   };
 
+  const cleanStoreData = (store) => {
+    const {
+      gmvTarget, projectedGmv, percentReached, status, 
+      reportGmv, reportAds, reportOrders, reportUnits, reportBase,
+      ...pureStoreData
+    } = store;
+    return pureStoreData;
+  };
+
   const exportBackup = () => {
     const backupData = {
-      version: "3.0",
-      exportDate: new Date().toISOString(),
-      stores: stores,
-      teamMembers: teamMembers,
-      settings: { globalGrowth: globalGrowth }
+      metadata: {
+        version: "4.0",
+        exportDate: new Date().toISOString(),
+        type: "full_backup"
+      },
+      data: {
+        stores: stores.map(cleanStoreData),
+        teamMembers: teamMembers,
+        settings: { globalGrowth: globalGrowth },
+        internalTasks: internalTasks || []
+      }
     };
     
     const dataStr = JSON.stringify(backupData, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `avante_crm_completo_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-    toast.success('Backup completo (Lojas e Equipe) exportado com sucesso!');
+    a.href = url; 
+    a.download = `Avante_Backup_Completo_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.json`;
+    document.body.appendChild(a); 
+    a.click(); 
+    document.body.removeChild(a); 
+    URL.revokeObjectURL(url);
+    
+    toast.success('Backup completo (Lojas, Equipe e Configs) exportado com sucesso!');
   };
 
   const generateReports = async (targetStores, monthInput, formats = { pdf: true, excel: true }) => {
@@ -976,10 +1023,21 @@ export default function App() {
       const dataToExport = dashboardData.flatFilteredStores;
 
       if (json) {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToExport));
+        const customBackupData = {
+          metadata: {
+            version: "4.0",
+            exportDate: new Date().toISOString(),
+            type: "partial_export"
+          },
+          data: {
+            stores: dataToExport.map(cleanStoreData) 
+          }
+        };
+
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(customBackupData));
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", `Avante_Backup_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.json`);
+        downloadAnchorNode.setAttribute("download", `Avante_Export_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.json`);
         document.body.appendChild(downloadAnchorNode);
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
@@ -999,49 +1057,86 @@ export default function App() {
   const importBackup = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    
     const fileReader = new FileReader();
     fileReader.onload = async (ev) => {
       try {
         const imported = JSON.parse(ev.target.result);
+        
         let storesToImport = [];
         let teamToImport = [];
         let settingsToImport = {};
+        let internalTasksToImport = [];
 
-        if (Array.isArray(imported)) {
-          storesToImport = imported;
+        // LÓGICA DE IDENTIFICAÇÃO DE VERSÃO
+        if (imported.metadata && imported.metadata.version === "4.0") {
+          // É o NOVO PADRÃO (V4.0)
+          storesToImport = imported.data.stores || [];
+          teamToImport = imported.data.teamMembers || [];
+          settingsToImport = imported.data.settings || {};
+          internalTasksToImport = imported.data.internalTasks || [];
+          
         } else if (imported.stores) {
+          // PADRÃO ANTIGO (V3.0) - Tinha 'stores' na raiz
           storesToImport = imported.stores;
           teamToImport = imported.teamMembers || [];
           settingsToImport = imported.settings || {};
+          
+        } else if (Array.isArray(imported)) {
+          // PADRÃO ARCAICO (Array direto) - Como o arquivo que você me enviou
+          storesToImport = imported;
+          toast.success("Formato antigo de backup detectado e adaptado.");
+          
         } else {
-          return toast.error("O arquivo não possui um formato reconhecido.");
+          toast.error("O arquivo JSON não possui um formato reconhecido pelo Avante HUB.");
+          return; // Aborta a operação se o formato for inválido
+        }
+
+        // Confirmação de segurança caso o usuário vá substituir o banco inteiro
+        if (storesToImport.length > 0) {
+            if (!window.confirm(`ATENÇÃO: Você está prestes a restaurar ${storesToImport.length} lojas. Isso reescreverá o banco de dados atual. Deseja continuar?`)) {
+                return e.target.value = null;
+            }
         }
 
         const batch = writeBatch(db);
         
+        // 1. Grava as lojas (passando pela limpeza por garantia)
         storesToImport.forEach(s => {
-          batch.set(doc(db, "stores", s.id.toString()), s);
+          const pureStore = cleanStoreData(s);
+          batch.set(doc(db, "stores", pureStore.id.toString()), pureStore);
         });
 
+        // 2. Grava a equipe
         teamToImport.forEach(member => {
           if (member.email) {
             batch.set(doc(db, "equipe", member.email.toLowerCase()), member);
           }
         });
 
+        // 3. Grava configurações globais
         if (settingsToImport.globalGrowth !== undefined) {
           batch.set(doc(db, "settings", "global"), settingsToImport, { merge: true });
         }
 
+        // 4. Grava tarefas internas da equipe
+        if (internalTasksToImport.length > 0) {
+           batch.set(doc(db, "settings", "internal_tasks"), { tasks: internalTasksToImport }, { merge: true });
+        }
+
+        // Executa todas as gravações no Firebase de uma só vez (Batch)
         await batch.commit();
+        
         toast.success("✅ Banco de dados restaurado e atualizado com sucesso!");
         
+        // Atualiza a tela imediatamente para o usuário
         if (storesToImport.length > 0) setStores(storesToImport);
         if (teamToImport.length > 0) setTeamMembers(teamToImport);
+        if (internalTasksToImport.length > 0) setInternalTasks(internalTasksToImport);
 
       } catch (err) { 
-        toast.error("Erro ao ler o arquivo JSON."); 
-        console.error(err);
+        toast.error("Erro ao ler o arquivo JSON. O arquivo pode estar corrompido."); 
+        console.error("Erro no importBackup:", err);
       } finally { 
         e.target.value = null; 
       }
@@ -1050,35 +1145,6 @@ export default function App() {
   };
 
   const toggleClientExpansion = (c) => setExpandedClients(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c]);
-  
-  const startEditingClient = (group) => { 
-    setEditingClient(group.client); 
-    const sample = group.stores[0] || {};
-    setClientEditData({ name: group.client, feeType: sample.feeType || 'percent', feePercent: sample.feePercent || 0, fixedFee: sample.fixedFee || 0 }); 
-  };
-  
-  const saveClientEdit = async (oldName) => {
-    const upperNewName = clientEditData.name.toUpperCase();
-    const batch = writeBatch(db);
-    const updatedStores = stores.map(storeObj => {
-      if(storeObj.client === oldName) {
-         const updatedStore = { 
-           ...storeObj, 
-           client: upperNewName, 
-           feeType: clientEditData.feeType, 
-           feePercent: Number(clientEditData.feePercent) || 0, 
-           fixedFee: clientEditData.feeType === 'percent' ? 0 : (Number(clientEditData.fixedFee) || 0) 
-         };
-         batch.set(doc(db, "stores", storeObj.id.toString()), updatedStore);
-         return updatedStore;
-      }
-      return storeObj;
-    });
-    await batch.commit().catch(e => { console.error(e); toast.error('Erro ao atualizar cliente.'); });
-    setStores(updatedStores);
-    setEditingClient(null);
-    toast.success('Dados do cliente atualizados!');
-  };
 
   const startEditingStore = (store) => { setEditingStoreId(store.id); setStoreEditData({ store: store.store, marketplace: store.marketplace || '', gmvBase: store.gmvBase }); };
   
@@ -1100,6 +1166,7 @@ export default function App() {
   };
 
   const formatCurrency = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value || 0);
+  const formatNumber = (value) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value || 0);
 
   const generateStoreWhatsAppLink = (row) => `https://wa.me/?text=${encodeURIComponent(`Olá, equipe da *${row.client}*!\nAvaliamos a loja *${row.store}* até o dia ${currentDay}.\nProjeção: ${formatCurrency(row.projectedGmv)} / Meta: ${formatCurrency(row.gmvTarget)}.\n${row.status === 'danger' ? 'Precisamos alinhar ações urgentes de Ads/Estoque.' : row.status === 'warning' ? 'Podemos otimizar as campanhas da semana?' : 'Vocês estão voando! Vamos manter a tração.'}`)}`;
   
@@ -1345,6 +1412,15 @@ export default function App() {
               </>
             )}
 
+            {(!isVisitante && canEdit) && (
+              <button 
+                onClick={() => setActiveView('financeiro')} 
+                className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'financeiro' ? 'bg-green-900 text-green-100 shadow-md border border-green-500/30' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <DollarSign size={16} /> <span className="hidden md:inline">Financeiro</span>
+              </button>
+            )}
+
             {(canEdit && !isVisitante) && (
               <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                 <Shield size={16} /> <span className="hidden md:inline">Equipe</span>
@@ -1408,7 +1484,7 @@ export default function App() {
       </header>
 
       <main className="flex-1 w-full px-4 md:px-8 2xl:px-12 pt-6 relative mx-auto">
-        {['dashboard', 'operacional', 'rotinas'].includes(activeView) && (
+        {['dashboard', 'operacional', 'rotinas', 'feed_equipe', 'financeiro'].includes(activeView) && (
           <div className="sticky top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
             <div className="flex flex-col md:flex-row items-center gap-4 justify-between w-full">
               
@@ -1488,7 +1564,18 @@ export default function App() {
           />
         )}
 
-        {activeView === 'dashboard' && <ExecutiveDashboard dashboardData={dashboardData} formatCurrency={formatCurrency} pieData={pieData} roasData={roasData} COLORS={COLORS} currentDay={currentDay} daysInMonth={daysInMonth} />}
+        {activeView === 'dashboard' && (
+          <ExecutiveDashboard 
+            dashboardData={dashboardData} 
+            formatCurrency={formatCurrency} 
+            formatNumber={formatNumber}
+            pieData={pieData} 
+            roasData={roasData} 
+            COLORS={COLORS} 
+            currentDay={currentDay} 
+            daysInMonth={daysInMonth} 
+          />
+        )}
         
         {activeView === 'admin' && canEdit && (
           <AdminPanel 
@@ -1519,12 +1606,6 @@ export default function App() {
             addNewStoreToClient={addNewStoreToClient} 
             deleteStore={deleteStore} 
             deleteClient={deleteClient}
-            startEditingClient={startEditingClient} 
-            editingClient={editingClient} 
-            setEditingClient={setEditingClient} 
-            clientEditData={clientEditData} 
-            setClientEditData={setClientEditData} 
-            saveClientEdit={saveClientEdit}
             startEditingStore={startEditingStore} 
             editingStoreId={editingStoreId} 
             setEditingStoreId={setEditingStoreId} 
@@ -1536,6 +1617,17 @@ export default function App() {
             generateStoreWhatsAppLink={generateStoreWhatsAppLink}
             generateClientWhatsAppLink={generateClientWhatsAppLink}
             openClientFile={openClientFile}
+            formatNumber={formatNumber}
+            formatCurrency={formatCurrency}
+          />
+        )}
+
+        {activeView === 'financeiro' && (
+          <FinanceDashboard
+            db={db} 
+            dashboardData={dashboardData} 
+            formatCurrency={formatCurrency}
+            canEdit={canEdit}
           />
         )}
 

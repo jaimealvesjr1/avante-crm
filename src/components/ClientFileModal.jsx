@@ -1,14 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, Settings, TrendingUp, TrendingDown, ChevronDown, ChevronRight, Edit2 } from 'lucide-react';
+import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, TrendingDown } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
-import StoreManagementModal from './StoreManagementModal';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
 
-const StoreEntryRow = ({ store, handleSaveIndividualEntry, handleSaveRetroactiveMonth, handleDeleteRetroactiveMonth, formatCurrency }) => {
+const StoreEntryRow = ({ store, handleSaveIndividualEntry, formatCurrency }) => {
     const lastDayRecorded = store.history && store.history.length > 0 
         ? Math.max(...store.history.map(h => h.day)) 
         : 0;
@@ -19,14 +18,6 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, handleSaveRetroactive
     const [uni, setUni] = useState(store.units || '');
     const [ads, setAds] = useState(store.adsInvestment || '');
     const [isSaving, setIsSaving] = useState(false);
-    
-    const [isExpanded, setIsExpanded] = useState(false);
-
-    const [retroMonth, setRetroMonth] = useState('');
-    const [retroGmv, setRetroGmv] = useState('');
-    const [retroAds, setRetroAds] = useState('');
-    const [isSavingRetro, setIsSavingRetro] = useState(false);
-    const [editingRetroId, setEditingRetroId] = useState(null);
 
     const onSave = async () => {
         if (!day || rev === '') return toast.error("Dia e Faturamento são obrigatórios.");
@@ -42,188 +33,45 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, handleSaveRetroactive
         setIsSaving(false);
     };
 
-    const formatToInputMonth = (bankMonth) => {
-        if (!bankMonth) return '';
-        let clean = String(bankMonth).toUpperCase().replace(/\s+/g, '').replace('ABRI', 'ABR');
-        const match = clean.match(/^([A-Z]{3,4})\/?(\d{2,4})?$/);
-        
-        if (match) {
-            const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-            const monthStr = match[1].substring(0, 3);
-            const monthIndex = months.indexOf(monthStr);
-            if (monthIndex === -1) return '';
-            
-            const monthNum = String(monthIndex + 1).padStart(2, '0');
-            let yearStr = match[2];
-            
-            if (!yearStr) yearStr = new Date().getFullYear().toString(); 
-            else if (yearStr.length === 2) yearStr = `20${yearStr}`;
-            
-            return `${yearStr}-${monthNum}`;
-        }
-        return '';
-    };
-
-    const onSaveRetro = async () => {
-        if (!retroMonth || !retroGmv) return toast.error('Preencha o mês e o faturamento.');
-        setIsSavingRetro(true);
-        await handleSaveRetroactiveMonth(store.id, retroMonth, retroGmv, retroAds, editingRetroId);
-        cancelEditing();
-        setIsSavingRetro(false);
-    };
-
-    const startEditingRetro = (hist) => {
-        const fallbackId = hist.id || hist.month; 
-        setEditingRetroId(fallbackId);
-        
-        setRetroMonth(formatToInputMonth(hist.month));
-        setRetroGmv(hist.gmv);
-        setRetroAds(hist.adsInvestment || 0);
-        
-        if (!hist.id) {
-            toast('Lançamento antigo detectado. Ao salvar, ele será padronizado.', { icon: '✨' });
-        }
-    };
-
-    const cancelEditing = () => {
-        setEditingRetroId(null);
-        setRetroMonth(''); 
-        setRetroGmv(''); 
-        setRetroAds('');
-    };
-
     return (
-        <React.Fragment>
-            {/* LINHA PRINCIPAL DA LOJA */}
-            <tr className={`border-b border-white/5 hover:bg-white/[0.02] transition-colors ${isExpanded ? 'bg-white/[0.03]' : ''}`}>
-                <td className="p-4 cursor-pointer group" onClick={() => setIsExpanded(!isExpanded)}>
-                    <div className="flex items-center gap-2">
-                        <div className={`w-4 h-4 rounded flex items-center justify-center transition-colors ${isExpanded ? 'bg-indigo-500/20 text-indigo-400' : 'bg-white/5 text-gray-400 group-hover:bg-white/10 group-hover:text-white'}`}>
-                            {isExpanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
-                        </div>
-                        <div>
-                            <div className="font-bold text-gray-200 truncate max-w-[150px] group-hover:text-indigo-300 transition-colors" title={store.store}>{store.store}</div>
-                            <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{store.marketplace || 'Marketplace'}</div>
-                        </div>
+        <tr className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+            <td className="p-4">
+                <div className="flex items-center gap-2">
+                    <div>
+                        <div className="font-bold text-gray-200 truncate max-w-[150px]" title={store.store}>{store.store}</div>
+                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{store.marketplace || 'Marketplace'}</div>
                     </div>
-                </td>
-                <td className="p-3">
-                    <input type="number" min="1" max="31" value={day} onChange={e => setDay(e.target.value)} className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-white text-center font-bold outline-none focus:border-amber-500 shadow-inner" />
-                </td>
-                <td className="p-3">
-                    <input type="text" value={rev} onChange={e => setRev(e.target.value)} placeholder="0.00" className="w-24 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner" />
-                </td>
-                <td className="p-3">
-                    <input type="number" value={ord} onChange={e => setOrd(e.target.value)} placeholder="0" className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner" />
-                </td>
-                <td className="p-3">
-                    <input type="number" value={uni} onChange={e => setUni(e.target.value)} placeholder="0" className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner" />
-                </td>
-                <td className="p-3">
-                    <input type="text" value={ads} onChange={e => setAds(e.target.value)} placeholder="0.00" className="w-24 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 shadow-inner" />
-                </td>
-                <td className="p-4 text-right">
-                    <button onClick={onSave} disabled={isSaving} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-colors">
-                        {isSaving ? '⏳' : 'Salvar'}
-                    </button>
-                </td>
-            </tr>
-
-            {/* PAINEL EXPANDIDO (HISTÓRICO DA LOJA EM BLOCO ÚNICO) */}
-{isExpanded && (
-                <tr className="bg-[#0B0F19]/50 border-b border-white/5">
-                    <td colSpan="7" className="p-0">
-                        <div className="p-5 border-l-[3px] border-indigo-500 ml-4 mb-4 mt-2 rounded-r-xl bg-black/20 shadow-inner">
-                            
-                            {/* ==================================================================================== */}
-                            {/* === TODO: DEPRECATION WARNING (REMOVER APÓS PREENCHER TODO O HISTÓRICO ANTIGO) === */}
-                            {/* O bloco abaixo (Formulário de Inserção) pode ser deletado no futuro.               */}
-                            {/* ==================================================================================== */}
-                            <h5 className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                                <History size={14}/> 
-                                {editingRetroId ? 'Editando Fechamento' : 'Registrar Mês Anterior'}
-                            </h5>
-                            
-                            <div className="flex flex-wrap gap-3 items-end">
-                                <div className="flex-1 min-w-[120px]">
-                                    <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Mês/Ano</label>
-                                    <input type="month" value={retroMonth} onChange={e => setRetroMonth(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 transition-colors cursor-pointer" />
-                                </div>
-                                <div className="flex-1 min-w-[120px]">
-                                    <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Faturamento</label>
-                                    <input type="text" placeholder="0.00" value={retroGmv} onChange={e => setRetroGmv(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 transition-colors" />
-                                </div>
-                                <div className="flex-1 min-w-[120px]">
-                                    <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Ads Investido</label>
-                                    <input type="text" placeholder="0.00" value={retroAds} onChange={e => setRetroAds(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 transition-colors" />
-                                </div>
-                                
-                                {editingRetroId && (
-                                    <button onClick={cancelEditing} className="bg-white/5 hover:bg-white/10 text-gray-400 px-4 py-2.5 rounded-lg text-xs font-bold transition-colors">
-                                        Cancelar
-                                    </button>
-                                )}
-                                <button onClick={onSaveRetro} disabled={isSavingRetro} className={`${editingRetroId ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-500'} disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-xs font-bold shadow-md transition-colors`}>
-                                    {isSavingRetro ? '⏳' : (editingRetroId ? 'Salvar Edição' : 'Adicionar Mês')}
-                                </button>
-                            </div>
-                            {/* ==================================================================================== */}
-                            {/* === FIM DO BLOCO DEPRECIADO ===                                                    */}
-                            {/* ==================================================================================== */}
-
-                            {/* LINHA 2: GRID DE HISTÓRICO (3 COLUNAS) */}
-                            {/* NOTA: Este bloco abaixo deve ser MANTIDO no futuro, removendo apenas os botões de edição/exclusão, para servir como um visualizador do histórico fechado da loja. */}
-                            {store.monthlyHistory && store.monthlyHistory.length > 0 && (
-                                <div className="mt-5 pt-4 border-t border-white/10">
-                                    <h5 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3">Histórico Registrado</h5>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                        {store.monthlyHistory.map((hist, index) => {
-                                            const histKey = hist.id || hist.month;
-                                            
-                                            return (
-                                                <div key={hist.id || `hist-${index}-${hist.month}`} className={`flex items-center justify-between p-2 rounded-lg border transition-colors ${editingRetroId === histKey ? 'bg-indigo-900/30 border-indigo-500/50' : 'bg-gray-900/60 border-white/5 hover:border-white/10'}`}>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-[10px] font-bold text-white bg-black/40 border border-white/10 px-2 py-1 rounded shadow-sm">
-                                                            {hist.month}
-                                                        </span>
-                                                        <div>
-                                                            <span className="text-[11px] text-blue-400 font-bold block">{formatCurrency(hist.gmv)}</span>
-                                                            {hist.adsInvestment > 0 && <span className="text-[9px] text-amber-500 block">Ads: {formatCurrency(hist.adsInvestment)}</span>}
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {/* Estes botões também poderão ser deletados no futuro, transformando o card em apenas leitura (ReadOnly) */}
-                                                    <div className="flex gap-1 pr-1">
-                                                        <button onClick={() => startEditingRetro(hist)} className={`p-1.5 rounded transition-colors ${editingRetroId === histKey ? 'text-indigo-400 bg-indigo-500/20' : 'text-gray-400 hover:text-blue-400 hover:bg-blue-500/10'}`} title="Editar">
-                                                            <Edit2 size={14}/>
-                                                        </button>
-                                                        <button onClick={() => handleDeleteRetroactiveMonth(store.id, histKey)} className="p-1.5 text-gray-400 hover:bg-red-500/10 hover:text-red-400 rounded transition-colors" title="Excluir">
-                                                            <X size={14}/>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-
-                        </div>
-                    </td>
-                </tr>
-            )}
-        </React.Fragment>
+                </div>
+            </td>
+            <td className="p-3">
+                <input type="number" min="1" max="31" value={day} onChange={e => setDay(e.target.value)} className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-white text-center font-bold outline-none focus:border-amber-500 shadow-inner" />
+            </td>
+            <td className="p-3">
+                <input type="text" value={rev} onChange={e => setRev(e.target.value)} placeholder="0.00" className="w-24 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner" />
+            </td>
+            <td className="p-3">
+                <input type="number" value={ord} onChange={e => setOrd(e.target.value)} placeholder="0" className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner" />
+            </td>
+            <td className="p-3">
+                <input type="number" value={uni} onChange={e => setUni(e.target.value)} placeholder="0" className="w-16 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner" />
+            </td>
+            <td className="p-3">
+                <input type="text" value={ads} onChange={e => setAds(e.target.value)} placeholder="0.00" className="w-24 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 shadow-inner" />
+            </td>
+            <td className="p-4 text-right">
+                <button onClick={onSave} disabled={isSaving} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-colors">
+                    {isSaving ? '⏳' : 'Salvar'}
+                </button>
+            </td>
+        </tr>
     );
 };
 
 export default function ClientFileModal({ 
-  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, addNewStoreToClient, 
-  handleSaveIndividualEntry, handleSaveRetroactiveMonth, handleDeleteRetroactiveMonth 
+  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, addNewStoreToClient, handleSaveIndividualEntry 
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
-  const [isStoreManagementModalOpen, setIsStoreManagementModalOpen] = useState(false);
   
   const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
@@ -318,11 +166,12 @@ export default function ClientFileModal({
 
   const lastMonthTotalGmv = useMemo(() => {
     return liveStores.reduce((acc, s) => {
+        // Agora lê unicamente do histórico oficial. O gmvBase foi extirpado.
         if (s.monthlyHistory && s.monthlyHistory.length > 0) {
             const prevData = s.monthlyHistory.find(h => h.month === mesPassadoExato);
             return acc + (prevData ? Number(prevData.gmv) : 0);
         }
-        return acc + (Number(s.gmvBase) || 0);
+        return acc;
     }, 0);
   }, [liveStores, mesPassadoExato]);
 
@@ -436,11 +285,6 @@ export default function ClientFileModal({
           </div>
 
           <div className="flex items-center gap-2">
-            {currentUserData?.role !== 'Visitante' && (
-              <button onClick={() => setIsStoreManagementModalOpen(true)} className="px-3 py-2 bg-slate-700 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-gray-300 flex items-center transition-colors">
-                <Settings size={16} /> <span className="hidden md:inline"></span>
-              </button>
-            )}
             <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent rounded-xl text-gray-400 transition-colors"><X size={20}/></button>
           </div>
         </div>
@@ -584,13 +428,13 @@ export default function ClientFileModal({
             </div>
           )}
 
-          {/* === ABA 2: LANÇAMENTOS INTELIGENTES E RETROATIVOS === */}
+          {/* === ABA 2: LANÇAMENTOS INTELIGENTES === */}
           {activeTab === 'apuracao' && (
             <div className="space-y-6 animate-in fade-in">
               <div className="flex justify-between items-center bg-black/20 p-4 rounded-2xl border border-white/5">
                 <div>
                   <h3 className="text-white font-bold flex items-center gap-2"><Zap className="text-amber-400" size={16}/> Lançamentos Individuais</h3>
-                  <p className="text-xs text-gray-400 mt-1">Clique no nome da loja para expandir e gerenciar o histórico de fechamentos daquela conta.</p>
+                  <p className="text-xs text-gray-400 mt-1">Registre o faturamento diário para as lojas deste cliente.</p>
                 </div>
               </div>
 
@@ -613,8 +457,6 @@ export default function ClientFileModal({
                         key={store.id} 
                         store={store} 
                         handleSaveIndividualEntry={handleSaveIndividualEntry}
-                        handleSaveRetroactiveMonth={handleSaveRetroactiveMonth}
-                        handleDeleteRetroactiveMonth={handleDeleteRetroactiveMonth}
                         formatCurrency={formatCurrency}
                       />
                     ))}
@@ -730,17 +572,6 @@ export default function ClientFileModal({
         stores={liveStores} 
         onSave={handleBulkTaskSave} 
         teamMembers={teamMembers} 
-      />
-
-      <StoreManagementModal
-        isOpen={isStoreManagementModalOpen}
-        onClose={() => setIsStoreManagementModalOpen(false)}
-        clientGroup={clientGroup}
-        stores={stores}
-        setStores={setStores}
-        updateStoreInCloud={updateStoreInCloud}
-        currentUserData={currentUserData}
-        onAddNewStore={addNewStoreToClient}
       />
     </div>
   );
