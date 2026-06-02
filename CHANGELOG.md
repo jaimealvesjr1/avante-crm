@@ -1,6 +1,21 @@
 # Changelog (Histórico de Atualizações)
 Todas as mudanças notáveis no projeto Avante HUB serão documentadas neste arquivo.
 
+## [2.6.0] - 2026-06-01
+### Adicionado
+- **Módulo Financeiro (`FinanceDashboard`):** Implementação completa do painel de gestão financeira da agência. Inclui acompanhamento de Contratos (fees fixos e percentuais), Entradas (Contas a Receber com cálculo de faturas), Saídas (Contas a Pagar com despesas avulsas) e Fluxo de Caixa.
+- **Folha de Pagamento Automática:** Novo sistema integrado ao módulo financeiro que calcula automaticamente os repasses da equipe baseado no faturamento bruto, custos operacionais (Base LL) e regras de comissionamento configuradas.
+- **Demonstrativo de Pagamento:** Opção de gerar e baixar comprovantes de pagamento detalhados e estilizados em formato PNG diretamente pelo painel financeiro.
+- **Modo Privacidade (Privacy Mode):** Adição de um botão no cabeçalho global (`App.jsx`) que, ao ser clicado, oculta dados financeiros sensíveis (faturamento, ROAS, comissões, volumes e projeções) com asteriscos, protegendo informações confidenciais em monitores expostos.
+- **Barras de Progresso de Meta:** Novas barras horizontais com design em *glassmorphism* e limitador visual inteligente (meta cravada em 80% da largura). Adicionadas no topo do Dashboard Executivo (Progresso Global) e do Dashboard Financeiro (Meta da Agência).
+
+### Modificado
+- **Dashboard Executivo (`ExecutiveDashboard`):** Readequação do layout superior, alterando o grid de cartões de KPI de 4 para 3 colunas para acomodar a nova Barra de Progresso Global de forma limpa e fluida.
+- **Painel Operacional (`OperationalTable`):** Refatoração do componente para interceptar e respeitar o Modo Privacidade global, ocultando percentuais de alcance, valores de Ads, ROAS e histórico retroativo de vendas.
+- **Variáveis Globais (`App.jsx`):** Atualização da constante `CURRENT_VERSION` para `2.6.0` e adição de funções interceptadoras `safeFormatCurrency` e `safeFormatNumber`.
+
+---
+
 ## [2.5.10] - 2026-05-30
 ### Adicionado
 - **Controle de Versão:** Criação e inclusão do sistema de Changelog para documentar o histórico de atualizações e mudanças da plataforma.
@@ -90,7 +105,7 @@ Todas as mudanças notáveis no projeto Avante HUB serão documentadas neste arq
 
 ## [2.0.0] - 2026-05-22 a 2026-05-20 (Avante HUB)
 ### Adicionado
-- **Rebranding:** Conversão oficial do sistema para **Avante HUB**.
+- **Rebranding:** Conversão oficial do sistema para **Avante HUB** (e atualizado graficamente para B2X).
 - **Play/Pause de Tarefas:** Novo suporte para pausar e retomar tarefas com resolução de conflitos, além de status de execução em tempo real no feed.
 - **Feed da Equipe:** Criação e adição da central de comunicação e acompanhamento de tarefas da equipe.
 - **Gráficos:** Inclusão de novos gráficos de inteligência sobre clientes.

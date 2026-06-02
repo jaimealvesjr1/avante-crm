@@ -45,38 +45,86 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
     fontSize: '14px'
   };
 
-  return (
-    <div className="space-y-8 animate-in fade-in duration-500 w-full">
-      
-      {/* 🌟 1. QUADROS DE KPI */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        
-        <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
-          <div className="flex justify-between items-start mb-5 relative z-10">
-            <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shadow-inner">
-              <TrendingUp size={24} className="text-blue-400" />
-            </div>
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest bg-black/20 px-3 py-1.5 rounded-lg border border-white/5">Faturamento</span>
+  // --- LÓGICA DA BARRA DE PROGRESSÃO GLOBAL ---
+  const renderGlobalProgressBar = () => {
+    const target = dashboardData.totalTarget || 0;
+    const current = dashboardData.totalCurrentRevenue || 0;
+    const projected = dashboardData.totalProjected || 0;
+
+    const safeTarget = target > 0 ? target : 1;
+    // Limitando em 100% da visualização, o 80% da barra representa 100% da meta
+    const currentWidth = Math.min((current / safeTarget) * 80, 100);
+    const projectedWidth = Math.min((projected / safeTarget) * 80, 100);
+    
+    const currentPercent = ((current / safeTarget) * 100).toFixed(1);
+    const projectedPercent = ((projected / safeTarget) * 100).toFixed(1);
+
+    return (
+      <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] w-full mb-8 relative">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-4">
+          <div>
+            <h2 className="text-2xl font-black text-white flex items-center gap-2">
+              <Target className="text-blue-400" size={24} /> Progresso Global
+            </h2>
+            <p className="text-gray-400 text-sm mt-1">Faturamento consolidado de todos os clientes</p>
           </div>
-          <div className="space-y-5 relative z-10">
-            <div>
-              <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1.5">Projetado Fim do Mês</p>
-              <p className="text-4xl font-bold text-white tracking-tight">{formatCurrency(dashboardData.totalProjected)}</p>
+          <div className="flex flex-wrap gap-4 md:gap-8 bg-black/20 p-3 rounded-2xl border border-white/5">
+            <div className="flex flex-col">
+              <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Hoje (Atual)</span>
+              <span className="text-xl font-bold text-blue-400">{formatCurrency(current)} <span className="text-xs text-blue-400/70">({currentPercent}%)</span></span>
             </div>
-            <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-5">
-              <div>
-                <p className="text-[11px] text-gray-500 uppercase font-bold tracking-wider mb-1">Atual</p>
-                <p className="text-base font-bold text-blue-300">{formatCurrency(dashboardData.totalCurrentRevenue)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] text-gray-500 uppercase font-bold tracking-wider mb-1">Meta Global</p>
-                <p className="text-base font-bold text-gray-300">{formatCurrency(dashboardData.totalTarget)}</p>
-              </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Projeção Fim do Mês</span>
+              <span className="text-xl font-bold text-indigo-400">{formatCurrency(projected)} <span className="text-xs text-indigo-400/70">({projectedPercent}%)</span></span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Meta Global</span>
+              <span className="text-xl font-bold text-white">{formatCurrency(target)}</span>
             </div>
           </div>
         </div>
 
+        <div className="relative pt-6 pb-2">
+          {/* Fundo da Barra */}
+          <div className="h-8 bg-black/40 rounded-full border border-white/10 shadow-inner overflow-hidden relative">
+            {/* Barra da Projeção */}
+            <div 
+              className="absolute top-0 left-0 h-full bg-indigo-500/20 transition-all duration-1000 ease-out border-r border-indigo-500/50"
+              style={{ width: `${projectedWidth}%` }}
+            >
+              <div className="w-full h-full opacity-30" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.2) 10px, rgba(255,255,255,0.2) 20px)' }}></div>
+            </div>
+
+            {/* Barra Atual (Hoje) */}
+            <div 
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(56,189,248,0.4)] rounded-r-full"
+              style={{ width: `${currentWidth}%` }}
+            ></div>
+          </div>
+
+          {/* Marcador da Meta Exata (em 80%) */}
+          <div className="absolute top-0 bottom-0 w-0.5 bg-gradient-to-b from-white to-gray-300 shadow-[0_0_15px_rgba(255,255,255,1)] z-10" style={{ left: '80%' }}>
+            <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-white text-black text-[11px] font-black px-2 py-0.5 rounded shadow-lg flex items-center gap-1">
+              META
+            </div>
+            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-gray-400 text-[10px] font-bold">
+              100%
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500 w-full">
+      
+      {/* 🌟 1. BARRA DE PROGRESSO GLOBAL SUBSTITUINDO O CARD */}
+      {renderGlobalProgressBar()}
+
+      {/* 🌟 2. QUADROS DE KPI RESTANTES (agora em 3 colunas) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        
         <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
           <div className="flex justify-between items-start mb-5 relative z-10">
@@ -157,7 +205,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
         </div>
       </div>
 
-      {/* 🌟 2. GRÁFICOS SECUNDÁRIOS */}
+      {/* 🌟 3. GRÁFICOS SECUNDÁRIOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6">
         
         {/* Gráfico 1: TOP 5 LOJAS */}
@@ -261,7 +309,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
 
       </div>
 
-      {/* 🌟 3. EVOLUÇÃO MENSAL E ALERTAS */}
+      {/* 🌟 4. EVOLUÇÃO MENSAL E ALERTAS */}
       <div className="grid grid-cols-1 2xl:grid-cols-4 gap-6">
         
         {/* EVOLUÇÃO (Ocupa 3/4 da tela) */}
@@ -323,7 +371,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                       return null;
                     }} 
                   />
-                  {/* ======================================================== */}
 
                   <Legend verticalAlign="top" height={36}/>
                   

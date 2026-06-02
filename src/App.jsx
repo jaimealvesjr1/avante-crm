@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search,
   Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays,
-  Eraser, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, Check, Bell, Eye } from 'lucide-react';
+  Eraser, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, Check, Bell, Eye, EyeOff } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { db, auth, secondaryAuth } from './firebase';
@@ -43,6 +43,17 @@ export const getVisualRole = (role) => {
 export default function App() {
   const CURRENT_VERSION = '2.6.0';
   
+  const [showValues, setShowValues] = useState(() => {
+    return localStorage.getItem('avante_show_values') !== 'false';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('avante_show_values', showValues);
+  }, [showValues]);
+
+  const safeFormatCurrency = (val) => showValues ? formatCurrency(val) : 'R$ •••••';
+  const safeFormatNumber = (val) => showValues ? formatNumber(val) : '••••';
+
   const [user, setUser] = useState(null);
   const { stores, setStores, isDbLoading, setIsDbLoading, updateStoreInCloud } = useAvanteData(user);
   const [currentUserData, setCurrentUserData] = useState(null);
@@ -1449,6 +1460,9 @@ export default function App() {
                 </div>
               </div>
               <div className="flex items-center gap-1">
+                <button onClick={() => setShowValues(!showValues)} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-full text-gray-400 hover:text-white transition-all shadow-sm" title={showValues ? "Ocultar Valores Financeiros" : "Mostrar Valores Financeiros"}>
+                  {showValues ? <Eye size={16} /> : <EyeOff size={16} className="text-amber-400" />}
+                </button>
                 <button onClick={() => setPasswordModalOpen(true)} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-full text-gray-400 hover:text-white transition-all shadow-sm" title="Mudar Senha"><Key size={16} /></button>
                 <button onClick={handleLogout} className="p-2 bg-white/5 hover:bg-red-500/20 border border-transparent hover:border-red-500/30 rounded-full text-gray-400 hover:text-red-400 transition-all shadow-sm" title="Sair"><LogOut size={16} /></button>
               </div>
@@ -1542,8 +1556,8 @@ export default function App() {
         {activeView === 'dashboard' && (
           <ExecutiveDashboard 
             dashboardData={dashboardData} 
-            formatCurrency={formatCurrency} 
-            formatNumber={formatNumber}
+            formatCurrency={safeFormatCurrency} 
+            formatNumber={safeFormatNumber}
             pieData={pieData} 
             roasData={roasData} 
             COLORS={COLORS} 
@@ -1574,7 +1588,9 @@ export default function App() {
             dashboardData={dashboardData} 
             expandedClients={expandedClients} 
             toggleClientExpansion={toggleClientExpansion}
-            formatCurrency={formatCurrency} 
+            formatCurrency={safeFormatCurrency}
+            formatNumber={safeFormatNumber}
+            showValues={showValues} 
             currentDay={currentDay} 
             globalGrowth={globalGrowth} 
             updateGlobalSettings={updateGlobalSettings}
@@ -1592,8 +1608,6 @@ export default function App() {
             generateStoreWhatsAppLink={generateStoreWhatsAppLink}
             generateClientWhatsAppLink={generateClientWhatsAppLink}
             openClientFile={openClientFile}
-            formatNumber={formatNumber}
-            formatCurrency={formatCurrency}
           />
         )}
 
@@ -1601,7 +1615,7 @@ export default function App() {
           <FinanceDashboard
             db={db} 
             dashboardData={dashboardData} 
-            formatCurrency={formatCurrency}
+            formatCurrency={safeFormatCurrency}
             canEdit={canEdit}
             teamMembers={teamMembers}
           />

@@ -6,7 +6,7 @@ const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'am
 export default function OperationalTable({
   canEdit, dashboardData, expandedClients, toggleClientExpansion, 
   addNewStoreToClient, openHistoryModal, openClientFile, globalGrowth, formatCurrency, 
-  generateClientWhatsAppLink, generateStoreWhatsAppLink,
+  showValues, generateClientWhatsAppLink, generateStoreWhatsAppLink,
   startEditingStore, editingStoreId, setEditingStoreId, storeEditData, setStoreEditData, saveStoreEdit, deleteStore
 }) {
 
@@ -61,7 +61,7 @@ export default function OperationalTable({
                       {group.stores.length} Lojas Ativas
                     </span>
                     <span className="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-md text-[10px] font-bold shadow-sm">
-                      {group.feeType === 'fixed' || group.fixedFee > 0 ? `Fixo: R$ ${group.fixedFee}` : `Fee: ${group.feePercent || 0}%`}
+                      {group.feeType === 'fixed' || group.fixedFee > 0 ? `Fixo: R$ ${showValues ? group.fixedFee : '***'}` : `Fee: ${showValues ? (group.feePercent || 0) : '***'}%`}
                     </span>
                   </div>
                 </div>
@@ -91,12 +91,12 @@ export default function OperationalTable({
               <div className="flex flex-col flex-1 min-w-[200px]">
                 <div className="flex justify-between items-end mb-1.5">
                   <div>
-                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Projeção ({group.percentReached.toFixed(1)}%)</p>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Projeção ({showValues ? group.percentReached.toFixed(1) : '***'}%)</p>
                     <p className={`text-lg font-bold leading-none mt-1 ${group.status === 'success' ? 'text-emerald-400' : group.status === 'warning' ? 'text-amber-400' : 'text-red-400'}`}>
                       {formatCurrency(group.totalProjectedGmv)}
                     </p>
                   </div>
-                  <span className="text-[11px] bg-white/5 px-2 py-1 rounded-md text-gray-300 border border-white/10">ROAS: <strong className="text-white">{group.roas}x</strong></span>
+                  <span className="text-[11px] bg-white/5 px-2 py-1 rounded-md text-gray-300 border border-white/10">ROAS: <strong className="text-white">{showValues ? group.roas : '***'}x</strong></span>
                 </div>
                 <div className="w-full bg-black/40 rounded-full h-2 border border-white/5 overflow-hidden shadow-inner">
                   <div className={`h-full rounded-full ${clientGradient} transition-all duration-1000 ease-out`} style={{ width: `${Math.min(group.percentReached, 100)}%` }}></div>
@@ -234,7 +234,7 @@ export default function OperationalTable({
                           <div className="mb-5 bg-black/30 p-3.5 rounded-xl border border-white/5">
                               <div className="flex justify-between text-xs mb-2.5">
                                   <span className="text-gray-400 font-medium">Progresso da Meta</span>
-                                  <span className="font-bold text-white">{row.percentReached?.toFixed(1)}%</span>
+                                  <span className="font-bold text-white">{showValues ? row.percentReached?.toFixed(1) : '***'}%</span>
                               </div>
                               <div className="w-full bg-black/50 rounded-full h-3 shadow-inner">
                                   <div className={`h-full rounded-full transition-all duration-1000 ${row.status === 'success' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : row.status === 'warning' ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]'}`} style={{ width: `${Math.min(row.percentReached || 0, 100)}%` }}></div>
@@ -250,12 +250,12 @@ export default function OperationalTable({
                               <div className="flex flex-col gap-1 border-r border-white/10 pr-2">
                                   <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Ads & ROAS</span>
                                   <span className="font-bold text-amber-400 text-sm">{formatCurrency(row.adsInvestment)}</span>
-                                  <span className="text-xs text-gray-400">ROAS: {row.adsInvestment > 0 ? (row.currentRevenue / row.adsInvestment).toFixed(1) : 0}x</span>
+                                  <span className="text-xs text-gray-400">ROAS: {showValues ? (row.adsInvestment > 0 ? (row.currentRevenue / row.adsInvestment).toFixed(1) : 0) : '***'}x</span>
                               </div>
                               <div className="flex flex-col gap-1 pl-2">
                                   <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Tração e Volume</span>
-                                  <span className="font-bold text-emerald-400 text-sm">{row.orders || 0} ped</span>
-                                  <span className="text-xs text-gray-400">{row.units || 0} unidades</span>
+                                  <span className="font-bold text-emerald-400 text-sm">{showValues ? (row.orders || 0) : '***'} ped</span>
+                                  <span className="text-xs text-gray-400">{showValues ? (row.units || 0) : '***'} unidades</span>
                               </div>
                           </div>
 

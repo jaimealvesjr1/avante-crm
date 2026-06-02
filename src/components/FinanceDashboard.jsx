@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { DollarSign, TrendingUp, TrendingDown, CheckCircle, Clock, FileText, Edit2, Briefcase, X, Save, Plus, Trash2, ArrowUpRight, ArrowDownRight, Activity, Calculator, Calendar, Shield } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, CheckCircle, Clock, FileText, Edit2, Briefcase, X, Save, Plus, Trash2, ArrowUpRight, ArrowDownRight, Activity, Calculator, Calendar, Shield, Target } from 'lucide-react';
 import { collection, onSnapshot, doc, updateDoc, writeBatch, addDoc, deleteDoc } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
 import html2canvas from 'html2canvas';
@@ -67,6 +67,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   }, [mesFolha, dashboardData]);
 
   const projecaoReceitaAgencia = dashboardData.totalAgencyRevenue || 0;
+  const totalReceitaAgencia = dashboardData.totalAgencyRevenueActual || 0;
+  const metaAgencia = dashboardData.agencyTarget || 0;
 
   // Filtra as listas baseando-se na busca global (searchTerm vindo do App.jsx)
   const busca = (searchTerm || '').toLowerCase();
@@ -93,15 +95,13 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
   const mesPassadoExato = `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`;
 
-    const totalReceitaAgencia = dashboardData.totalAgencyRevenueActual || 0;
-
-    const folhaCalculada = useMemo(() => {
+  const folhaCalculada = useMemo(() => {
     if (!teamMembers) return [];
     return teamMembers.filter(m => m.paymentConfig).map(m => {
         const calculo = calcularFolhaMembro(m, totalReceitaAgencia, metricasFolha.custoOperacional, bonusManuais[m.email]);
         return { ...m, calculo };
     });
-    }, [teamMembers, metricasFolha, bonusManuais, totalReceitaAgencia]);
+  }, [teamMembers, metricasFolha, bonusManuais, totalReceitaAgencia]);
 
   const handleLancarPagamentoEquipe = async (membro) => {
     if (!canEdit) return toast.error("Sem permissão.");
@@ -117,10 +117,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       toast.success(`Pagamento lançado no Contas a Pagar!`);
 
       // Gera os dados para abrir o Modal do Demonstrativo
-      const dataAtual = new Date();
-      dataAtual.setMonth(dataAtual.getMonth() - 1);
-      const mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-      
       setDemonstrativoData({
         nome: membro.nomeCompleto,
         funcao: getVisualRole(membro.role) || 'Colaborador',
@@ -181,7 +177,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     return relatorio;
   }, [recebimentos, despesas]);
 
-  // 6. FUNÇÕES DE AÇÃO
   const renderGrowthBadge = (currentValue, pastValue) => {
     if (pastValue === 0) return null;
     const percent = ((currentValue - pastValue) / pastValue) * 100;
@@ -302,10 +297,79 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     }
   };
 
-  // 7. INTERFACE PRINCIPAL (JSX)
+  // --- LÓGICA DA BARRA DE META DA AGÊNCIA ---
+  const renderAgencyProgressBar = () => {
+    const safeTarget = metaAgencia > 0 ? metaAgencia : 1;
+    // O 100% da meta fica em 80% da barra. Se chegar a 125% ou mais, preenche a barra toda.
+    const currentWidth = Math.min((totalReceitaAgencia / safeTarget) * 80, 100);
+    const projectedWidth = Math.min((projecaoReceitaAgencia / safeTarget) * 80, 100);
+    
+    const currentPercent = ((totalReceitaAgencia / safeTarget) * 100).toFixed(1);
+    const projectedPercent = ((projecaoReceitaAgencia / safeTarget) * 100).toFixed(1);
+
+    return (
+      <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] w-full relative mb-8">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-4">
+          <div>
+            <h2 className="text-2xl font-black text-white flex items-center gap-2">
+              <Target className="text-emerald-400" size={24} /> Meta da Agência
+            </h2>
+            <p className="text-gray-400 text-sm mt-1">Acompanhamento do Faturamento Interno vs Meta</p>
+          </div>
+          <div className="flex flex-wrap gap-4 md:gap-8 bg-black/20 p-3 rounded-2xl border border-white/5">
+            <div className="flex flex-col">
+              <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Hoje (Receita)</span>
+              <span className="text-xl font-bold text-blue-400">{formatCurrency(totalReceitaAgencia)} <span className="text-xs text-blue-400/70">({currentPercent}%)</span></span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Projeção</span>
+              <span className="text-xl font-bold text-indigo-400">{formatCurrency(projecaoReceitaAgencia)} <span className="text-xs text-indigo-400/70">({projectedPercent}%)</span></span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Meta</span>
+              <span className="text-xl font-bold text-white">{formatCurrency(metaAgencia)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="relative pt-6 pb-2">
+          {/* Track/Fundo */}
+          <div className="h-8 bg-black/40 rounded-full border border-white/10 shadow-inner overflow-hidden relative">
+            {/* Projeção */}
+            <div 
+              className="absolute top-0 left-0 h-full bg-indigo-500/20 transition-all duration-1000 ease-out border-r border-indigo-500/50"
+              style={{ width: `${projectedWidth}%` }}
+            >
+              <div className="w-full h-full opacity-30" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.2) 10px, rgba(255,255,255,0.2) 20px)' }}></div>
+            </div>
+
+            {/* Hoje */}
+            <div 
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(16,185,129,0.4)] rounded-r-full"
+              style={{ width: `${currentWidth}%` }}
+            ></div>
+          </div>
+
+          {/* Marcador da Meta exata (80%) */}
+          <div className="absolute top-0 bottom-0 w-0.5 bg-gradient-to-b from-white to-gray-300 shadow-[0_0_15px_rgba(255,255,255,1)] z-10" style={{ left: '80%' }}>
+            <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-white text-black text-[11px] font-black px-2 py-0.5 rounded shadow-lg">
+              META
+            </div>
+            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-gray-400 text-[10px] font-bold">
+              100%
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
+    <div className="space-y-6 animate-in fade-in duration-300 w-full">
       
+      {/* BARRA DE PROGRESSÃO DE META (No Topo Absoluto) */}
+      {renderAgencyProgressBar()}
+
       {/* CABEÇALHO E NAVEGAÇÃO PADRONIZADO */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
         <div>
@@ -334,7 +398,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
             </div>
             <div className="bg-[#0B0F19]/80 backdrop-blur-xl p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border-l-4 border-l-amber-500">
               <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Faturas a Receber (Em Aberto)</p>
-              {/* Note que aqui usamos a variável corrigida */}
               <h2 className="text-3xl font-black text-amber-400 mt-1">{formatCurrency(totalPendenteGeral)}</h2>
             </div>
           </div>
@@ -589,13 +652,12 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
             {/* LADO DIREITO: BLOCOS EMPILHADOS VERTICALMENTE (Ocupa 1/3) */}
             <div className="lg:col-span-1 flex flex-col gap-6">
               
-              {/* BLOCO 1: FOLHA AUTOMÁTICA (AGORA DENTRO DE UM CARD) */}
+              {/* BLOCO 1: FOLHA AUTOMÁTICA */}
               <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-6">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
                   <Calculator size={18} className="text-indigo-400" /> Folha Automática
                 </h3>
                 
-                {/* SELECTOR DE MÊS DA COMPETÊNCIA */}
                 <div className="mb-4">
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Competência da Folha</label>
                   <select value={mesFolha} onChange={e => setMesFolha(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none shadow-inner cursor-pointer text-sm">
@@ -763,7 +825,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 backdrop-blur-sm overflow-y-auto">
             <div className="flex flex-col items-center animate-in zoom-in-95 duration-200">
                 
-                {/* O COMPROVANTE (ESTILIZADO IGUAL AO SEU HTML) */}
+                {/* O COMPROVANTE */}
                 <div id="comprovante-export" className="bg-[#f0f2f5] w-[450px] rounded-[16px] shadow-2xl overflow-hidden border border-gray-100 font-sans">
                     <div className="px-5 py-8 text-center border-b-2 border-[#eef4fc] bg-white">
                         <img src="https://i.ibb.co/PszR8C1j/Whats-App-Image-2025-12-10-at-17-17-30.jpg" crossOrigin="anonymous" alt="Logo" className="h-[70px] rounded-full mx-auto mb-4" />
