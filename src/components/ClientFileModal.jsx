@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, TrendingDown } from 'lucide-react';
+import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, TrendingDown, Briefcase } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
@@ -68,7 +68,10 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, formatCurrency }) => 
 };
 
 export default function ClientFileModal({ 
-  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, addNewStoreToClient, handleSaveIndividualEntry 
+  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, 
+  updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, 
+  teamMembers, addNewStoreToClient, handleSaveIndividualEntry, 
+  handleSaveRetroactiveMonth, handleDeleteRetroactiveMonth
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
@@ -262,30 +265,44 @@ export default function ClientFileModal({
 
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
-      <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
+      <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col relative">
         
-        {/* CABEÇALHO */}
-        <div className="p-6 border-b border-white/5 bg-black/20 flex flex-col md:flex-row justify-between items-start md:items-center shrink-0 gap-4">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h2 className="text-2xl font-bold text-white uppercase tracking-wide">{clientGroup.client}</h2>
-              <span className="bg-indigo-500/10 text-indigo-300 text-xs font-bold px-2.5 py-1 rounded-md border border-indigo-500/20 shadow-sm">
-                {clientGroup.feeType === 'fixed' ? `Fixo: ${formatCurrency(clientGroup.fixedFee)}` : `Fee: ${clientGroup.feePercent}%`}
-              </span>
+        {/* CABEÇALHO DO MODAL */}
+        <div className="p-6 border-b border-white/10 bg-black/20 flex flex-col gap-5 shrink-0">
+          <div className="flex justify-between items-start">
+            <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl shadow-inner shrink-0">
+                  <Briefcase size={28} className="text-indigo-400" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-white leading-tight">{clientGroup.client}</h2>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="text-xs text-gray-400 bg-white/5 px-2 py-0.5 rounded-md border border-white/10">
+                      {clientGroup.stores.length} Lojas Ativas
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <p className="text-gray-400 text-sm italic">Central de Inteligência e Lançamentos do Cliente.</p>
+
+            {/* Botão Fechar */}
+            <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-full transition-colors ml-4 shrink-0">
+              <X size={20} />
+            </button>
           </div>
 
-          <div className="flex bg-black/20 p-1 rounded-full border border-white/10 shadow-inner overflow-x-auto">
-            <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${activeTab === 'dashboard' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><PieChartIcon size={16}/> Dashboard</button>
-            {canUseBatchEntry && (
-              <button onClick={() => setActiveTab('apuracao')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${activeTab === 'apuracao' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><Zap size={16}/> Lançamentos</button>
-            )}
-            <button onClick={() => setActiveTab('historico')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${activeTab === 'historico' ? 'bg-white/10 text-white border border-white/10 shadow-md' : 'text-gray-400 hover:text-white'}`}><ClipboardList size={16}/> Histórico & Notas</button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent rounded-xl text-gray-400 transition-colors"><X size={20}/></button>
+          {/* ABAS DE NAVEGAÇÃO */}
+          <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar">
+            <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
+              <PieChartIcon size={16} /> Visão Geral
+            </button>
+            <button onClick={() => setActiveTab('apuracao')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'apuracao' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
+              <Zap size={16} /> Lançamentos Diários
+            </button>
+            <button onClick={() => setActiveTab('historico')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'historico' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
+              <History size={16} /> Histórico & Tarefas
+            </button>
           </div>
         </div>
 

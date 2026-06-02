@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
-import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, Award } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, Award, Settings } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Area, Line, Legend } from 'recharts';
 
-export default function ExecutiveDashboard({ dashboardData, formatCurrency, formatNumber, pieData, roasData, COLORS, currentDay, daysInMonth }) {
+export default function ExecutiveDashboard({ dashboardData, formatCurrency, formatNumber, pieData, roasData, COLORS, currentDay, daysInMonth, canEdit, openGoalsModal }) {
   
   const predictedOrders = currentDay > 0 ? Math.round((dashboardData.totalOrders / currentDay) * daysInMonth) : 0;
   const avgAdsCostPerOrder = dashboardData.totalOrders > 0 ? dashboardData.totalGlobalAds / dashboardData.totalOrders : 0;
@@ -45,14 +45,14 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
     fontSize: '14px'
   };
 
-  // --- LÓGICA DA BARRA DE PROGRESSÃO GLOBAL ---
+  const [showSettings, setShowSettings] = useState(false);
+
   const renderGlobalProgressBar = () => {
     const target = dashboardData.totalTarget || 0;
     const current = dashboardData.totalCurrentRevenue || 0;
     const projected = dashboardData.totalProjected || 0;
 
     const safeTarget = target > 0 ? target : 1;
-    // Limitando em 100% da visualização, o 80% da barra representa 100% da meta
     const currentWidth = Math.min((current / safeTarget) * 80, 100);
     const projectedWidth = Math.min((projected / safeTarget) * 80, 100);
     
@@ -60,13 +60,26 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
     const projectedPercent = ((projected / safeTarget) * 100).toFixed(1);
 
     return (
-      <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] w-full mb-8 relative">
+      <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] w-full mb-8 relative transition-all duration-300">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-4">
           <div>
-            <h2 className="text-2xl font-black text-white flex items-center gap-2">
-              <Target className="text-blue-400" size={24} /> Progresso Global
-            </h2>
-            <p className="text-gray-400 text-sm mt-1">Faturamento consolidado de todos os clientes</p>
+            <div>
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-black text-white flex items-center gap-2">
+                  <Target className="text-blue-400" size={24} /> Progresso Global
+                </h2>
+                {canEdit && (
+                  <button 
+                    onClick={openGoalsModal} 
+                    className="p-1.5 rounded-lg transition-colors bg-white/5 text-gray-400 hover:text-white hover:bg-white/10" 
+                    title="Abrir Central de Metas (MoM)"
+                  >
+                    <Settings size={18} />
+                  </button>
+                )}
+              </div>
+              <p className="text-gray-400 text-sm mt-1">Faturamento consolidado de todos os clientes</p>
+            </div>
           </div>
           <div className="flex flex-wrap gap-4 md:gap-8 bg-black/20 p-3 rounded-2xl border border-white/5">
             <div className="flex flex-col">
@@ -102,7 +115,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
             ></div>
           </div>
 
-          {/* Marcador da Meta Exata (em 80%) */}
           <div className="absolute top-0 bottom-0 w-0.5 bg-gradient-to-b from-white to-gray-300 shadow-[0_0_15px_rgba(255,255,255,1)] z-10" style={{ left: '80%' }}>
             <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-white text-black text-[11px] font-black px-2 py-0.5 rounded shadow-lg flex items-center gap-1">
               META
@@ -170,7 +182,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                 <p className="text-base font-bold text-amber-300">{formatCurrency(dashboardData.totalGlobalAds)}</p>
               </div>
               <div>
-                <p className="text-[11px] text-gray-500 uppercase font-bold tracking-wider mb-1">Custo/Ped (CPA)</p>
+                <p className="text-[11px] text-gray-500 uppercase font-bold tracking-wider mb-1">Custo por Conversão</p>
                 <p className="text-base font-bold text-gray-300">{formatCurrency(avgAdsCostPerOrder)}</p>
               </div>
             </div>

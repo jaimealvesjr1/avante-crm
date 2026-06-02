@@ -29,6 +29,7 @@ import ExportModal from './components/ExportModal';
 import FinanceDashboard from './components/FinanceDashboard';
 import { normalizeMonthYear } from './utils/dateUtils';
 import { formatCurrency, formatNumber } from './utils/financeUtils';
+import GoalsSettingsModal from './components/GoalsSettingsModal';
 
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
@@ -41,7 +42,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.6.0';
+  const CURRENT_VERSION = '2.6.5';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -61,6 +62,7 @@ export default function App() {
   const [realUserData, setRealUserData] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
   
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
   const [activeView, setActiveView] = useState(() => {
@@ -72,6 +74,8 @@ export default function App() {
   }, [activeView]);
 
   const [globalGrowth, setGlobalGrowth] = useState(10);
+  const [clientGrowthMap, setClientGrowthMap] = useState({});
+  const [marketplaceGrowthMap, setMarketplaceGrowthMap] = useState({});
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [currentDay, setCurrentDay] = useState(new Date().getDate());
   
@@ -220,6 +224,8 @@ export default function App() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if(data.globalGrowth !== undefined) setGlobalGrowth(data.globalGrowth);
+        if(data.clientGrowthMap !== undefined) setClientGrowthMap(data.clientGrowthMap);
+        if(data.marketplaceGrowthMap !== undefined) setMarketplaceGrowthMap(data.marketplaceGrowthMap);
         
         if (data.versao && data.versao !== CURRENT_VERSION) {
           const isPWA = window.matchMedia('(display-mode: standalone)').matches;
@@ -308,13 +314,24 @@ export default function App() {
     cleanOldTasks();
   }, [stores.length, canEdit]);
 
-  const updateGlobalSettings = async (field, value) => {
+  const updateGlobalSettings = async (field, value, key = null) => {
     if (!canEdit) return;
-    const newVal = Number(value);
+    const newVal = value !== '' && value !== null ? Number(value) : null;
+    
     if (field === 'day') setCurrentDay(newVal);
-    else {
+    else if (field === 'growth') {
       setGlobalGrowth(newVal);
       await setDoc(doc(db, "settings", "global"), { globalGrowth: newVal }, { merge: true });
+    } else if (field === 'clientGrowth') {
+      const newMap = { ...clientGrowthMap };
+      if (newVal === null) delete newMap[key]; else newMap[key] = newVal;
+      setClientGrowthMap(newMap);
+      await setDoc(doc(db, "settings", "global"), { clientGrowthMap: newMap }, { merge: true });
+    } else if (field === 'marketplaceGrowth') {
+      const newMap = { ...marketplaceGrowthMap };
+      if (newVal === null) delete newMap[key]; else newMap[key] = newVal;
+      setMarketplaceGrowthMap(newMap);
+      await setDoc(doc(db, "settings", "global"), { marketplaceGrowthMap: newMap }, { merge: true });
     }
   };
 
@@ -994,7 +1011,7 @@ export default function App() {
           
           docPdf.text(`Investimento Total em ADS: ${formatMoney(totalAds)}`, 110, finalY + 18);
           docPdf.text(`ROAS Médio Consolidado: ${formatRoas(totalRoas)}`, 110, finalY + 26);
-          docPdf.text(`CPA Médio (Custo por Unidade): ${formatMoney(totalUnits > 0 ? totalAds / totalUnits : 0)}`, 110, finalY + 34);
+          docPdf.text(`Custo por Conversão: ${formatMoney(totalUnits > 0 ? totalAds / totalUnits : 0)}`, 110, finalY + 34);
         });
         
         docPdf.save(`B2X_Relatorio_${monthInput.replace('/', '-')}.pdf`); // Mudei o nome do arquivo aqui também de Avante para B2X para combinar com a nova marca
@@ -1134,12 +1151,32 @@ export default function App() {
 
   const toggleClientExpansion = (c) => setExpandedClients(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c]);
 
-  const startEditingStore = (store) => { setEditingStoreId(store.id); setStoreEditData({ store: store.store, marketplace: store.marketplace || '', gmvBase: store.gmvBase }); };
+  const startEditingStore = (store) => { 
+    setEditingStoreId(store.id); 
+    setStoreEditData({ 
+      store: store.store, 
+      marketplace: store.marketplace || '', 
+      customGrowth: store.customGrowth !== undefined ? store.customGrowth : '' 
+    }); 
+  };
   
   const saveStoreEdit = (id) => {
     const target = stores.find(s => s.id === id);
     if(target) {
-      updateStoreInCloud({...target, store: storeEditData.store.toUpperCase(), marketplace: (storeEditData.marketplace || '').toUpperCase(), gmvBase: Number(storeEditData.gmvBase)});
+      const updatedData = {
+        ...target, 
+        store: storeEditData.store.toUpperCase(), 
+        marketplace: (storeEditData.marketplace || '').toUpperCase()
+      };
+      
+      // Remove a meta personalizada se o campo ficar vazio (volta para Cliente/Canal/Global)
+      if (storeEditData.customGrowth === '' || storeEditData.customGrowth === null || storeEditData.customGrowth === undefined) {
+        updatedData.customGrowth = deleteField();
+      } else {
+        updatedData.customGrowth = Number(storeEditData.customGrowth);
+      }
+      
+      updateStoreInCloud(updatedData);
       toast.success('Loja atualizada com sucesso!');
     }
     setEditingStoreId(null);
@@ -1192,11 +1229,25 @@ export default function App() {
     const mesPassadoExato = `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`;
 
     const processedStores = stores.map(store => {
-      const growthRate = store.customGrowth !== undefined ? Number(store.customGrowth) : globalGrowth;
+      const customG = store.customGrowth;
+      const clientG = clientGrowthMap[store.client];
+      const mktG = store.marketplace ? marketplaceGrowthMap[store.marketplace.toUpperCase()] : undefined;
+      
+      let growthRate = globalGrowth;
+      let appliedGrowthType = 'Global';
+
+      if (customG !== undefined && customG !== null && customG !== '') {
+        growthRate = Number(customG); appliedGrowthType = 'Loja';
+      } else if (clientG !== undefined && clientG !== null && clientG !== '') {
+        growthRate = Number(clientG); appliedGrowthType = 'Cliente';
+      } else if (mktG !== undefined && mktG !== null && mktG !== '') {
+        growthRate = Number(mktG); appliedGrowthType = 'Canal';
+      }
+
       const gmvTarget = (Number(store.gmvBase) || 0) * (1 + (growthRate / 100));
       const projectedGmv = currentDay > 0 ? ((Number(store.currentRevenue) || 0) / currentDay) * daysInMonth : 0;
       const percentReached = gmvTarget > 0 ? (projectedGmv / gmvTarget) * 100 : 0;
-      return { ...store, gmvTarget, projectedGmv, percentReached, status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger' };
+      return { ...store, gmvTarget, projectedGmv, percentReached, growthRate, appliedGrowthType, status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger' };
     });
 
     const filteredStores = processedStores.filter(store => {
@@ -1317,7 +1368,7 @@ export default function App() {
       rankingMarketplaces: Object.values(mktPerformance).sort((a, b) => b.atual - a.atual),
       historicalChartData
     };
-  }, [stores, globalGrowth, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, respFilter, myName]);
+  }, [stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, respFilter, myName]);
 
   const pieData = useMemo(() => dashboardData.groupedClients.map(g => ({ name: g.client, value: g.totalProjectedGmv })).filter(g => g.value > 0), [dashboardData]);
   const roasData = useMemo(() => dashboardData.groupedClients.filter(g => g.totalAds > 0).map(g => ({ name: g.client, roas: Number(g.roas) })).sort((a, b) => b.roas - a.roas), [dashboardData]);
@@ -1563,6 +1614,8 @@ export default function App() {
             COLORS={COLORS} 
             currentDay={currentDay} 
             daysInMonth={daysInMonth} 
+            canEdit={canEdit}
+            openGoalsModal={() => setIsGoalsModalOpen(true)}
           />
         )}
         
@@ -1592,9 +1645,9 @@ export default function App() {
             formatNumber={safeFormatNumber}
             showValues={showValues} 
             currentDay={currentDay} 
-            globalGrowth={globalGrowth} 
+            clientGrowthMap={clientGrowthMap}
             updateGlobalSettings={updateGlobalSettings}
-            addNewStoreToClient={addNewStoreToClient} 
+            addNewStoreToClient={addNewStoreToClient}
             deleteStore={deleteStore} 
             deleteClient={deleteClient}
             startEditingStore={startEditingStore} 
@@ -1747,7 +1800,7 @@ export default function App() {
           clientGroup={activeClientGroup} 
           onClose={() => setClientFileOpen(false)}
           openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
-          formatCurrency={formatCurrency}
+          formatCurrency={safeFormatCurrency}
           stores={stores}
           setStores={setStores}
           updateStoreInCloud={updateStoreInCloud}
@@ -1761,6 +1814,8 @@ export default function App() {
           handleSaveIndividualEntry={handleSaveIndividualEntry}
           handleSaveRetroactiveMonth={handleSaveRetroactiveMonth}
           handleDeleteRetroactiveMonth={handleDeleteRetroactiveMonth}
+          clientGrowthMap={clientGrowthMap}
+          updateGlobalSettings={updateGlobalSettings}
           />
       )}
 
@@ -1770,6 +1825,17 @@ export default function App() {
         onExport={handleCustomExport}
         filterCount={dashboardData.flatFilteredStores.length}
         allowJson={isManager} 
+      />
+
+      <GoalsSettingsModal 
+        isOpen={isGoalsModalOpen}
+        onClose={() => setIsGoalsModalOpen(false)}
+        stores={dashboardData.flatFilteredStores}
+        globalGrowth={globalGrowth}
+        clientGrowthMap={clientGrowthMap}
+        marketplaceGrowthMap={marketplaceGrowthMap}
+        formatCurrency={formatCurrency}
+        db={db}
       />
     </div>
   );

@@ -98,10 +98,10 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const folhaCalculada = useMemo(() => {
     if (!teamMembers) return [];
     return teamMembers.filter(m => m.paymentConfig).map(m => {
-        const calculo = calcularFolhaMembro(m, totalReceitaAgencia, metricasFolha.custoOperacional, bonusManuais[m.email]);
+        const calculo = calcularFolhaMembro(m, metricasFolha.faturamentoBruto, metricasFolha.custoOperacional, bonusManuais[m.email]);
         return { ...m, calculo };
     });
-  }, [teamMembers, metricasFolha, bonusManuais, totalReceitaAgencia]);
+  }, [teamMembers, metricasFolha, bonusManuais]);
 
   const handleLancarPagamentoEquipe = async (membro) => {
     if (!canEdit) return toast.error("Sem permissão.");
@@ -121,7 +121,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         nome: membro.nomeCompleto,
         funcao: getVisualRole(membro.role) || 'Colaborador',
         ref: `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`,
-        fat: totalReceitaAgencia,
+        fat: metricasFolha.faturamentoBruto,
         meta: membro.paymentConfig.gatilho || 0,
         base: membro.calculo.fixo,
         comissao: membro.calculo.comissao,

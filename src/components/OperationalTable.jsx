@@ -1,12 +1,13 @@
 import React from 'react';
-import { Plus, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, MessageCircle, ShoppingBag, Edit2, Save, Trash2, X } from 'lucide-react';
+import { Plus, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, MessageCircle, ShoppingBag, Edit2, Save, Trash2, X, TrendingUp } from 'lucide-react';
 
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
 
 export default function OperationalTable({
   canEdit, dashboardData, expandedClients, toggleClientExpansion, 
-  addNewStoreToClient, openHistoryModal, openClientFile, globalGrowth, formatCurrency, 
+  addNewStoreToClient, openHistoryModal, openClientFile, formatCurrency, 
   showValues, generateClientWhatsAppLink, generateStoreWhatsAppLink,
+  clientGrowthMap, updateGlobalSettings,
   startEditingStore, editingStoreId, setEditingStoreId, storeEditData, setStoreEditData, saveStoreEdit, deleteStore
 }) {
 
@@ -128,9 +129,7 @@ export default function OperationalTable({
                       <div className={`absolute top-0 left-0 w-full h-1.5 ${row.status === 'success' ? 'bg-emerald-500' : row.status === 'warning' ? 'bg-amber-500' : 'bg-red-500'}`}></div>
 
                       {isEditing ? (
-                        // ==========================================
                         // MODO DE EDIÇÃO INLINE
-                        // ==========================================
                         <div className="flex flex-col h-full justify-between animate-in fade-in">
                           <div>
                             <div className="flex items-center gap-2 mb-4">
@@ -162,12 +161,13 @@ export default function OperationalTable({
                                 </select>
                               </div>
                               <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-gray-500 uppercase">GMV Base (Ponto de Partida)</label>
+                                <label className="text-[10px] font-bold text-amber-500 uppercase">Crescimento Personalizado (%)</label>
                                 <input 
                                   type="number" 
-                                  value={storeEditData.gmvBase !== undefined ? storeEditData.gmvBase : ''} 
-                                  onChange={e => setStoreEditData({...storeEditData, gmvBase: e.target.value})} 
-                                  className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2.5 outline-none focus:border-indigo-500 text-sm font-bold" 
+                                  placeholder="Ex: 15 (Vazio = Usa Global)"
+                                  value={storeEditData.customGrowth !== undefined && storeEditData.customGrowth !== null ? storeEditData.customGrowth : ''} 
+                                  onChange={e => setStoreEditData({...storeEditData, customGrowth: e.target.value})} 
+                                  className="w-full bg-black/40 border border-amber-500/30 text-amber-400 rounded-lg p-2.5 outline-none focus:border-amber-500 text-sm font-bold placeholder:text-gray-600" 
                                 />
                               </div>
                             </div>
@@ -198,9 +198,7 @@ export default function OperationalTable({
                           </div>
                         </div>
                       ) : (
-                        // ==========================================
                         // MODO DE VISUALIZAÇÃO (Padrão)
-                        // ==========================================
                         <>
                           {/* Header */}
                           <div className="flex justify-between items-start mb-4 mt-1">
@@ -241,7 +239,10 @@ export default function OperationalTable({
                               </div>
                               <div className="flex justify-between mt-2.5">
                                   <span className="text-xs text-gray-400">Atual: <strong className="text-white">{formatCurrency(row.currentRevenue)}</strong></span>
-                                  <span className="text-xs text-gray-400">Meta: <strong className="text-gray-300">{formatCurrency(row.gmvTarget)}</strong></span>
+                                  <span className="text-xs text-gray-400 flex flex-col items-end">
+                                    <span>Meta: <strong className="text-gray-300">{formatCurrency(row.gmvTarget)}</strong></span>
+                                    <span className="text-[9px] text-indigo-400/70 mt-0.5" title={`Regra aplicada: ${row.appliedGrowthType}`}>({row.growthRate}% - Regra: {row.appliedGrowthType})</span>
+                                  </span>
                               </div>
                           </div>
 
