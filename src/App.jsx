@@ -43,7 +43,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.7.0';
+  const CURRENT_VERSION = '2.7.1';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -1499,7 +1499,36 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0B0F19] font-sans text-gray-200 flex flex-col">
-      <Toaster position="top-right" />
+      <Toaster 
+        position="bottom-right"
+        toastOptions={{
+          className: '',
+          duration: 4000,
+          style: {
+            background: 'rgba(11, 15, 25, 0.95)', // Fundo escuro do painel
+            backdropFilter: 'blur(10px)', // Efeito de vidro
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: '#fff',
+            padding: '16px 20px',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            borderRadius: '16px',
+            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
+            maxWidth: '400px',
+          },
+          success: {
+            iconTheme: { primary: '#10B981', secondary: '#000' },
+            style: { border: '1px solid rgba(16, 185, 129, 0.3)', boxShadow: '0 10px 40px rgba(16, 185, 129, 0.1)' }
+          },
+          error: {
+            iconTheme: { primary: '#EF4444', secondary: '#fff' },
+            style: { border: '1px solid rgba(239, 68, 68, 0.3)', boxShadow: '0 10px 40px rgba(239, 68, 68, 0.1)' }
+          },
+          loading: {
+            style: { border: '1px solid rgba(99, 102, 241, 0.3)' }
+          }
+        }} 
+      />
       
       {isSimulating && (
         <div className="bg-amber-500 text-black py-2 px-4 flex items-center justify-center gap-4 z-[999] relative font-bold shadow-[0_4px_10px_rgba(245,158,11,0.3)]">
@@ -1520,9 +1549,11 @@ export default function App() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
               <img src="/logo.jpg" alt="Avante HUB" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
-              <div className="hidden sm:flex items-center gap-2">
-                <span className="text-xl font-bold text-white tracking-tight">Avante<span className="text-yellow-500">HUB</span></span>
-                <span className="text-[10px] bg-white/5 border border-white/10 text-gray-400 px-2 py-0.5 rounded-full font-bold tracking-widest shadow-inner">
+              <div className="flex items-center gap-3">
+                <span className="text-xl font-black text-white tracking-tighter">
+                  AVANTE<span className="text-indigo-500">HUB</span>
+                </span>
+                <span className="text-[10px] bg-white/5 border border-white/10 text-gray-400 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
                   v{CURRENT_VERSION}
                 </span>
               </div>
@@ -1827,7 +1858,21 @@ export default function App() {
             broadcastTaskFocus={broadcastTaskFocus}
           />
         )}
+        <br></br>
       </main>
+
+      <footer className="w-full border-t border-white/5 bg-black/40 py-6 mt-auto shrink-0 z-20 relative">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 2xl:px-12 flex flex-col items-center justify-center">          
+          <div className="flex flex-col items-center text-center">
+            <p className="text-xs text-gray-500 font-medium">
+              &copy; {new Date().getFullYear()} Ascentia Solutions. Todos os direitos reservados.
+            </p>
+            <p className="text-[10px] text-gray-600 font-bold uppercase tracking-wider mt-1">
+              Desenvolvido para Alta Performance.
+            </p>
+          </div>
+        </div>
+      </footer>
 
       {passwordModalOpen && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
