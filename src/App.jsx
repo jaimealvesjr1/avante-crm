@@ -43,7 +43,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.7.1';
+  const CURRENT_VERSION = '2.7.2';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -1862,13 +1862,24 @@ export default function App() {
       </main>
 
       <footer className="w-full border-t border-white/5 bg-black/40 py-6 mt-auto shrink-0 z-20 relative">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 2xl:px-12 flex flex-col items-center justify-center">          
-          <div className="flex flex-col items-center text-center">
-            <p className="text-xs text-gray-500 font-medium">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 2xl:px-12 flex flex-col md:flex-row items-center justify-between gap-4">
+          
+          {/* Lado Esquerdo: Logo completo da Ascentia */}
+          <div className="flex items-center hover:cursor-pointer group">
+            <img 
+              src="/ascentia-icon.png" 
+              alt="Ascentia Logo" 
+              className="h-5 md:h-6 w-auto opacity-50 group-hover:opacity-100 grayscale group-hover:grayscale-0 transition-all duration-500 object-contain"
+            />
+          </div>
+          
+          {/* Lado Direito: Textos do rodapé */}
+          <div className="flex flex-col items-center md:items-end text-center md:text-right">
+            <p className="text-[11px] text-gray-500 font-medium">
               &copy; {new Date().getFullYear()} Ascentia Solutions. Todos os direitos reservados.
             </p>
             <p className="text-[10px] text-gray-600 font-bold uppercase tracking-wider mt-1">
-              Desenvolvido para Alta Performance.
+              Desenvolvido para Alta Performance
             </p>
           </div>
         </div>

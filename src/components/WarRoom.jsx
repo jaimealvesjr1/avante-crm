@@ -289,7 +289,7 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
                 </div>
                 <div className="relative pt-6 pb-2">
                     <div className="h-6 bg-black/60 rounded-full border border-white/10 shadow-inner overflow-hidden relative">
-                        <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-orange-600 to-amber-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(245,158,11,0.4)] rounded-r-full" style={{ width: `${currentWidth}%` }}></div>
+                        <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-orange-600 to-amber-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(245,158,11,0.4)]" style={{ width: `${currentWidth}%` }}></div>
                     </div>
                     <div className="absolute top-0 bottom-0 w-0.5 bg-gradient-to-b from-white to-gray-300 shadow-[0_0_15px_rgba(255,255,255,1)] z-10" style={{ left: '80%' }}>
                         <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-white text-black text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg">META</div>

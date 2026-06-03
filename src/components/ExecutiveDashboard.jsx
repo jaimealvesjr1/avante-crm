@@ -110,7 +110,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
 
             {/* Barra Atual (Hoje) */}
             <div 
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(56,189,248,0.4)] rounded-r-full"
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(56,189,248,0.4)]"
               style={{ width: `${currentWidth}%` }}
             ></div>
           </div>

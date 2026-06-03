@@ -28,13 +28,14 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
   const [despesaEmEdicao, setDespesaEmEdicao] = useState(null);
   const [despesaForm, setDespesaForm] = useState({ 
-    descricao: '', valor: '', categoria: 'Folha de Pagamento', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pago'
+    descricao: '', valor: '', desconto: '', categoria: 'Folha de Pagamento', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
   });
 
   const [mesFolha, setMesFolha] = useState('Atual');
   const [metricasFolha, setMetricasFolha] = useState({
     faturamentoBruto: dashboardData.totalAgencyRevenueActual || 0,
-    custoOperacional: 0
+    custoOperacional: 0,
+    metaAgenciaHistorica: dashboardData.agencyTarget || 0
   });
   const [bonusManuais, setBonusManuais] = useState({});
   const [demonstrativoData, setDemonstrativoData] = useState(null);
@@ -62,13 +63,17 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     if (!dashboardData?.historicalChartData) return;
     const target = dashboardData.historicalChartData.find(h => h.month === mesFolha);
     if (target) {
-      setMetricasFolha(prev => ({ ...prev, faturamentoBruto: target.ReceitaAgencia || 0 }));
+      setMetricasFolha(prev => ({ 
+        ...prev, 
+        faturamentoBruto: target.ReceitaAgencia || 0,
+        metaAgenciaHistorica: mesFolha === 'Atual' ? dashboardData.agencyTarget : (prev.metaAgenciaHistorica || 0)
+      }));
     }
   }, [mesFolha, dashboardData]);
 
   const projecaoReceitaAgencia = dashboardData.totalAgencyRevenue || 0;
-  const totalReceitaAgencia = dashboardData.totalAgencyRevenueActual || 0;
-  const metaAgencia = dashboardData.agencyTarget || 0;
+  const totalReceitaAgencia = mesFolha === 'Atual' ? dashboardData.totalAgencyRevenueActual : metricasFolha.faturamentoBruto;
+  const metaAgencia = mesFolha === 'Atual' ? dashboardData.agencyTarget : metricasFolha.metaAgenciaHistorica;
 
   // Filtra as listas baseando-se na busca global (searchTerm vindo do App.jsx)
   const busca = (searchTerm || '').toLowerCase();
@@ -81,14 +86,20 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     !busca || d.descricao.toLowerCase().includes(busca) || d.categoria.toLowerCase().includes(busca)
   );
 
-  // Totais (Gerais e Filtrados)
   const totalPendenteGeral = recebimentos.filter(r => r.status === 'Pendente').reduce((acc, curr) => acc + curr.valorAgencia, 0);
 
   const pendenteFiltrado = recebimentosFiltrados.filter(r => r.status === 'Pendente').reduce((acc, curr) => acc + curr.valorAgencia, 0);
   const pagoFiltrado = recebimentosFiltrados.filter(r => r.status === 'Pago').reduce((acc, curr) => acc + curr.valorAgencia, 0);
   
-  const despesasPendentesFiltradas = despesasFiltradas.filter(d => d.status === 'Pendente').reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasPagasFiltradas = despesasFiltradas.filter(d => d.status === 'Pago').reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasPendentesFiltradas = despesasFiltradas.reduce((acc, d) => {
+      if (d.desembolsos && d.desembolsos.length > 0) return acc + d.desembolsos.filter(x => x.status === 'Pendente').reduce((sum, x) => sum + x.valor, 0);
+      return acc + (d.status === 'Pendente' ? d.valor : 0);
+  }, 0);
+  
+  const despesasPagasFiltradas = despesasFiltradas.reduce((acc, d) => {
+      if (d.desembolsos && d.desembolsos.length > 0) return acc + d.desembolsos.filter(x => x.status === 'Pago').reduce((sum, x) => sum + x.valor, 0);
+      return acc + (d.status === 'Pago' ? d.valor : 0);
+  }, 0);
 
   const dataAtual = new Date();
   dataAtual.setMonth(dataAtual.getMonth() - 1);
@@ -105,33 +116,50 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
   const handleLancarPagamentoEquipe = async (membro) => {
     if (!canEdit) return toast.error("Sem permissão.");
-    try {
-      await addDoc(collection(db, "financeiro_despesas"), {
-        descricao: `Repasse: ${membro.nomeCompleto} (${membro.paymentConfig.frequencia})`,
-        valor: membro.calculo.total,
-        categoria: 'Folha de Pagamento',
-        dataVencimento: new Date().toISOString().split('T')[0],
-        status: 'Pendente',
-        criadoEm: new Date().toISOString()
-      });
-      toast.success(`Pagamento lançado no Contas a Pagar!`);
+    
+    const config = membro.paymentConfig;
+    const hoje = new Date();
+    const lancamentos = [];
+    
+    // Gerar a explicação de como a comissão foi calculada
+    const regraTexto = `${config.percentual}% ${config.gatilho > 0 ? `acima de ${formatCurrency(config.gatilho)}` : `s/ ${config.baseCalculo === 'LL' ? 'Lucro Líq.' : 'Fat. Bruto'}`}`;
 
-      // Gera os dados para abrir o Modal do Demonstrativo
-      setDemonstrativoData({
-        nome: membro.nomeCompleto,
-        funcao: getVisualRole(membro.role) || 'Colaborador',
-        ref: `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`,
-        fat: metricasFolha.faturamentoBruto,
-        meta: membro.paymentConfig.gatilho || 0,
-        base: membro.calculo.fixo,
-        comissao: membro.calculo.comissao,
-        bonus: membro.calculo.bonus,
-        total: membro.calculo.total,
-        p1V: membro.calculo.fixo,
-        p1D: membro.paymentConfig.diaFixo || 'Dia 05',
-        p2V: membro.calculo.comissao + membro.calculo.bonus,
-        p2D: membro.paymentConfig.diaVariavel || 'Dia 20'
-      });
+    // Objeto do holerite que será salvo no banco para consulta futura
+    const dadosHolerite = {
+      nome: membro.nomeCompleto,
+      funcao: getVisualRole(membro.role) || 'Colaborador',
+      ref: `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`,
+      fat: metricasFolha.faturamentoBruto,
+      meta: metricasFolha.metaAgenciaHistorica,
+      base: membro.calculo.fixo,
+      comissao: membro.calculo.comissao,
+      regra: regraTexto, // <-- Regra explícita salva aqui
+      bonus: membro.calculo.bonus,
+      total: membro.calculo.total,
+      p1V: membro.calculo.fixo,
+      p1D: config.diaFixo || 'Dia 05',
+      p2V: membro.calculo.comissao + membro.calculo.bonus,
+      p2D: config.diaVariavel || 'Dia 20'
+    };
+
+    if (config.frequencia === 'fracionado') {
+        lancamentos.push({ descricao: `Fixo: ${membro.nomeCompleto}`, valor: config.salarioFixo, dataVencimento: hoje.toISOString().split('T')[0] });
+        lancamentos.push({ descricao: `Comissão: ${membro.nomeCompleto}`, valor: membro.calculo.comissao + membro.calculo.bonus, dataVencimento: hoje.toISOString().split('T')[0] });
+    } else {
+        lancamentos.push({ descricao: `Salário: ${membro.nomeCompleto}`, valor: membro.calculo.total, dataVencimento: hoje.toISOString().split('T')[0] });
+    }
+
+    try {
+      for (const item of lancamentos) {
+          await addDoc(collection(db, "financeiro_despesas"), {
+            ...item, categoria: 'Folha de Pagamento', status: 'Pendente', 
+            holerite: dadosHolerite, // <-- Salvamos o holerite na despesa!
+            criadoEm: new Date().toISOString()
+          });
+      }
+      toast.success(`Pagamento de ${membro.nome} lançado com sucesso!`);
+      // Mostra o demonstrativo na hora para conferência
+      setDemonstrativoData(dadosHolerite);
     } catch (error) { toast.error("Erro ao lançar pagamento."); }
   };
 
@@ -161,17 +189,28 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       relatorio[mes].saldo += r.valorAgencia;
     });
 
-    despesas.filter(d => d.status === 'Pago' && d.dataPagamentoRealizado).forEach(d => {
-      const mes = getMesAno(d.dataPagamentoRealizado);
-      const semana = getSemanaDoMes(d.dataPagamentoRealizado);
-      
-      if (!relatorio[mes]) relatorio[mes] = { totalEntradas: 0, totalSaidas: 0, saldo: 0, semanas: {} };
-      if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { entradas: 0, saidas: 0, saldo: 0 };
-
-      relatorio[mes].semanas[semana].saidas += d.valor;
-      relatorio[mes].semanas[semana].saldo -= d.valor;
-      relatorio[mes].totalSaidas += d.valor;
-      relatorio[mes].saldo -= d.valor;
+    despesas.forEach(d => {
+      if (d.desembolsos && d.desembolsos.length > 0) {
+        d.desembolsos.filter(x => x.status === 'Pago' && x.dataPagamentoRealizado).forEach(x => {
+          const mes = getMesAno(x.dataPagamentoRealizado);
+          const semana = getSemanaDoMes(x.dataPagamentoRealizado);
+          if (!relatorio[mes]) relatorio[mes] = { totalEntradas: 0, totalSaidas: 0, saldo: 0, semanas: {} };
+          if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { entradas: 0, saidas: 0, saldo: 0 };
+          relatorio[mes].semanas[semana].saidas += x.valor;
+          relatorio[mes].semanas[semana].saldo -= x.valor;
+          relatorio[mes].totalSaidas += x.valor;
+          relatorio[mes].saldo -= x.valor;
+        });
+      } else if (d.status === 'Pago' && d.dataPagamentoRealizado) {
+        const mes = getMesAno(d.dataPagamentoRealizado);
+        const semana = getSemanaDoMes(d.dataPagamentoRealizado);
+        if (!relatorio[mes]) relatorio[mes] = { totalEntradas: 0, totalSaidas: 0, saldo: 0, semanas: {} };
+        if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { entradas: 0, saidas: 0, saldo: 0 };
+        relatorio[mes].semanas[semana].saidas += d.valor;
+        relatorio[mes].semanas[semana].saldo -= d.valor;
+        relatorio[mes].totalSaidas += d.valor;
+        relatorio[mes].saldo -= d.valor;
+      }
     });
 
     return relatorio;
@@ -252,40 +291,91 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const handleAdicionarDespesa = async (e) => {
     e.preventDefault();
     if (!canEdit) return toast.error("Sem permissão.");
-    const numValor = Number(String(despesaForm.valor).replace(',', '.'));
-    if (!despesaForm.descricao.trim() || isNaN(numValor) || numValor <= 0) return toast.error("Preencha descrição e valor válidos.");
+    
+    const numValorBruto = Number(String(despesaForm.valor).replace(',', '.')) || 0;
+    const numDesconto = Number(String(despesaForm.desconto).replace(',', '.')) || 0;
+    const numValorLiquido = numValorBruto - numDesconto;
+
+    if (!despesaForm.descricao.trim() || numValorBruto <= 0) return toast.error("Preencha descrição e valor bruto válidos.");
+
+    const parsedDesembolsos = (despesaForm.desembolsos || []).map(d => ({
+      ...d, valor: Number(String(d.valor).replace(',', '.')) || 0
+    }));
+
+    if (parsedDesembolsos.length > 0) {
+      const sum = parsedDesembolsos.reduce((acc, curr) => acc + curr.valor, 0);
+      if (Math.abs(sum - numValorLiquido) > 0.01) { // margem de erro de 1 centavo
+        return toast.error(`A soma dos desembolsos deve bater o valor líquido final: ${formatCurrency(numValorLiquido)}`);
+      }
+    }
+
+    const allPaid = parsedDesembolsos.length > 0 && parsedDesembolsos.every(d => d.status === 'Pago');
+    const finalStatus = parsedDesembolsos.length > 0 ? (allPaid ? 'Pago' : (parsedDesembolsos.some(d => d.status === 'Pago') ? 'Parcial' : 'Pendente')) : despesaForm.status;
 
     try {
       if (despesaEmEdicao) {
         await updateDoc(doc(db, "financeiro_despesas", despesaEmEdicao), {
-          descricao: despesaForm.descricao.trim(), valor: numValor, categoria: despesaForm.categoria,
-          dataVencimento: despesaForm.dataVencimento, status: despesaForm.status
+          descricao: despesaForm.descricao.trim(), 
+          valorBruto: numValorBruto, desconto: numDesconto, valor: numValorLiquido, // <-- Salva os 3 valores
+          categoria: despesaForm.categoria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos
         });
         toast.success("Despesa atualizada!");
         setDespesaEmEdicao(null);
       } else {
         await addDoc(collection(db, "financeiro_despesas"), {
-          descricao: despesaForm.descricao.trim(), valor: numValor, categoria: despesaForm.categoria,
-          dataVencimento: despesaForm.dataVencimento, status: despesaForm.status,
-          dataPagamentoRealizado: despesaForm.status === 'Pago' ? new Date().toISOString() : null,
+          descricao: despesaForm.descricao.trim(), 
+          valorBruto: numValorBruto, desconto: numDesconto, valor: numValorLiquido, 
+          categoria: despesaForm.categoria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
+          dataPagamentoRealizado: finalStatus === 'Pago' && parsedDesembolsos.length === 0 ? new Date().toISOString() : null,
           criadoEm: new Date().toISOString()
         });
         toast.success("Despesa registada!");
       }
-      setDespesaForm({ descricao: '', valor: '', categoria: 'Ferramentas/Software', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente' });
+      setDespesaForm({ descricao: '', valor: '', desconto: '', categoria: 'Folha de Pagamento', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
     } catch (error) { toast.error("Erro ao salvar despesa."); }
   };
 
   const iniciarEdicaoDespesa = (d) => {
+    const formElement = document.getElementById('form-despesa');
+    if (formElement) formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setDespesaEmEdicao(d.id);
-    setDespesaForm({ descricao: d.descricao, valor: d.valor, categoria: d.categoria, dataVencimento: d.dataVencimento, status: d.status });
+    setDespesaForm({ 
+      descricao: d.descricao, 
+      valor: d.valorBruto || d.valor,
+      desconto: d.desconto || '', 
+      categoria: d.categoria, dataVencimento: d.dataVencimento, status: d.status,
+      desembolsos: d.desembolsos || []
+    });
+  };
+
+  const marcarDesembolsoComoPago = async (idDespesa, idDesembolso) => {
+    if (!canEdit) return toast.error("Sem permissão.");
+    try {
+      const despesa = despesas.find(d => d.id === idDespesa);
+      if (!despesa) return;
+
+      const novosDesembolsos = despesa.desembolsos.map(d => 
+        d.id === idDesembolso ? { ...d, status: 'Pago', dataPagamentoRealizado: new Date().toISOString() } : d
+      );
+
+      const todosPagos = novosDesembolsos.every(d => d.status === 'Pago');
+      const algumPago = novosDesembolsos.some(d => d.status === 'Pago');
+      const novoStatus = todosPagos ? 'Pago' : (algumPago ? 'Parcial' : 'Pendente');
+      
+      await updateDoc(doc(db, "financeiro_despesas", idDespesa), {
+        desembolsos: novosDesembolsos,
+        status: novoStatus,
+        dataPagamentoRealizado: todosPagos ? new Date().toISOString() : despesa.dataPagamentoRealizado
+      });
+      toast.success("Parcela/Desembolso pago!");
+    } catch (error) { toast.error("Erro ao registrar desembolso."); }
   };
 
   const marcarDespesaComoPaga = async (idDespesa) => {
     if (!canEdit) return toast.error("Sem permissão.");
     try {
       await updateDoc(doc(db, "financeiro_despesas", idDespesa), { status: 'Pago', dataPagamentoRealizado: new Date().toISOString() });
-      toast.success("Despesa paga!");
+      toast.success("Despesa total paga!");
     } catch (error) { toast.error("Erro ao registrar."); }
   };
 
@@ -345,7 +435,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
             {/* Hoje */}
             <div 
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(16,185,129,0.4)] rounded-r-full"
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(16,185,129,0.4)] "
               style={{ width: `${currentWidth}%` }}
             ></div>
           </div>
@@ -620,25 +710,55 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {despesasFiltradas.map(d => {
-                      const isAtrasado = d.status === 'Pendente' && new Date(d.dataVencimento) < new Date();
+                      const hasDesembolsos = d.desembolsos && d.desembolsos.length > 0;
+                      const isAtrasado = !hasDesembolsos && d.status === 'Pendente' && new Date(d.dataVencimento) < new Date();
+                      
                       return (
-                        <tr key={d.id} className="hover:bg-white/5 transition-colors">
-                          <td className={`p-4 pl-6 text-sm font-bold ${isAtrasado ? 'text-red-400' : 'text-gray-300'}`}>
-                            {new Date(d.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')}
-                            {isAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
-                          </td>
-                          <td className="p-4 font-bold text-white">{d.descricao}</td>
-                          <td className="p-4"><span className="bg-gray-800 text-gray-300 text-[10px] px-2 py-1 rounded-md border border-gray-700">{d.categoria}</span></td>
-                          <td className="p-4 font-bold text-rose-400 text-right">{formatCurrency(d.valor)}</td>
-                          <td className="p-4 text-center">
-                            {d.status === 'Pago' ? <span className="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold border border-green-500/20">Pago</span> : <span className="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full text-[10px] font-bold border border-amber-500/20">Pendente</span>}
-                          </td>
-                          <td className="p-4 pr-6 text-center flex items-center justify-center gap-2">
-                            {d.status === 'Pendente' && <button onClick={() => marcarDespesaComoPaga(d.id)} className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-xl font-bold shadow-md transition-all">Dar Baixa</button>}
-                            <button onClick={() => iniciarEdicaoDespesa(d)} className="p-2 text-gray-400 hover:text-indigo-400 bg-white/5 rounded-xl transition-colors" title="Editar Despesa"><Edit2 size={14}/></button>
-                            <button onClick={() => handleExcluirDespesa(d.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir"><Trash2 size={14}/></button>
-                          </td>
-                        </tr>
+                        <React.Fragment key={d.id}>
+                          <tr className="hover:bg-white/5 transition-colors">
+                            <td className={`p-4 pl-6 text-sm font-bold ${isAtrasado ? 'text-red-400' : 'text-gray-300'}`}>
+                              {hasDesembolsos ? 'Parcelado' : new Date(d.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')}
+                              {isAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
+                            </td>
+                            <td className="p-4 font-bold text-white">{d.descricao}</td>
+                            <td className="p-4"><span className="bg-gray-800 text-gray-300 text-[10px] px-2 py-1 rounded-md border border-gray-700">{d.categoria}</span></td>
+                            <td className="p-4 font-bold text-rose-400 text-right">{formatCurrency(d.valor)}</td>
+                            <td className="p-4 text-center">
+                              {d.status === 'Pago' ? <span className="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold border border-green-500/20">Pago</span> : 
+                               d.status === 'Parcial' ? <span className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full text-[10px] font-bold border border-indigo-500/20">Parcial</span> :
+                               <span className="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full text-[10px] font-bold border border-amber-500/20">Pendente</span>}
+                            </td>
+                            <td className="p-4 pr-6 text-center flex items-center justify-center gap-2">
+                              {!hasDesembolsos && d.status === 'Pendente' && <button onClick={() => marcarDespesaComoPaga(d.id)} className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-xl font-bold shadow-md transition-all">Dar Baixa</button>}
+                              {d.holerite && <button onClick={() => setDemonstrativoData(d.holerite)} className="p-2 text-indigo-300 hover:text-indigo-100 bg-indigo-500/20 hover:bg-indigo-500/40 rounded-xl transition-colors" title="Ver Demonstrativo"><FileText size={14}/></button>}
+                              <button onClick={() => iniciarEdicaoDespesa(d)} className="p-2 text-gray-400 hover:text-indigo-400 bg-white/5 rounded-xl transition-colors" title="Editar Despesa"><Edit2 size={14}/></button>
+                              <button onClick={() => handleExcluirDespesa(d.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir"><Trash2 size={14}/></button>
+                            </td>
+                          </tr>
+                          
+                          {hasDesembolsos && d.desembolsos.map((desem, idx) => {
+                            const isDesemAtrasado = desem.status === 'Pendente' && new Date(desem.dataVencimento) < new Date();
+                            return (
+                              <tr key={desem.id} className="bg-white/[0.01] hover:bg-white/[0.03] transition-colors border-l border-indigo-500/30">
+                                <td className="p-3 pl-10 text-gray-500 text-[11px] font-medium uppercase tracking-wider">↳ Parcela {idx + 1}</td>
+                                <td className={`p-3 font-bold text-xs ${isDesemAtrasado ? 'text-red-400' : 'text-gray-400'}`}>
+                                  {new Date(desem.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                  {isDesemAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
+                                </td>
+                                <td className="p-3"></td>
+                                <td className="p-3 font-bold text-rose-300/80 text-right text-sm">{formatCurrency(desem.valor)}</td>
+                                <td className="p-3 text-center">
+                                  {desem.status === 'Pago' ? <span className="text-[10px] font-bold text-green-400">Pago</span> : <span className="text-[10px] font-bold text-amber-400">Pendente</span>}
+                                </td>
+                                <td className="p-3 pr-6 text-center flex justify-center">
+                                  {desem.status === 'Pendente' && (
+                                    <button onClick={() => marcarDesembolsoComoPago(d.id, desem.id)} className="bg-rose-600/80 hover:bg-rose-500 text-white text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-lg font-bold shadow-md transition-all">Dar Baixa</button>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </React.Fragment>
                       )
                     })}
                     {despesasFiltradas.length === 0 && (
@@ -652,6 +772,101 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
             {/* LADO DIREITO: BLOCOS EMPILHADOS VERTICALMENTE (Ocupa 1/3) */}
             <div className="lg:col-span-1 flex flex-col gap-6">
               
+              {/* BLOCO 2: LANÇAR DESPESA MANUAL */}
+              <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-6">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
+                  <Plus size={18} className="text-rose-400" /> Lançamento de Despesa
+                </h3>
+                <form id="form-despesa" onSubmit={handleAdicionarDespesa} className="space-y-4 scroll-mt-24">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
+                    <input type="text" required value={despesaForm.descricao} onChange={e => setDespesaForm({...despesaForm, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Vencimento</label>
+                      <input type="date" required value={despesaForm.dataVencimento} onChange={e => setDespesaForm({...despesaForm, dataVencimento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Bruto (R$)</label>
+                      <input type="number" step="0.01" required value={despesaForm.valor} onChange={e => setDespesaForm({...despesaForm, valor: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Desconto (R$)</label>
+                      <input type="number" step="0.01" placeholder="0.00" value={despesaForm.desconto} onChange={e => setDespesaForm({...despesaForm, desconto: e.target.value})} className="w-full bg-black/40 border border-white/10 text-rose-300 rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Categoria</label>
+                      <select value={despesaForm.categoria} onChange={e => setDespesaForm({...despesaForm, categoria: e.target.value})} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded-xl p-3 outline-none mt-1 shadow-inner text-xs cursor-pointer">
+                        <option className="bg-gray-900" value="Folha de Pagamento">Folha/Equipe</option>
+                        <option className="bg-gray-900" value="Ferramentas/Software">Ferramentas</option>
+                        <option className="bg-gray-900" value="Impostos">Impostos</option>
+                        <option className="bg-gray-900" value="Infraestrutura">Infra/Escritório</option>
+                        <option className="bg-gray-900" value="Outros">Outros</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Status Inicial</label>
+                      <select disabled={despesaForm.desembolsos.length > 0} value={despesaForm.status} onChange={e => setDespesaForm({...despesaForm, status: e.target.value})} className={`w-full bg-black/40 border border-white/10 ${despesaForm.desembolsos.length > 0 ? 'text-gray-600 cursor-not-allowed' : 'text-gray-300 cursor-pointer'} rounded-xl p-3 outline-none mt-1 shadow-inner text-xs`}>
+                        <option className="bg-gray-900" value="Pendente">A Pagar</option>
+                        <option className="bg-gray-900" value="Pago">Já Pago</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/10 pt-4 mt-2">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-2">
+                        Desembolsos
+                        <span className="bg-gray-800 px-2 py-0.5 rounded-full text-gray-500 font-normal normal-case">Opcional</span>
+                      </label>
+                      <button type="button" onClick={() => setDespesaForm(p => ({...p, desembolsos: [...p.desembolsos, { id: Date.now(), valor: '', dataVencimento: p.dataVencimento, status: 'Pendente' }] }))} className="text-[10px] font-bold bg-indigo-600/30 hover:bg-indigo-600/60 text-indigo-300 px-3 py-1.5 rounded-lg border border-indigo-500/30 transition-all">
+                        + Adicionar Desembolso
+                      </button>
+                    </div>
+                    
+                    {despesaForm.desembolsos.length > 0 && (() => {
+                       const valorLiq = (Number(String(despesaForm.valor).replace(',', '.')) || 0) - (Number(String(despesaForm.desconto).replace(',', '.')) || 0);
+                       const somaDistr = despesaForm.desembolsos.reduce((acc, curr) => acc + (Number(String(curr.valor).replace(',', '.')) || 0), 0);
+                       const faltaDistribuir = valorLiq - somaDistr;
+
+                       return (
+                        <>
+                          <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1 mb-3">
+                            {despesaForm.desembolsos.map((desem, idx) => (
+                              <div key={desem.id} className="flex items-center gap-2 bg-black/20 p-2 rounded-xl border border-white/5 shadow-inner">
+                                <span className="text-[10px] text-gray-500 font-bold ml-1">{idx + 1}º</span>
+                                <input type="number" step="0.01" placeholder="Valor R$" value={desem.valor} onChange={e => setDespesaForm(p => ({...p, desembolsos: p.desembolsos.map(x => x.id === desem.id ? {...x, valor: e.target.value} : x)}))} className="w-1/3 bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-indigo-500 text-xs shadow-inner" />
+                                <input type="date" value={desem.dataVencimento} onChange={e => setDespesaForm(p => ({...p, desembolsos: p.desembolsos.map(x => x.id === desem.id ? {...x, dataVencimento: e.target.value} : x)}))} className="w-1/2 bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-indigo-500 text-xs shadow-inner" />
+                                <button type="button" onClick={() => setDespesaForm(p => ({...p, desembolsos: p.desembolsos.filter(x => x.id !== desem.id)}))} className="text-gray-500 hover:text-red-400 p-1 mr-1 transition-colors"><X size={14}/></button>
+                              </div>
+                            ))}
+                          </div>
+                          <div className={`text-right text-xs font-bold px-2 py-1.5 rounded-lg border ${Math.abs(faltaDistribuir) < 0.01 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
+                              {Math.abs(faltaDistribuir) < 0.01 ? '✅ Valor 100% Distribuído' : `Falta Distribuir: ${formatCurrency(faltaDistribuir)}`}
+                          </div>
+                        </>
+                       );
+                    })()}
+                  </div>
+
+                  <div className="flex gap-3 mt-4">
+                    {despesaEmEdicao && (
+                      <button type="button" onClick={() => { setDespesaEmEdicao(null); setDespesaForm({ descricao: '', valor: '', categoria: 'Folha de Pagamento', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] }); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm">
+                        Cancelar Edição
+                      </button>
+                    )}
+                    <button type="submit" className={`flex-1 ${despesaEmEdicao ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-rose-600 hover:bg-rose-500'} text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm`}>
+                      {despesaEmEdicao ? 'Salvar Edição' : 'Registrar Despesa'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
               {/* BLOCO 1: FOLHA AUTOMÁTICA */}
               <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-6">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
@@ -676,9 +891,13 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                       {formatCurrency(metricasFolha.faturamentoBruto)}
                     </span>
                   </div>
-                  <div className="flex-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Custo Oper. (Base LL)</label>
-                    <input type="number" value={metricasFolha.custoOperacional} onChange={e => setMetricasFolha({...metricasFolha, custoOperacional: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 shadow-inner text-sm" />
+                  <div className="col-span-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Meta do Mês</label>
+                    <input type="number" step="0.01" value={metricasFolha.metaAgenciaHistorica} onChange={e => setMetricasFolha({...metricasFolha, metaAgenciaHistorica: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 shadow-inner text-sm font-bold" />
+                  </div>
+                  <div className="col-span-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Custo (LL)</label>
+                    <input type="number" step="0.01" value={metricasFolha.custoOperacional} onChange={e => setMetricasFolha({...metricasFolha, custoOperacional: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 shadow-inner text-sm" />
                   </div>
                 </div>
 
@@ -707,59 +926,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                   {folhaCalculada.length === 0 && <p className="text-xs text-gray-500 text-center py-6">Nenhum membro possui regras configuradas no Admin.</p>}
                 </div>
               </div>
-
-              {/* BLOCO 2: LANÇAR DESPESA MANUAL */}
-              <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-6">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
-                  <Plus size={18} className="text-rose-400" /> Despesa Avulsa
-                </h3>
-                <form onSubmit={handleAdicionarDespesa} className="space-y-4">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
-                    <input type="text" required value={despesaForm.descricao} onChange={e => setDespesaForm({...despesaForm, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Valor (R$)</label>
-                      <input type="number" step="0.01" required value={despesaForm.valor} onChange={e => setDespesaForm({...despesaForm, valor: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Vencimento</label>
-                      <input type="date" required value={despesaForm.dataVencimento} onChange={e => setDespesaForm({...despesaForm, dataVencimento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Categoria</label>
-                      <select value={despesaForm.categoria} onChange={e => setDespesaForm({...despesaForm, categoria: e.target.value})} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded-xl p-3 outline-none mt-1 shadow-inner text-xs cursor-pointer">
-                        <option className="bg-gray-900" value="Folha de Pagamento">Folha/Equipe</option>
-                        <option className="bg-gray-900" value="Ferramentas/Software">Ferramentas</option>
-                        <option className="bg-gray-900" value="Impostos">Impostos</option>
-                        <option className="bg-gray-900" value="Infraestrutura">Infra/Escritório</option>
-                        <option className="bg-gray-900" value="Outros">Outros</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Status</label>
-                      <select value={despesaForm.status} onChange={e => setDespesaForm({...despesaForm, status: e.target.value})} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded-xl p-3 outline-none mt-1 shadow-inner text-xs cursor-pointer">
-                        <option className="bg-gray-900" value="Pendente">A Pagar</option>
-                        <option className="bg-gray-900" value="Pago">Já Pago</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="flex gap-3 mt-4">
-                    {despesaEmEdicao && (
-                      <button type="button" onClick={() => { setDespesaEmEdicao(null); setDespesaForm({ descricao: '', valor: '', categoria: 'Folha de Pagamento', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente' }); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm">
-                        Cancelar
-                      </button>
-                    )}
-                    <button type="submit" className={`flex-1 ${despesaEmEdicao ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-rose-600 hover:bg-rose-500'} text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm`}>
-                      {despesaEmEdicao ? 'Salvar Edição' : 'Registrar Despesa'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-
             </div>
           </div>
         </div>
@@ -841,30 +1007,33 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                         </div>
                         
                         <div className="border border-[#e0e0e0] rounded-xl p-4 mb-4 bg-white">
-                            <span className="text-[10px] uppercase tracking-wide text-[#888888] font-bold mb-2 block">Performance</span>
-                            <div className="flex justify-between mb-2 text-[14px]"><span>Meta Estipulada:</span><span className="font-semibold">{formatCurrency(demonstrativoData.meta)}</span></div>
-                            <div className="flex justify-between mb-2 text-[14px]"><span>Faturamento da Agência:</span><span className="font-semibold text-[#e67e22]">{formatCurrency(demonstrativoData.fat)}</span></div>
-                            <div className="text-right mt-3">
-                                <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold inline-block ${demonstrativoData.fat >= demonstrativoData.meta ? 'bg-[#ecfdf5] text-[#10b981]' : 'bg-[#fff0e6] text-[#e67e22]'}`}>
-                                    Meta {demonstrativoData.fat >= demonstrativoData.meta ? 'Batida' : 'Não Atingida'}
-                                </span>
-                            </div>
+                          <span className="text-[10px] uppercase tracking-wide text-[#888888] font-bold mb-2 block">Performance</span>
+                          <div className="flex justify-between mb-2 text-[14px]"><span>Meta Estipulada:</span><span className="font-semibold">{formatCurrency(demonstrativoData.meta)}</span></div>
+                          <div className="flex justify-between mb-2 text-[14px]"><span>Faturamento da Agência:</span><span className="font-semibold text-[#e67e22]">{formatCurrency(demonstrativoData.fat)}</span></div>
+                          <div className="text-right mt-3">
+                              <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold inline-block ${demonstrativoData.fat >= demonstrativoData.meta ? 'bg-[#ecfdf5] text-[#10b981]' : 'bg-[#fff0e6] text-[#e67e22]'}`}>
+                                  Meta {demonstrativoData.fat >= demonstrativoData.meta ? 'Batida' : 'Não Atingida'}
+                              </span>
+                          </div>
                         </div>
                         
                         <div className="border border-[#e0e0e0] rounded-xl p-4 mb-4 bg-white">
-                            <span className="text-[10px] uppercase tracking-wide text-[#888888] font-bold mb-2 block">Detalhamento</span>
-                            <div className="flex justify-between mb-2 text-[14px]"><span>Salário Base:</span><span className="font-semibold">{formatCurrency(demonstrativoData.base)}</span></div>
-                            <div className="flex justify-between mb-2 text-[14px]"><span>Comissão:</span><span className="font-semibold">{formatCurrency(demonstrativoData.comissao)}</span></div>
-                            {demonstrativoData.bonus > 0 && (
-                                <div className="flex justify-between mb-2 text-[14px] text-[#10b981]"><span>Acréscimo (Bônus):</span><span className="font-semibold">+ {formatCurrency(demonstrativoData.bonus)}</span></div>
-                            )}
+                          <span className="text-[10px] uppercase tracking-wide text-[#888888] font-bold mb-2 block">Detalhamento</span>
+                          <div className="flex justify-between mb-2 text-[14px]"><span>Salário Base:</span><span className="font-semibold">{formatCurrency(demonstrativoData.base)}</span></div>
+                          
+                          <div className="flex justify-between mb-0.5 text-[14px]"><span>Comissão:</span><span className="font-semibold">{formatCurrency(demonstrativoData.comissao)}</span></div>
+                          {demonstrativoData.regra && <div className="text-[10px] text-[#888888] text-right mb-2 italic">({demonstrativoData.regra})</div>}
+                          
+                          {demonstrativoData.bonus > 0 && (
+                              <div className="flex justify-between mb-2 text-[14px] text-[#10b981]"><span>Acréscimo (Bônus):</span><span className="font-semibold">+ {formatCurrency(demonstrativoData.bonus)}</span></div>
+                          )}
                             
-                            <div className="bg-[#eef4fc] p-4 rounded-xl mt-4">
-                                <div className="flex justify-between items-center m-0">
-                                    <span className="text-[#0f3c7a] font-bold text-[13px]">LÍQUIDO A RECEBER</span>
-                                    <span className="text-[#0f3c7a] font-extrabold text-[22px]">{formatCurrency(demonstrativoData.total)}</span>
-                                </div>
-                            </div>
+                          <div className="bg-[#eef4fc] p-4 rounded-xl mt-4">
+                              <div className="flex justify-between items-center m-0">
+                                  <span className="text-[#0f3c7a] font-bold text-[13px]">LÍQUIDO A RECEBER</span>
+                                  <span className="text-[#0f3c7a] font-extrabold text-[22px]">{formatCurrency(demonstrativoData.total)}</span>
+                              </div>
+                          </div>
                         </div>
                         
                         <div className="bg-[#fafafa] border border-[#e0e0e0] rounded-xl p-4 mt-2">

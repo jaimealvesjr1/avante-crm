@@ -20,7 +20,6 @@ export default function AuthScreen({ handleLogin, email, setEmail, password, set
 
       {/* CARD PRINCIPAL COM GLASSMORPHISM */}
       <div className="w-full max-w-md bg-white/[0.02] backdrop-blur-xl p-8 rounded-3xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative z-10 animate-in fade-in zoom-in-95 duration-300">
-        
         {/* LOGO */}
         <div className="flex flex-col items-center mb-8">
           <img 
@@ -28,7 +27,7 @@ export default function AuthScreen({ handleLogin, email, setEmail, password, set
             alt="Avante HUB" 
             className="h-20 w-auto object-contain mb-4 rounded-2xl shadow-lg border border-white/10" 
           />
-          <h2 className="text-2xl font-bold text-white tracking-tight">Avante<span className="text-yellow-500">HUB</span></h2>
+          <h2 className="text-2xl font-bold text-white tracking-tight">AVANTE<span className="text-indigo-500">HUB</span></h2>
           <p className="text-xs text-gray-400 mt-1 uppercase tracking-widest font-semibold text-center">Central de Inteligência Estratégica</p>
         </div>
 
