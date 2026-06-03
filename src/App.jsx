@@ -251,7 +251,7 @@ export default function App() {
           if (isPWA) {
             toast((t) => (
               <div className="flex flex-col gap-2 p-1">
-                <p className="text-xs font-bold text-slate-900  flex items-center gap-1.5">
+                <p className="text-xs font-bold text-white flex items-center gap-1.5">
                   🚀 Nova versão disponível: <span className="text-yellow-400 font-black">{data.versao}</span>
                 </p>
                 <p className="text-[10px] text-gray-400 leading-tight">

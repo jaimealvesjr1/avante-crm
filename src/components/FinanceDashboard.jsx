@@ -31,6 +31,11 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     descricao: '', valor: '', desconto: '', categoria: 'Folha de Pagamento', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
   });
 
+  const [recebimentoEmEdicao, setRecebimentoEmEdicao] = useState(null);
+  const [recebimentoForm, setRecebimentoForm] = useState({ 
+    cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
+  });
+
   const [mesFolha, setMesFolha] = useState('Atual');
   const [metricasFolha, setMetricasFolha] = useState({
     faturamentoBruto: dashboardData.totalAgencyRevenueActual || 0,
@@ -88,8 +93,15 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
   const totalPendenteGeral = recebimentos.filter(r => r.status === 'Pendente').reduce((acc, curr) => acc + curr.valorAgencia, 0);
 
-  const pendenteFiltrado = recebimentosFiltrados.filter(r => r.status === 'Pendente').reduce((acc, curr) => acc + curr.valorAgencia, 0);
-  const pagoFiltrado = recebimentosFiltrados.filter(r => r.status === 'Pago').reduce((acc, curr) => acc + curr.valorAgencia, 0);
+  const pendenteFiltrado = recebimentosFiltrados.reduce((acc, r) => {
+      if (r.desembolsos && r.desembolsos.length > 0) return acc + r.desembolsos.filter(x => x.status === 'Pendente').reduce((sum, x) => sum + x.valor, 0);
+      return acc + (r.status === 'Pendente' ? r.valorAgencia : 0);
+  }, 0);
+  
+  const pagoFiltrado = recebimentosFiltrados.reduce((acc, r) => {
+      if (r.desembolsos && r.desembolsos.length > 0) return acc + r.desembolsos.filter(x => x.status === 'Pago').reduce((sum, x) => sum + x.valor, 0);
+      return acc + (r.status === 'Pago' ? r.valorAgencia : 0);
+  }, 0);
   
   const despesasPendentesFiltradas = despesasFiltradas.reduce((acc, d) => {
       if (d.desembolsos && d.desembolsos.length > 0) return acc + d.desembolsos.filter(x => x.status === 'Pendente').reduce((sum, x) => sum + x.valor, 0);
@@ -176,17 +188,28 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const fluxoDeCaixa = useMemo(() => {
     const relatorio = {};
 
-    recebimentos.filter(r => r.status === 'Pago' && r.dataPagamentoRealizado).forEach(r => {
-      const mes = getMesAno(r.dataPagamentoRealizado);
-      const semana = getSemanaDoMes(r.dataPagamentoRealizado);
-      
-      if (!relatorio[mes]) relatorio[mes] = { totalEntradas: 0, totalSaidas: 0, saldo: 0, semanas: {} };
-      if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { entradas: 0, saidas: 0, saldo: 0 };
-
-      relatorio[mes].semanas[semana].entradas += r.valorAgencia;
-      relatorio[mes].semanas[semana].saldo += r.valorAgencia;
-      relatorio[mes].totalEntradas += r.valorAgencia;
-      relatorio[mes].saldo += r.valorAgencia;
+    recebimentos.forEach(r => {
+      if (r.desembolsos && r.desembolsos.length > 0) {
+        r.desembolsos.filter(x => x.status === 'Pago' && x.dataPagamentoRealizado).forEach(x => {
+          const mes = getMesAno(x.dataPagamentoRealizado);
+          const semana = getSemanaDoMes(x.dataPagamentoRealizado);
+          if (!relatorio[mes]) relatorio[mes] = { totalEntradas: 0, totalSaidas: 0, saldo: 0, semanas: {} };
+          if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { entradas: 0, saidas: 0, saldo: 0 };
+          relatorio[mes].semanas[semana].entradas += x.valor;
+          relatorio[mes].semanas[semana].saldo += x.valor;
+          relatorio[mes].totalEntradas += x.valor;
+          relatorio[mes].saldo += x.valor;
+        });
+      } else if (r.status === 'Pago' && r.dataPagamentoRealizado) {
+        const mes = getMesAno(r.dataPagamentoRealizado);
+        const semana = getSemanaDoMes(r.dataPagamentoRealizado);
+        if (!relatorio[mes]) relatorio[mes] = { totalEntradas: 0, totalSaidas: 0, saldo: 0, semanas: {} };
+        if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { entradas: 0, saidas: 0, saldo: 0 };
+        relatorio[mes].semanas[semana].entradas += r.valorAgencia;
+        relatorio[mes].semanas[semana].saldo += r.valorAgencia;
+        relatorio[mes].totalEntradas += r.valorAgencia;
+        relatorio[mes].saldo += r.valorAgencia;
+      }
     });
 
     despesas.forEach(d => {
@@ -258,24 +281,97 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     } catch (error) { toast.error("Erro ao salvar os dados."); }
   };
 
-  const ajustarFatura = async (fatura) => {
-    if (!canEdit) return toast.error("Sem permissão.");
-    const novoValorStr = window.prompt(`Ajustar valor da fatura de ${fatura.cliente}.\nValor atual: ${fatura.valorAgencia}\nNovo valor final:`, fatura.valorAgencia);
-    if (novoValorStr === null) return;
-    const novoValor = Number(novoValorStr.replace(',', '.'));
-    if (isNaN(novoValor)) return toast.error("Valor inválido.");
+  const iniciarEdicaoRecebimento = (r) => {
+    const formElement = document.getElementById('form-recebimento');
+    if (formElement) formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    setRecebimentoEmEdicao(r.id);
+    setRecebimentoForm({ 
+      cliente: r.cliente, 
+      mesReferencia: r.mesReferencia || '', 
+      valorAgencia: r.valorBruto || r.valorAgencia, // Puxa o bruto, se existir
+      desconto: r.desconto || '', 
+      dataVencimento: r.dataVencimento ? r.dataVencimento.split('T')[0] : new Date().toISOString().split('T')[0], 
+      status: r.status,
+      desembolsos: r.desembolsos || []
+    });
+  };
 
-    const diasStr = window.prompt("Quantos dias a partir de hoje para vencimento?", "10");
-    if (diasStr === null) return;
-    const novaDataVencimento = new Date();
-    novaDataVencimento.setDate(novaDataVencimento.getDate() + parseInt(diasStr, 10));
+  const handleSalvarRecebimento = async (e) => {
+    e.preventDefault();
+    if (!canEdit) return toast.error("Sem permissão.");
+    
+    const numValorBruto = Number(String(recebimentoForm.valorAgencia).replace(',', '.')) || 0;
+    const numDesconto = Number(String(recebimentoForm.desconto).replace(',', '.')) || 0;
+    const numValorLiquido = numValorBruto - numDesconto;
+
+    if (!recebimentoForm.cliente.trim() || numValorBruto <= 0) return toast.error("Preencha cliente e valor válidos.");
+
+    const parsedDesembolsos = (recebimentoForm.desembolsos || []).map(d => ({
+      ...d, valor: Number(String(d.valor).replace(',', '.')) || 0
+    }));
+
+    if (parsedDesembolsos.length > 0) {
+      const sum = parsedDesembolsos.reduce((acc, curr) => acc + curr.valor, 0);
+      if (Math.abs(sum - numValorLiquido) > 0.01) {
+        return toast.error(`A soma das parcelas deve bater o valor líquido final: ${formatCurrency(numValorLiquido)}`);
+      }
+    }
+
+    const allPaid = parsedDesembolsos.length > 0 && parsedDesembolsos.every(d => d.status === 'Pago');
+    const finalStatus = parsedDesembolsos.length > 0 ? (allPaid ? 'Pago' : (parsedDesembolsos.some(d => d.status === 'Pago') ? 'Parcial' : 'Pendente')) : recebimentoForm.status;
 
     try {
-      await updateDoc(doc(db, "financeiro_recebimentos", fatura.id), {
-        valorAgencia: novoValor, dataVencimento: novaDataVencimento.toISOString()
+      if (recebimentoEmEdicao) {
+        await updateDoc(doc(db, "financeiro_recebimentos", recebimentoEmEdicao), {
+          cliente: recebimentoForm.cliente.trim(), mesReferencia: recebimentoForm.mesReferencia,
+          valorBruto: numValorBruto, desconto: numDesconto, valorAgencia: numValorLiquido,
+          dataVencimento: recebimentoForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos
+        });
+        toast.success("Recebimento atualizado!");
+        setRecebimentoEmEdicao(null);
+      } else {
+        await addDoc(collection(db, "financeiro_recebimentos"), {
+          cliente: recebimentoForm.cliente.trim(), mesReferencia: recebimentoForm.mesReferencia || 'Avulso',
+          valorBruto: numValorBruto, desconto: numDesconto, valorAgencia: numValorLiquido,
+          dataVencimento: recebimentoForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
+          dataPagamentoRealizado: finalStatus === 'Pago' && parsedDesembolsos.length === 0 ? new Date().toISOString() : null,
+          dataEmissao: new Date().toISOString()
+        });
+        toast.success("Entrada registrada!");
+      }
+      setRecebimentoForm({ cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
+    } catch (error) { toast.error("Erro ao salvar entrada."); }
+  };
+
+  const marcarDesembolsoRecebimentoComoPago = async (idReceb, idDesembolso) => {
+    if (!canEdit) return toast.error("Sem permissão.");
+    try {
+      const rec = recebimentos.find(r => r.id === idReceb);
+      if (!rec) return;
+
+      const novosDesembolsos = rec.desembolsos.map(d => 
+        d.id === idDesembolso ? { ...d, status: 'Pago', dataPagamentoRealizado: new Date().toISOString() } : d
+      );
+
+      const todosPagos = novosDesembolsos.every(d => d.status === 'Pago');
+      const algumPago = novosDesembolsos.some(d => d.status === 'Pago');
+      const novoStatus = todosPagos ? 'Pago' : (algumPago ? 'Parcial' : 'Pendente');
+      
+      await updateDoc(doc(db, "financeiro_recebimentos", idReceb), {
+        desembolsos: novosDesembolsos, status: novoStatus,
+        dataPagamentoRealizado: todosPagos ? new Date().toISOString() : (rec.dataPagamentoRealizado || null)
       });
-      toast.success("Fatura ajustada!");
-    } catch (error) { toast.error("Erro ao ajustar fatura."); }
+      toast.success("Parcela recebida!");
+    } catch (error) { toast.error("Erro ao registrar parcela."); }
+  };
+
+  const handleExcluirRecebimento = async (id) => {
+    if (!canEdit) return;
+    if (window.confirm("Deseja realmente apagar esta entrada?")) {
+      await deleteDoc(doc(db, "financeiro_recebimentos", id));
+      toast.success("Entrada apagada.");
+    }
   };
 
   const marcarRecebimentoComoPago = async (idFatura, cliente, mes) => {
@@ -604,22 +700,17 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
             </div>
           </div>
 
-          <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden">
-            <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2"><ArrowUpRight size={18} className="text-green-400"/> Histórico de Faturas</h3>
-              {busca && <span className="text-xs bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full">Filtrado por: "{busca}"</span>}
-            </div>
-            <div className="overflow-x-auto custom-scrollbar">
-              {loading ? (
-                <div className="p-8 text-center text-gray-400">Carregando recebimentos...</div>
-              ) : recebimentosFiltrados.length === 0 ? (
-                <div className="p-12 text-center text-gray-500">
-                    <CheckCircle size={48} className="mx-auto mb-4 opacity-20" />
-                    <p>Nenhuma fatura encontrada.</p>
-                </div>
-              ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* LADO ESQUERDO: LISTA DE HISTÓRICO */}
+            <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden h-max">
+              <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2"><ArrowUpRight size={18} className="text-green-400"/> Histórico de Faturas</h3>
+                {busca && <span className="text-xs bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full">Filtrado por: "{busca}"</span>}
+              </div>
+              <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
                 <table className="w-full text-left border-collapse">
-                  <thead className="bg-black/20 text-gray-400 text-xs uppercase tracking-wider">
+                  <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-xs uppercase tracking-wider">
                     <tr>
                       <th className="p-4 font-semibold pl-6">Cliente</th>
                       <th className="p-4 font-semibold">Competência</th>
@@ -631,44 +722,158 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {recebimentosFiltrados.map((rec) => {
+                      const hasDesembolsos = rec.desembolsos && rec.desembolsos.length > 0;
                       const dataVenc = new Date(rec.dataVencimento);
-                      const isAtrasado = rec.status === 'Pendente' && dataVenc < new Date();
+                      const isAtrasado = !hasDesembolsos && rec.status === 'Pendente' && dataVenc < new Date();
+                      
                       return (
-                        <tr key={rec.id} className="hover:bg-white/5 transition-colors">
-                          <td className="p-4 pl-6 font-bold text-white flex items-center gap-2"><FileText size={16} className="text-gray-500" />{rec.cliente}</td>
-                          <td className="p-4 text-sm font-bold text-indigo-300">{rec.mesReferencia}</td>
-                          <td className={`p-4 text-sm font-bold ${isAtrasado ? 'text-red-400' : 'text-gray-300'}`}>
-                            {dataVenc.toLocaleDateString('pt-BR')}
-                            {isAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
-                          </td>
-                          <td className="p-4 font-bold text-white text-right">
-                            <div className="flex items-center justify-end gap-2">
-                                {formatCurrency(rec.valorAgencia)}
-                                {rec.status === 'Pendente' && (
-                                    <button onClick={() => ajustarFatura(rec)} className="text-gray-500 hover:text-indigo-400 transition-colors p-1" title="Ajustar Valor"><Edit2 size={14} /></button>
-                                )}
-                            </div>
-                          </td>
-                          <td className="p-4 text-center">
-                            {rec.status === 'Pago' ? (
-                              <span className="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold border border-green-500/20">Pago</span>
-                            ) : (
-                              <span className="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full text-[10px] font-bold border border-amber-500/20">Pendente</span>
-                            )}
-                          </td>
-                          <td className="p-4 pr-6 text-center">
-                              {rec.status === 'Pendente' ? (
-                                  <button onClick={() => marcarRecebimentoComoPago(rec.id, rec.cliente, rec.mesReferencia)} className="bg-green-600 hover:bg-green-500 text-white text-[10px] font-bold uppercase px-3 py-2 rounded-xl transition-all shadow-md">Dar Baixa</button>
-                              ) : (
-                                  <span className="text-xs text-gray-500">Em {new Date(rec.dataPagamentoRealizado).toLocaleDateString('pt-BR')}</span>
-                              )}
-                          </td>
-                        </tr>
+                        <React.Fragment key={rec.id}>
+                          <tr className="hover:bg-white/5 transition-colors">
+                            <td className="p-4 pl-6 font-bold text-white flex items-center gap-2"><FileText size={16} className="text-gray-500" />{rec.cliente}</td>
+                            <td className="p-4 text-sm font-bold text-indigo-300">{rec.mesReferencia || '-'}</td>
+                            <td className={`p-4 text-sm font-bold ${isAtrasado ? 'text-red-400' : 'text-gray-300'}`}>
+                              {hasDesembolsos ? 'Múltiplos Venc.' : dataVenc.toLocaleDateString('pt-BR')}
+                              {isAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
+                            </td>
+                            <td className="p-4 font-bold text-white text-right">
+                              {formatCurrency(rec.valorAgencia)}
+                            </td>
+                            <td className="p-4 text-center">
+                              {rec.status === 'Pago' ? <span className="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold border border-green-500/20">Pago</span> : 
+                               rec.status === 'Parcial' ? <span className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full text-[10px] font-bold border border-indigo-500/20">Parcial</span> :
+                               <span className="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full text-[10px] font-bold border border-amber-500/20">Pendente</span>}
+                            </td>
+                            <td className="p-4 pr-6 text-center flex items-center justify-center gap-2">
+                                {!hasDesembolsos && rec.status === 'Pendente' && <button onClick={() => marcarRecebimentoComoPago(rec.id, rec.cliente, rec.mesReferencia)} className="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-xl font-bold shadow-md transition-all">Dar Baixa</button>}
+                                <button onClick={() => iniciarEdicaoRecebimento(rec)} className="p-2 text-gray-400 hover:text-indigo-400 bg-white/5 rounded-xl transition-colors" title="Editar / Adicionar Parcelas"><Edit2 size={14}/></button>
+                                <button onClick={() => handleExcluirRecebimento(rec.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir"><Trash2 size={14}/></button>
+                            </td>
+                          </tr>
+
+                          {hasDesembolsos && rec.desembolsos.map((desem, idx) => {
+                            const isDesemAtrasado = desem.status === 'Pendente' && new Date(desem.dataVencimento) < new Date();
+                            return (
+                              <tr key={desem.id} className="bg-white/[0.01] hover:bg-white/[0.03] transition-colors border-l border-emerald-500/30">
+                                <td className="p-3 pl-10 text-gray-500 text-[11px] font-medium uppercase tracking-wider">↳ Parcela {idx + 1}</td>
+                                <td className="p-3"></td>
+                                <td className={`p-3 font-bold text-xs ${isDesemAtrasado ? 'text-red-400' : 'text-gray-400'}`}>
+                                  {new Date(desem.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                  {isDesemAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
+                                </td>
+                                <td className="p-3 font-bold text-emerald-300/80 text-right text-sm">{formatCurrency(desem.valor)}</td>
+                                <td className="p-3 text-center">
+                                  {desem.status === 'Pago' ? <span className="text-[10px] font-bold text-green-400">Pago</span> : <span className="text-[10px] font-bold text-amber-400">Pendente</span>}
+                                </td>
+                                <td className="p-3 pr-6 text-center flex justify-center">
+                                  {desem.status === 'Pendente' && (
+                                    <button onClick={() => marcarDesembolsoRecebimentoComoPago(rec.id, desem.id)} className="bg-emerald-600/80 hover:bg-emerald-500 text-white text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-lg font-bold shadow-md transition-all">Receber</button>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </React.Fragment>
                       );
                     })}
+                    {recebimentosFiltrados.length === 0 && (
+                       <tr><td colSpan="6" className="p-12 text-center text-gray-500">Nenhuma entrada encontrada.</td></tr>
+                    )}
                   </tbody>
                 </table>
-              )}
+              </div>
+            </div>
+
+            {/* LADO DIREITO: FORMULÁRIO DE EDIÇÃO/ENTRADA AVULSA */}
+            <div className="lg:col-span-1 flex flex-col gap-6">
+              <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-6">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
+                  {recebimentoEmEdicao ? <Edit2 size={18} className="text-amber-400" /> : <Plus size={18} className="text-emerald-400" />}
+                  {recebimentoEmEdicao ? 'Editar Fatura' : 'Lançar Entrada Avulsa'}
+                </h3>
+                
+                <form id="form-recebimento" onSubmit={handleSalvarRecebimento} className="space-y-4 scroll-mt-24">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Cliente / Origem</label>
+                    <input type="text" required value={recebimentoForm.cliente} onChange={e => setRecebimentoForm({...recebimentoForm, cliente: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm" />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Competência</label>
+                      <input type="text" placeholder="Ex: MAI/26" value={recebimentoForm.mesReferencia} onChange={e => setRecebimentoForm({...recebimentoForm, mesReferencia: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Status Inicial</label>
+                      <select disabled={recebimentoForm.desembolsos.length > 0} value={recebimentoForm.status} onChange={e => setRecebimentoForm({...recebimentoForm, status: e.target.value})} className={`w-full bg-black/40 border border-white/10 ${recebimentoForm.desembolsos.length > 0 ? 'text-gray-600 cursor-not-allowed' : 'text-gray-300 cursor-pointer'} rounded-xl p-3 outline-none mt-1 shadow-inner text-xs`}>
+                        <option className="bg-gray-900" value="Pendente">A Receber</option>
+                        <option className="bg-gray-900" value="Pago">Já Recebido</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Vencimento</label>
+                      <input type="date" required value={recebimentoForm.dataVencimento} onChange={e => setRecebimentoForm({...recebimentoForm, dataVencimento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm" />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Bruto (R$)</label>
+                      <input type="number" step="0.01" required value={recebimentoForm.valorAgencia} onChange={e => setRecebimentoForm({...recebimentoForm, valorAgencia: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm" />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Desc. (R$)</label>
+                      <input type="number" step="0.01" placeholder="0.00" value={recebimentoForm.desconto} onChange={e => setRecebimentoForm({...recebimentoForm, desconto: e.target.value})} className="w-full bg-black/40 border border-white/10 text-rose-300 rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/10 pt-4 mt-2">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-2">
+                        Parcelamento
+                        <span className="bg-gray-800 px-2 py-0.5 rounded-full text-gray-500 font-normal normal-case">Opcional</span>
+                      </label>
+                      <button type="button" onClick={() => setRecebimentoForm(p => ({...p, desembolsos: [...p.desembolsos, { id: Date.now(), valor: '', dataVencimento: p.dataVencimento, status: 'Pendente' }] }))} className="text-[10px] font-bold bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-500/30 transition-all">
+                        + Dividir Parcela
+                      </button>
+                    </div>
+                    
+                    {recebimentoForm.desembolsos.length > 0 && (() => {
+                       const valorLiq = (Number(String(recebimentoForm.valorAgencia).replace(',', '.')) || 0) - (Number(String(recebimentoForm.desconto).replace(',', '.')) || 0);
+                       const somaDistr = recebimentoForm.desembolsos.reduce((acc, curr) => acc + (Number(String(curr.valor).replace(',', '.')) || 0), 0);
+                       const faltaDistribuir = valorLiq - somaDistr;
+
+                       return (
+                        <>
+                          <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1 mb-3">
+                            {recebimentoForm.desembolsos.map((desem, idx) => (
+                              <div key={desem.id} className="flex items-center gap-2 bg-black/20 p-2 rounded-xl border border-white/5 shadow-inner">
+                                <span className="text-[10px] text-gray-500 font-bold ml-1">{idx + 1}º</span>
+                                <input type="number" step="0.01" placeholder="Valor R$" value={desem.valor} onChange={e => setRecebimentoForm(p => ({...p, desembolsos: p.desembolsos.map(x => x.id === desem.id ? {...x, valor: e.target.value} : x)}))} className="w-1/3 bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-emerald-500 text-xs shadow-inner" />
+                                <input type="date" value={desem.dataVencimento} onChange={e => setRecebimentoForm(p => ({...p, desembolsos: p.desembolsos.map(x => x.id === desem.id ? {...x, dataVencimento: e.target.value} : x)}))} className="w-1/2 bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-emerald-500 text-xs shadow-inner" />
+                                <button type="button" onClick={() => setRecebimentoForm(p => ({...p, desembolsos: p.desembolsos.filter(x => x.id !== desem.id)}))} className="text-gray-500 hover:text-red-400 p-1 mr-1 transition-colors"><X size={14}/></button>
+                              </div>
+                            ))}
+                          </div>
+                          <div className={`text-right text-xs font-bold px-2 py-1.5 rounded-lg border ${Math.abs(faltaDistribuir) < 0.01 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
+                              {Math.abs(faltaDistribuir) < 0.01 ? '✅ 100% Distribuído' : `Falta Distribuir: ${formatCurrency(faltaDistribuir)}`}
+                          </div>
+                        </>
+                       );
+                    })()}
+                  </div>
+
+                  <div className="flex gap-3 mt-4">
+                    {recebimentoEmEdicao && (
+                      <button type="button" onClick={() => { setRecebimentoEmEdicao(null); setRecebimentoForm({ cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] }); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm">
+                        Cancelar
+                      </button>
+                    )}
+                    <button type="submit" className={`flex-1 ${recebimentoEmEdicao ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm`}>
+                      {recebimentoEmEdicao ? 'Salvar Edição' : 'Registrar Entrada'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
         </div>
