@@ -1,14 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, Bell, Clock, CheckCircle, AlertCircle, SquareStack, Play, Search, CalendarClock, X } from 'lucide-react';
+import { Flame, CalendarDays, Activity, Bell, Clock, CheckCircle, AlertCircle, SquareStack, Play, Search, CalendarClock, X } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
 
-export default function TeamFeedView({ currentUserData, user, stores, teamMembers, openTaskModal, searchTerm }) {
+export default function TeamFeedView({ currentUserData, user, stores, teamMembers, searchTerm, openTaskModal, scheduledEvents = [], activeEvent = null, formatCurrency }) {
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
     const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
     
     const isAdmin = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager' || currentUserData?.role === 'Analista';
+
+    const nextEvent = useMemo(() => {
+        if (scheduledEvents && scheduledEvents.length > 0) {
+            return [...scheduledEvents].sort((a, b) => new Date(a.date) - new Date(b.date))[0];
+        }
+        return null;
+    }, [scheduledEvents]);
 
     const handleClearGhostTask = async (ghostUserName, e) => {
         e.stopPropagation();
@@ -303,12 +310,9 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
 
     }, [stores, radarFilter, liveStatus]);
     
-    // ATUALIZADO: Motor de filtro da Timeline recuperado e corrigido
     const visibleLogs = useMemo(() => {
         return allLogs
-            // 1. Aplica a limpeza do mural (oculta os mais antigos que a data do clique)
             .filter(l => l.id > feedClearedAt)
-            // 2. Filtra pelo botão de abas selecionado
             .filter(l => {
                 if (feedFilter === 'tasks') {
                     return l.texto?.includes('✅') || l.texto?.includes('▶️') || l.texto?.includes('⏸️');
@@ -316,331 +320,377 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                 if (feedFilter === 'mine') {
                     return l.author === myName;
                 }
-                return true; // 'all' retorna tudo
+                return true; 
             })
-            // 3. NOVO: Aplica o filtro de texto da Busca Global
             .filter(l => {
-                if (!searchTerm) return true; // Se não digitou nada, mostra tudo
+                if (!searchTerm) return true; 
                 const termo = searchTerm.toLowerCase();
-                // Busca em comentários, lojas, clientes ou pelo nome de quem comentou
                 return l.texto?.toLowerCase().includes(termo) || 
                        l.storeName?.toLowerCase().includes(termo) || 
                        l.clientName?.toLowerCase().includes(termo) ||
                        l.author?.toLowerCase().includes(termo);
             })
-            // 4. Ordena os eventos por cronologia (mais recente no topo)
             .sort((a, b) => b.id - a.id)
-            // 5. Limita a quantidade para garantir o desempenho visual
             .slice(0, 100);
     }, [allLogs, feedClearedAt, feedFilter, myName, searchTerm]);
     
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
-            
-            {/* LADO ESQUERDO: Radar de Prazos (SLA) */}
-            <div className="lg:col-span-2 flex flex-col gap-6">
+        <div className="space-y-6 animate-in fade-in duration-300">
+
+            {/* GRID ORIGINAL DO FEED (RADAR, TIMELINE E RANKING) */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
-                <div className="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-lg relative overflow-hidden flex flex-col flex-1 min-h-[600px] lg:h-[calc(100vh-120px)]">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-orange-500 to-blue-500"></div>
+                {/* LADO ESQUERDO: Radar de Prazos (SLA) */}
+                <div className="lg:col-span-2 flex flex-col gap-6">
                     
-                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-5 border-b border-gray-700 pb-4 mt-2 shrink-0">
-                        <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                            <Clock size={18} className="text-indigo-400" />
-                            Radar SLA
-                            <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">{deadlinesData.length}</span>
-                        </h3>
+                    <div className="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-lg relative overflow-hidden flex flex-col flex-1 min-h-[600px] lg:h-[calc(100vh-120px)]">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-orange-500 to-blue-500"></div>
                         
-                        <div className="flex w-full sm:w-auto">
-                            <select
-                                value={radarFilter}
-                                onChange={(e) => setRadarFilter(e.target.value)}
-                                className="w-full sm:w-auto bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-xs font-bold text-white outline-none focus:border-indigo-500 cursor-pointer shadow-sm transition-colors"
-                                title="Filtrar Radar por Responsável"
-                            >
-                                <option value={myName}>🎯 Meu Foco ({myName})</option>
-                                <option value="">🌍 Visão Global (Todas)</option>
-                                <option value="unassigned">👻 Sem Responsável</option>
-                                {teamNames.filter(name => name !== myName).length > 0 && (
-                                    <optgroup label="Outros Membros da Equipe">
-                                        {teamNames.filter(name => name !== myName).map(name => (
-                                            <option key={name} value={name}>{name}</option>
-                                        ))}
-                                    </optgroup>
-                                )}
-                            </select>
+                        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-5 border-b border-gray-700 pb-4 mt-2 shrink-0">
+                            <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                <Clock size={18} className="text-indigo-400" />
+                                Radar SLA
+                                <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">{deadlinesData.length}</span>
+                            </h3>
+                            
+                            <div className="flex w-full sm:w-auto">
+                                <select
+                                    value={radarFilter}
+                                    onChange={(e) => setRadarFilter(e.target.value)}
+                                    className="w-full sm:w-auto bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-xs font-bold text-white outline-none focus:border-indigo-500 cursor-pointer shadow-sm transition-colors"
+                                    title="Filtrar Radar por Responsável"
+                                >
+                                    <option value={myName}>🎯 Meu Foco ({myName})</option>
+                                    <option value="">🌍 Visão Global (Todas)</option>
+                                    <option value="unassigned">👻 Sem Responsável</option>
+                                    {teamNames.filter(name => name !== myName).length > 0 && (
+                                        <optgroup label="Outros Membros da Equipe">
+                                            {teamNames.filter(name => name !== myName).map(name => (
+                                                <option key={name} value={name}>{name}</option>
+                                            ))}
+                                        </optgroup>
+                                    )}
+                                </select>
+                            </div>
                         </div>
-                    </div>
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2">
-                        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
-                            {deadlinesData.map(item => {
-                                const isOverdue = item.statusColor === 'red';
-                                const isWarning = item.statusColor === 'orange';
-                                const isRoutine = item.type === 'routine';
+                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+                                {deadlinesData.map(item => {
+                                    const isOverdue = item.statusColor === 'red';
+                                    const isWarning = item.statusColor === 'orange';
+                                    const isRoutine = item.type === 'routine';
 
-                                return (
-                                    <div 
-                                        key={item.id} 
-                                        onClick={() => handleOpenStore(item.storeName)}
-                                        className={`group relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${
-                                            isOverdue ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50' : 
-                                            isWarning ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20 hover:border-orange-500/50' : 
-                                            'bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40'
-                                        }`}
-                                    >
-                                        {isAdmin && (
-                                            <button 
-                                                onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, item.type === 'routine')}
-                                                className="absolute top-2 right-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 p-1 rounded transition-colors opacity-0 group-hover:opacity-100 z-10"
-                                                title="Forçar exclusão desta tarefa"
-                                            >
-                                                <X size={14} />
-                                            </button>
-                                        )}
+                                    return (
+                                        <div 
+                                            key={item.id} 
+                                            onClick={() => handleOpenStore(item.storeName)}
+                                            className={`group relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${
+                                                isOverdue ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50' : 
+                                                isWarning ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20 hover:border-orange-500/50' : 
+                                                'bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40'
+                                            }`}
+                                        >
+                                            {isAdmin && (
+                                                <button 
+                                                    onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, item.type === 'routine')}
+                                                    className="absolute top-2 right-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 p-1 rounded transition-colors opacity-0 group-hover:opacity-100 z-10"
+                                                    title="Forçar exclusão desta tarefa"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            )}
 
-                                        {item.isBeingWorkedOn && (
-                                            <div className="absolute -top-1 -right-1 flex h-3 w-3">
-                                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-gray-900"></span>
+                                            {item.isBeingWorkedOn && (
+                                                <div className="absolute -top-1 -right-1 flex h-3 w-3">
+                                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-gray-900"></span>
+                                                </div>
+                                            )}
+
+                                            <div className="flex items-start gap-2.5">
+                                                <div className={`p-1.5 rounded-md shrink-0 ${
+                                                    isOverdue ? 'bg-red-500/20 text-red-400' : 
+                                                    isWarning ? 'bg-orange-500/20 text-orange-400' : 
+                                                    'bg-blue-500/20 text-blue-400'
+                                                }`}>
+                                                    {isRoutine ? <CalendarClock size={14} /> : <AlertCircle size={14} />}
+                                                </div>
+                                                <div className="flex-1 overflow-hidden">
+                                                    <h4 className="font-bold text-white text-xs truncate" title={item.storeName}>{item.storeName}</h4>
+                                                    <span className="text-[9px] text-gray-500 font-medium uppercase tracking-wider truncate block" title={item.clientName}>{item.clientName}</span>
+                                                </div>
                                             </div>
-                                        )}
 
-                                        <div className="flex items-start gap-2.5">
-                                            <div className={`p-1.5 rounded-md shrink-0 ${
-                                                isOverdue ? 'bg-red-500/20 text-red-400' : 
-                                                isWarning ? 'bg-orange-500/20 text-orange-400' : 
-                                                'bg-blue-500/20 text-blue-400'
-                                            }`}>
-                                                {isRoutine ? <CalendarClock size={14} /> : <AlertCircle size={14} />}
-                                            </div>
-                                            <div className="flex-1 overflow-hidden">
-                                                <h4 className="font-bold text-white text-xs truncate" title={item.storeName}>{item.storeName}</h4>
-                                                <span className="text-[9px] text-gray-500 font-medium uppercase tracking-wider truncate block" title={item.clientName}>{item.clientName}</span>
+                                            <p className={`text-[11px] font-medium leading-tight line-clamp-2 ${isRoutine ? 'italic text-gray-400' : 'text-gray-300'}`} title={item.title}>
+                                                {item.title}
+                                            </p>
+
+                                            <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-auto">
+                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shadow-sm truncate max-w-[60%] ${
+                                                    isOverdue ? 'bg-red-500/20 text-red-400 border-red-500/30' : 
+                                                    isWarning ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : 
+                                                    'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                                                }`}>
+                                                    ⏱️ {item.timeLabel}
+                                                </span>
+                                                <span className="text-[9px] text-gray-500 truncate max-w-[40%]" title={item.responsavel || 'Equipe'}>
+                                                    Resp: <strong className="text-gray-300">{item.responsavel || 'Equipe'}</strong>
+                                                </span>
                                             </div>
                                         </div>
+                                    );
+                                })}
+                            </div>
 
-                                        <p className={`text-[11px] font-medium leading-tight line-clamp-2 ${isRoutine ? 'italic text-gray-400' : 'text-gray-300'}`} title={item.title}>
-                                            {item.title}
-                                        </p>
+                            {deadlinesData.length === 0 && (
+                                <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-700 rounded-xl bg-gray-900/30 h-full text-emerald-400 text-sm font-medium">
+                                    <CheckCircle size={32} className="opacity-50 mb-2" /> 
+                                    <span>Excelente! Nenhum prazo pendente nesta visão.</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
 
-                                        <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-auto">
-                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shadow-sm truncate max-w-[60%] ${
-                                                isOverdue ? 'bg-red-500/20 text-red-400 border-red-500/30' : 
-                                                isWarning ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : 
-                                                'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                {/* COLUNA DIREITA: Trabalhando Agora -> Timeline -> Ranking */}
+                <div className="lg:col-span-1 flex flex-col gap-6">
+
+
+                    {/* BANNER DE DESTAQUE SAZONAL (AO VIVO OU PRÓXIMO EVENTO) */}
+                    {activeEvent ? (
+                        <div className="bg-gradient-to-r from-orange-600/20 to-red-600/20 border border-orange-500/30 p-5 md:p-6 rounded-3xl shadow-[0_4px_20px_rgba(234,88,12,0.15)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-orange-500/20 rounded-2xl border border-orange-500/30 shrink-0">
+                                    <Flame className="text-orange-500 animate-pulse" size={28} />
+                                </div>
+                                <div>
+                                    <h3 className="text-white font-black text-xl flex items-center gap-2">
+                                        {activeEvent.name} 
+                                        <span className="bg-red-500 text-white text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full animate-pulse shadow-md">
+                                            Ao Vivo
+                                        </span>
+                                    </h3>
+                                    <p className="text-orange-200/70 text-sm mt-1">O evento está acontecendo agora! Acesse a War Room para registrar os resultados em tempo real.</p>
+                                </div>
+                            </div>
+                        </div>
+                    ) : nextEvent ? (
+                        <div className="bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 p-5 md:p-6 rounded-3xl shadow-[0_4px_20px_rgba(99,102,241,0.1)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-indigo-500/20 rounded-2xl border border-indigo-500/30 shrink-0">
+                                    <CalendarDays className="text-indigo-400" size={28} />
+                                </div>
+                                <div>
+                                    <h3 className="text-white font-black text-xl">
+                                        Próximo Evento: <span className="text-indigo-300">{nextEvent.name}</span>
+                                    </h3>
+                                    <p className="text-indigo-200/70 text-sm mt-1">
+                                        Prepare a operação! Marcado para <strong className="text-white">{new Date(nextEvent.date + 'T12:00:00').toLocaleDateString('pt-BR')}</strong> com meta de <strong className="text-emerald-400">{formatCurrency ? formatCurrency(nextEvent.target) : nextEvent.target}</strong>.
+                                    </p>
+                                </div>
+                            </div>
+                            {nextEvent.channels && nextEvent.channels.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-4 md:mt-0 md:justify-end">
+                                    {nextEvent.channels.map(mkt => (
+                                        <span key={mkt} className="bg-black/30 border border-indigo-500/20 text-indigo-300 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl">
+                                            {mkt}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ) : null}                    
+
+                    {/* 1. RADAR DA EQUIPE (Trabalhando Agora) */}
+                    <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg">
+                        <h3 className="text-lg font-bold tracking-wide text-emerald-400 uppercase flex items-center gap-2 mb-5">
+                            <Activity size={18} /> trabalhando agora
+                        </h3>
+                        
+                        {Object.keys(liveStatus).length > 0 ? (
+                            <div className="grid grid-cols-1 gap-3.5">
+                                {Object.entries(liveStatus).map(([userName, data]) => {
+                                    const isPaused = data.texto?.includes('⏸️');
+                                    
+                                    const memberData = teamMembers?.find(m => m.nomeCompleto === userName || m.nome === userName);
+                                    const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
+                                    const userPhoto = memberData?.avatarUrl || null;
+
+                                    return (
+                                        <div key={userName} 
+                                            onClick={() => {
+                                                if (data.storeId) {
+                                                    const targetStore = stores.find(s => s.id === data.storeId);
+                                                    if (targetStore && openTaskModal) openTaskModal(targetStore);
+                                                }
+                                            }}
+                                            className={`bg-gray-900/80 p-4 rounded-xl border flex items-center gap-4 relative overflow-hidden cursor-pointer transition-colors ${
+                                                isPaused ? 'border-amber-500/30 hover:border-amber-500' : 'border-gray-700 hover:border-emerald-500'
                                             }`}>
-                                                ⏱️ {item.timeLabel}
-                                            </span>
-                                            <span className="text-[9px] text-gray-500 truncate max-w-[40%]" title={item.responsavel || 'Equipe'}>
-                                                Resp: <strong className="text-gray-300">{item.responsavel || 'Equipe'}</strong>
-                                            </span>
+                                            <div className={`absolute top-0 left-0 h-full w-1.5 transition-all ${
+                                                isPaused ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
+                                            }`}></div>
+                                            
+                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
+                                                {userPhoto ? (
+                                                    <img src={userPhoto} alt={userName} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    userName.charAt(0).toUpperCase()
+                                                )}
+                                            </div>
+
+                                            <div className="flex-1">
+                                                <p className="text-sm font-bold text-white flex items-center justify-between mb-1">
+                                                    <span className="uppercase tracking-wider flex items-center gap-2">
+                                                        {userName}
+                                                    </span>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                                                        isPaused ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-500/70 bg-emerald-500/10'
+                                                    }`}>
+                                                        {data.timestamp}
+                                                    </span>
+                                                </p>
+                                                <p className="text-sm text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-700 rounded-xl bg-gray-900/30">
+                                <Activity size={32} className="text-gray-600 mb-3" />
+                                <p className="text-sm text-gray-500 font-medium italic text-center">Ninguém está executando tarefas rastreadas no momento.</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 2. TIMELINE */}
+                    <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col max-h-[400px]">
+                        
+                        {/* Cabeçalho Reestruturado e Responsivo */}
+                        <div className="flex flex-col gap-4 mb-5 border-b border-gray-700 pb-4 shrink-0">
+                            {/* Linha 1: Título e Botão Limpar */}
+                            <div className="flex justify-between items-center w-full">
+                                <h3 className="text-base font-bold tracking-wide text-gray-300 uppercase flex items-center gap-2">
+                                    <SquareStack size={20}/>
+                                    Timeline <span className="text-xs bg-gray-700 text-gray-300 px-2.5 py-0.5 rounded-full">{visibleLogs.length}</span>
+                                </h3>
+                                
+                                {/* Botão Limpar Estável e com desativação visual correta */}
+                                <button 
+                                    onClick={() => { 
+                                        setFeedClearedAt(Date.now()); 
+                                        localStorage.setItem('avante_feed_cleared_at', Date.now()); 
+                                        toast.success("Mural limpo!"); 
+                                    }} 
+                                    disabled={visibleLogs.length === 0}
+                                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all border shrink-0 ${
+                                        visibleLogs.length > 0
+                                            ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border-red-500/20 hover:border-red-500/40 cursor-pointer'
+                                            : 'bg-gray-800 text-gray-600 border-gray-700 opacity-50 cursor-not-allowed'
+                                    }`}
+                                    title="Limpar Histórico"
+                                >
+                                    Limpar
+                                </button>
+                            </div>
+
+                            {/* Linha 2: Abas Dinâmicas de Filtro */}
+                            <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 w-full">
+                                <button onClick={() => setFeedFilter('all')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'all' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Tudo</button>
+                                <button onClick={() => setFeedFilter('tasks')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
+                                <button onClick={() => setFeedFilter('mine')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'mine' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Minhas</button>
+                            </div>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto pr-3 custom-scrollbar border-l-2 border-gray-700/50 ml-2 pl-5 pb-2">
+                            {/* Interface de Estado Vazio */}
+                            {visibleLogs.length === 0 && (
+                                <div className="flex flex-col items-center justify-center p-6 mt-2 border border-dashed border-gray-700 rounded-xl bg-gray-900/30">
+                                    <SquareStack size={24} className="text-gray-600 mb-2" />
+                                    <p className="text-xs text-gray-500 font-medium text-center">Nenhum registro encontrado nesta visão.</p>
+                                </div>
+                            )}
+
+                            {visibleLogs.map(log => {
+                                const isTask = log.texto?.includes('✅ Tarefa concluída');
+                                return (
+                                    <div key={log.id} onClick={() => handleOpenStore(log.storeName)} className="relative group cursor-pointer mb-4 last:mb-0">
+                                        <div className={`absolute -left-[27px] top-2 w-3 h-3 rounded-full border-[3px] border-gray-800 ${isTask ? 'bg-emerald-500' : 'bg-indigo-500'}`}></div>
+                                        <div className={`p-4 rounded-xl border flex flex-col gap-1.5 transition-colors hover:brightness-125 ${isTask ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-gray-900/50 border-gray-700'}`}>
+                                            <div className="flex justify-between items-start">
+                                                <div className="text-xs font-black text-indigo-400 uppercase truncate pr-2">{log.clientName} <span className="text-gray-500 mx-1.5">•</span> {log.storeName}</div>
+                                                <span className="text-[10px] text-gray-500 font-medium shrink-0">{log.data}</span>
+                                            </div>
+                                            <p className={`text-sm leading-relaxed ${isTask ? 'text-emerald-100 font-medium' : 'text-gray-300'}`}>{log.texto}</p>
+                                            <p className="text-[10px] text-gray-500 mt-1">Por: <span className="text-gray-400 font-bold">{log.author}</span></p>
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
-
-                        {deadlinesData.length === 0 && (
-                            <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-700 rounded-xl bg-gray-900/30 h-full text-emerald-400 text-sm font-medium">
-                                <CheckCircle size={32} className="opacity-50 mb-2" /> 
-                                <span>Excelente! Nenhum prazo pendente nesta visão.</span>
-                            </div>
-                        )}
                     </div>
-                </div>
-            </div>
 
-            {/* COLUNA DIREITA: Trabalhando Agora -> Timeline -> Ranking */}
-            <div className="lg:col-span-1 flex flex-col gap-6">
-
-                {/* 1. RADAR DA EQUIPE (Trabalhando Agora) */}
-                <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg">
-                    <h3 className="text-lg font-bold tracking-wide text-emerald-400 uppercase flex items-center gap-2 mb-5">
-                        <Activity size={18} /> trabalhando agora
-                    </h3>
-                    
-                    {Object.keys(liveStatus).length > 0 ? (
-                        <div className="grid grid-cols-1 gap-3.5">
-                            {Object.entries(liveStatus).map(([userName, data]) => {
-                                const isPaused = data.texto?.includes('⏸️');
-                                
-                                const memberData = teamMembers?.find(m => m.nomeCompleto === userName || m.nome === userName);
+                    {/* 3. RANKING DE EXECUÇÃO */}
+                    <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
+                        <div className="mb-4 border-b border-gray-700 pb-4">
+                            <h3 className="text-lg font-bold tracking-wide text-amber-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
+                        </div>
+                        
+                        <div className="space-y-3 pr-2">
+                            {rankingDiario.map((rank, i) => {
+                                const memberData = teamMembers?.find(m => m.nomeCompleto === rank.name || m.nome === rank.name);
                                 const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
                                 const userPhoto = memberData?.avatarUrl || null;
 
                                 return (
-                                    <div key={userName} 
-                                        onClick={() => {
-                                            if (data.storeId) {
-                                                const targetStore = stores.find(s => s.id === data.storeId);
-                                                if (targetStore && openTaskModal) openTaskModal(targetStore);
-                                            }
-                                        }}
-                                        className={`bg-gray-900/80 p-4 rounded-xl border flex items-center gap-4 relative overflow-hidden cursor-pointer transition-colors ${
-                                            isPaused ? 'border-amber-500/30 hover:border-amber-500' : 'border-gray-700 hover:border-emerald-500'
-                                        }`}>
-                                        <div className={`absolute top-0 left-0 h-full w-1.5 transition-all ${
-                                            isPaused ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
-                                        }`}></div>
-                                        
-                                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
-                                            {userPhoto ? (
-                                                <img src={userPhoto} alt={userName} className="w-full h-full object-cover" />
-                                            ) : (
-                                                userName.charAt(0).toUpperCase()
-                                            )}
-                                        </div>
+                                    <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2 hover:border-gray-500 transition-colors">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <span className={`w-6 h-6 rounded-full text-[10px] font-black flex items-center justify-center shadow-inner shrink-0 ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
+                                                    {i + 1}
+                                                </span>
+                                                
+                                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
+                                                    {userPhoto ? (
+                                                        <img src={userPhoto} alt={rank.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        rank.name.charAt(0).toUpperCase()
+                                                    )}
+                                                </div>
 
-                                        <div className="flex-1">
-                                            <p className="text-sm font-bold text-white flex items-center justify-between mb-1">
-                                                <span className="uppercase tracking-wider flex items-center gap-2">
-                                                    {userName}
+                                                <div>
+                                                    <p className="text-sm font-bold text-gray-200 leading-none">{rank.name}</p>
+                                                    <p className="text-xs text-amber-500 font-bold mt-1">{rank.points} XP</p>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="text-xs text-gray-300 font-bold bg-white/5 px-2.5 py-1 rounded-lg border border-white/5 flex items-center gap-1">
+                                                    {rank.tasks} <CheckCircle size={14} className="text-emerald-500"/>
                                                 </span>
-                                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-                                                    isPaused ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-500/70 bg-emerald-500/10'
-                                                }`}>
-                                                    {data.timestamp}
-                                                </span>
-                                            </p>
-                                            <p className="text-sm text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
+                                            </div>
                                         </div>
-                                    </div>
+                                        
+                                        <div className="bg-black/40 rounded-lg px-3 py-2 flex justify-between items-center mt-1">
+                                            <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempos Médios</span>
+                                            <div className="flex gap-2 text-[10px] font-bold">
+                                                <span className={rank.projectedGmv > 0 ? 'text-emerald-400' : 'text-gray-600'}>🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}</span>
+                                                <span className={rank.avgMedia > 0 ? 'text-amber-400' : 'text-gray-600'}>🟡 {rank.avgMedia > 0 ? `${rank.avgMedia}m` : '--'}</span>
+                                                <span className={rank.avgAlta > 0 ? 'text-red-400' : 'text-gray-600'}>🔴 {rank.avgAlta > 0 ? `${rank.avgAlta}m` : '--'}</span>
+                                            </div>
+                                        </div>
+                                    </div> 
                                 );
                             })}
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-700 rounded-xl bg-gray-900/30">
-                            <Activity size={32} className="text-gray-600 mb-3" />
-                            <p className="text-sm text-gray-500 font-medium italic text-center">Ninguém está executando tarefas rastreadas no momento.</p>
-                        </div>
-                    )}
-                </div>
-
-                {/* 2. TIMELINE */}
-                <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col max-h-[400px]">
-                    
-                    {/* ATUALIZADO: Cabeçalho Reestruturado e Responsivo */}
-                    <div className="flex flex-col gap-4 mb-5 border-b border-gray-700 pb-4 shrink-0">
-                        {/* Linha 1: Título e Botão Limpar */}
-                        <div className="flex justify-between items-center w-full">
-                            <h3 className="text-base font-bold tracking-wide text-gray-300 uppercase flex items-center gap-2">
-                                <SquareStack size={20}/>
-                                Timeline <span className="text-xs bg-gray-700 text-gray-300 px-2.5 py-0.5 rounded-full">{visibleLogs.length}</span>
-                            </h3>
-                            
-                            {/* Botão Limpar Estável e com desativação visual correta */}
-                            <button 
-                                onClick={() => { 
-                                    setFeedClearedAt(Date.now()); 
-                                    localStorage.setItem('avante_feed_cleared_at', Date.now()); 
-                                    toast.success("Mural limpo!"); 
-                                }} 
-                                disabled={visibleLogs.length === 0}
-                                className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all border shrink-0 ${
-                                    visibleLogs.length > 0
-                                        ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border-red-500/20 hover:border-red-500/40 cursor-pointer'
-                                        : 'bg-gray-800 text-gray-600 border-gray-700 opacity-50 cursor-not-allowed'
-                                }`}
-                                title="Limpar Histórico"
-                            >
-                                Limpar
-                            </button>
+                            {rankingDiario.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada hoje.</div>}
                         </div>
 
-                        {/* Linha 2: Abas Dinâmicas de Filtro */}
-                        <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 w-full">
-                            <button onClick={() => setFeedFilter('all')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'all' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Tudo</button>
-                            <button onClick={() => setFeedFilter('tasks')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
-                            <button onClick={() => setFeedFilter('mine')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'mine' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Minhas</button>
+                        <div className="mt-4 pt-4 border-t border-gray-700/50 text-[10px] text-gray-400 text-center leading-relaxed">
+                            <strong>XP Base:</strong> Baixa (+10) • Média (+20) • Alta (+30) | <strong>Criação:</strong> (+2 XP)<br/>
+                            <strong>Prazos:</strong> No prazo (+5) • Atrasada (-10)<br/>
+                            <strong>Agilidade:</strong> Rápida (+5) • Na média (0) • Lenta (-5) comparado ao histórico geral.
                         </div>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto pr-3 custom-scrollbar border-l-2 border-gray-700/50 ml-2 pl-5 pb-2">
-                        {/* Interface de Estado Vazio */}
-                        {visibleLogs.length === 0 && (
-                            <div className="flex flex-col items-center justify-center p-6 mt-2 border border-dashed border-gray-700 rounded-xl bg-gray-900/30">
-                                <SquareStack size={24} className="text-gray-600 mb-2" />
-                                <p className="text-xs text-gray-500 font-medium text-center">Nenhum registro encontrado nesta visão.</p>
-                            </div>
-                        )}
-
-                        {visibleLogs.map(log => {
-                            const isTask = log.texto?.includes('✅ Tarefa concluída');
-                            return (
-                                <div key={log.id} onClick={() => handleOpenStore(log.storeName)} className="relative group cursor-pointer mb-4 last:mb-0">
-                                    <div className={`absolute -left-[27px] top-2 w-3 h-3 rounded-full border-[3px] border-gray-800 ${isTask ? 'bg-emerald-500' : 'bg-indigo-500'}`}></div>
-                                    <div className={`p-4 rounded-xl border flex flex-col gap-1.5 transition-colors hover:brightness-125 ${isTask ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-gray-900/50 border-gray-700'}`}>
-                                        <div className="flex justify-between items-start">
-                                            <div className="text-xs font-black text-indigo-400 uppercase truncate pr-2">{log.clientName} <span className="text-gray-500 mx-1.5">•</span> {log.storeName}</div>
-                                            <span className="text-[10px] text-gray-500 font-medium shrink-0">{log.data}</span>
-                                        </div>
-                                        <p className={`text-sm leading-relaxed ${isTask ? 'text-emerald-100 font-medium' : 'text-gray-300'}`}>{log.texto}</p>
-                                        <p className="text-[10px] text-gray-500 mt-1">Por: <span className="text-gray-400 font-bold">{log.author}</span></p>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* 3. RANKING DE EXECUÇÃO */}
-                <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
-                    <div className="mb-4 border-b border-gray-700 pb-4">
-                        <h3 className="text-lg font-bold tracking-wide text-amber-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
-                    </div>
-                    
-                    <div className="space-y-3 pr-2">
-                        {rankingDiario.map((rank, i) => {
-                            const memberData = teamMembers?.find(m => m.nomeCompleto === rank.name || m.nome === rank.name);
-                            const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
-                            const userPhoto = memberData?.avatarUrl || null;
-
-                            return (
-                                <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2 hover:border-gray-500 transition-colors">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <span className={`w-6 h-6 rounded-full text-[10px] font-black flex items-center justify-center shadow-inner shrink-0 ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
-                                                {i + 1}
-                                            </span>
-                                            
-                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
-                                                {userPhoto ? (
-                                                    <img src={userPhoto} alt={rank.name} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    rank.name.charAt(0).toUpperCase()
-                                                )}
-                                            </div>
-
-                                            <div>
-                                                <p className="text-sm font-bold text-gray-200 leading-none">{rank.name}</p>
-                                                <p className="text-xs text-amber-500 font-bold mt-1">{rank.points} XP</p>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <span className="text-xs text-gray-300 font-bold bg-white/5 px-2.5 py-1 rounded-lg border border-white/5 flex items-center gap-1">
-                                                {rank.tasks} <CheckCircle size={14} className="text-emerald-500"/>
-                                            </span>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="bg-black/40 rounded-lg px-3 py-2 flex justify-between items-center mt-1">
-                                        <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempos Médios</span>
-                                        <div className="flex gap-2 text-[10px] font-bold">
-                                            <span className={rank.projectedGmv > 0 ? 'text-emerald-400' : 'text-gray-600'}>🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}</span>
-                                            <span className={rank.avgMedia > 0 ? 'text-amber-400' : 'text-gray-600'}>🟡 {rank.avgMedia > 0 ? `${rank.avgMedia}m` : '--'}</span>
-                                            <span className={rank.avgAlta > 0 ? 'text-red-400' : 'text-gray-600'}>🔴 {rank.avgAlta > 0 ? `${rank.avgAlta}m` : '--'}</span>
-                                        </div>
-                                    </div>
-                                </div> 
-                            );
-                        })}
-                        {rankingDiario.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada hoje.</div>}
-                    </div>
-
-                    <div className="mt-4 pt-4 border-t border-gray-700/50 text-[10px] text-gray-400 text-center leading-relaxed">
-                        <strong>XP Base:</strong> Baixa (+10) • Média (+20) • Alta (+30) | <strong>Criação:</strong> (+2 XP)<br/>
-                        <strong>Prazos:</strong> No prazo (+5) • Atrasada (-10)<br/>
-                        <strong>Agilidade:</strong> Rápida (+5) • Na média (0) • Lenta (-5) comparado ao histórico geral.
                     </div>
                 </div>
             </div>

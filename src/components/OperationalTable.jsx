@@ -161,14 +161,34 @@ export default function OperationalTable({
                                 </select>
                               </div>
                               <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-amber-500 uppercase">Crescimento Personalizado (%)</label>
-                                <input 
-                                  type="number" 
-                                  placeholder="Ex: 15 (Vazio = Usa Global)"
-                                  value={storeEditData.customGrowth !== undefined && storeEditData.customGrowth !== null ? storeEditData.customGrowth : ''} 
-                                  onChange={e => setStoreEditData({...storeEditData, customGrowth: e.target.value})} 
-                                  className="w-full bg-black/40 border border-amber-500/30 text-amber-400 rounded-lg p-2.5 outline-none focus:border-amber-500 text-sm font-bold placeholder:text-gray-600" 
-                                />
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="text-[10px] font-bold text-amber-500 uppercase">Tipo de Meta</label>
+                                  <select 
+                                    value={storeEditData.targetType || 'percent'} 
+                                    onChange={e => setStoreEditData({...storeEditData, targetType: e.target.value})} 
+                                    className="bg-transparent text-gray-400 text-[10px] font-bold outline-none cursor-pointer"
+                                  >
+                                    <option value="percent">% Acumulativo</option>
+                                    <option value="fixed">R$ Fixo Absoluto</option>
+                                  </select>
+                                </div>
+                                {storeEditData.targetType === 'fixed' ? (
+                                  <input 
+                                    type="number" 
+                                    placeholder="Valor Financeiro Fixo (Ex: 50000)"
+                                    value={storeEditData.fixedGmvTarget !== undefined && storeEditData.fixedGmvTarget !== null ? storeEditData.fixedGmvTarget : ''} 
+                                    onChange={e => setStoreEditData({...storeEditData, fixedGmvTarget: e.target.value})} 
+                                    className="w-full bg-black/40 border border-amber-500/30 text-amber-400 rounded-lg p-2.5 outline-none focus:border-amber-500 text-sm font-bold placeholder:text-gray-600" 
+                                  />
+                                ) : (
+                                  <input 
+                                    type="number" 
+                                    placeholder="% Adicional (Ex: 15)"
+                                    value={storeEditData.customGrowth !== undefined && storeEditData.customGrowth !== null ? storeEditData.customGrowth : ''} 
+                                    onChange={e => setStoreEditData({...storeEditData, customGrowth: e.target.value})} 
+                                    className="w-full bg-black/40 border border-amber-500/30 text-amber-400 rounded-lg p-2.5 outline-none focus:border-amber-500 text-sm font-bold placeholder:text-gray-600" 
+                                  />
+                                )}
                               </div>
                             </div>
                           </div>
@@ -241,7 +261,9 @@ export default function OperationalTable({
                                   <span className="text-xs text-gray-400">Atual: <strong className="text-white">{formatCurrency(row.currentRevenue)}</strong></span>
                                   <span className="text-xs text-gray-400 flex flex-col items-end">
                                     <span>Meta: <strong className="text-gray-300">{formatCurrency(row.gmvTarget)}</strong></span>
-                                    <span className="text-[9px] text-indigo-400/70 mt-0.5" title={`Regra aplicada: ${row.appliedGrowthType}`}>({row.growthRate}% - Regra: {row.appliedGrowthType})</span>
+                                    <span className="text-[9px] text-indigo-400/70 mt-0.5" title={`Regra aplicada: ${row.appliedGrowthType}`}>
+                                      {row.targetType === 'fixed' ? '(Meta Absoluta)' : `(${row.growthRate}% - Acumulado)`}
+                                    </span>
                                   </span>
                               </div>
                           </div>

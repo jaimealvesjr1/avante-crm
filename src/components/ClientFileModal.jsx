@@ -298,7 +298,7 @@ export default function ClientFileModal({
               <PieChartIcon size={16} /> Visão Geral
             </button>
             <button onClick={() => setActiveTab('apuracao')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'apuracao' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
-              <Zap size={16} /> Lançamentos Diários
+              <Zap size={16} /> Lançamento Parcial
             </button>
             <button onClick={() => setActiveTab('historico')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'historico' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
               <History size={16} /> Histórico & Tarefas
@@ -448,19 +448,13 @@ export default function ClientFileModal({
           {/* === ABA 2: LANÇAMENTOS INTELIGENTES === */}
           {activeTab === 'apuracao' && (
             <div className="space-y-6 animate-in fade-in">
-              <div className="flex justify-between items-center bg-black/20 p-4 rounded-2xl border border-white/5">
-                <div>
-                  <h3 className="text-white font-bold flex items-center gap-2"><Zap className="text-amber-400" size={16}/> Lançamentos Individuais</h3>
-                  <p className="text-xs text-gray-400 mt-1">Registre o faturamento diário para as lojas deste cliente.</p>
-                </div>
-              </div>
 
               <div className="bg-black/20 rounded-2xl border border-white/5 overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[700px]">
                   <thead className="bg-black/40 text-gray-400 text-[10px] uppercase tracking-wider border-b border-white/5">
                     <tr>
                       <th className="p-4">Loja / Canal</th>
-                      <th className="p-4">Dia Ref.</th>
+                      <th className="p-4">Dia Final</th>
                       <th className="p-4 text-blue-400">Fat. Acumulado</th>
                       <th className="p-4 text-emerald-400">Pedidos</th>
                       <th className="p-4 text-purple-400">Unidades</th>

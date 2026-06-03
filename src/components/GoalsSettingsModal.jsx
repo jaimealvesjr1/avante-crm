@@ -1,41 +1,56 @@
 import React, { useState, useMemo } from 'react';
-import { X, Target, Save, TrendingUp, ShoppingBag, Briefcase, Globe, ArrowRight } from 'lucide-react';
+import { X, Target, Save, TrendingUp, ShoppingBag, Briefcase, Globe, ArrowRight, CalendarDays, Play, Trash2, Flame } from 'lucide-react';
 import { doc, writeBatch, deleteField } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
 
 export default function GoalsSettingsModal({ 
   isOpen, onClose, stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, 
-  formatCurrency, db 
+  formatCurrency, db, activeEvent, scheduledEvents, handleEventAction 
 }) {
   if (!isOpen) return null;
 
   const [activeTab, setActiveTab] = useState('global');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Estados locais para rascunho das edições
-  const [localGlobal, setLocalGlobal] = useState(globalGrowth || 10);
+  const [localGlobal, setLocalGlobal] = useState(globalGrowth !== undefined ? globalGrowth : 10);
   const [localClientMap, setLocalClientMap] = useState({ ...(clientGrowthMap || {}) });
   const [localMktMap, setLocalMktMap] = useState({ ...(marketplaceGrowthMap || {}) });
   const [localStoreMap, setLocalStoreMap] = useState({});
 
-  // Motor de Simulação: Descobre qual taxa será aplicada na loja com base no rascunho atual
-  const getSimulatedTarget = (store) => {
-    const customG = localStoreMap[store.id] !== undefined ? localStoreMap[store.id] : store.customGrowth;
-    const clientG = localClientMap[store.client];
-    const mktG = store.marketplace ? localMktMap[store.marketplace.toUpperCase()] : undefined;
+  const [eventForm, setEventForm] = useState({ name: '', target: '', date: '', channels: [] }); // NOVO
+  const getLocalStoreData = (store) => {
+    if (localStoreMap[store.id]) return localStoreMap[store.id];
+    return {
+       type: store.targetType || 'percent',
+       percent: store.customGrowth !== undefined ? store.customGrowth : '',
+       fixed: store.fixedGmvTarget || ''
+    };
+  };
 
-    let rate = localGlobal;
-    let appliedRule = 'Global';
+  const calculateTarget = (store, isSimulated = true) => {
+    const globalVal = isSimulated ? Number(localGlobal) : Number(globalGrowth || 0);
+    const clientMap = isSimulated ? localClientMap : (clientGrowthMap || {});
+    const mktMap = isSimulated ? localMktMap : (marketplaceGrowthMap || {});
+    const base = Number(store.gmvBase) || 0;
 
-    if (customG !== undefined && customG !== null && customG !== '') {
-      rate = Number(customG); appliedRule = 'Loja';
-    } else if (clientG !== undefined && clientG !== null && clientG !== '') {
-      rate = Number(clientG); appliedRule = 'Cliente';
-    } else if (mktG !== undefined && mktG !== null && mktG !== '') {
-      rate = Number(mktG); appliedRule = 'Canal';
+    const storeData = isSimulated ? getLocalStoreData(store) : { type: store.targetType || 'percent', percent: store.customGrowth, fixed: store.fixedGmvTarget };
+
+    if (storeData.type === 'fixed') {
+       return { base, target: Number(storeData.fixed) || 0, rate: 0, rule: 'Meta Fixa' };
     }
 
-    return { target: (Number(store.gmvBase) || 0) * (1 + (rate / 100)), rule: appliedRule, rate };
+    let rate = globalVal || 0;
+    if (store.marketplace && mktMap[store.marketplace.toUpperCase()] !== undefined && mktMap[store.marketplace.toUpperCase()] !== '') {
+      rate += Number(mktMap[store.marketplace.toUpperCase()]);
+    }
+    if (clientMap[store.client] !== undefined && clientMap[store.client] !== '') {
+      rate += Number(clientMap[store.client]);
+    }
+    if (storeData.percent !== undefined && storeData.percent !== null && storeData.percent !== '') {
+      rate += Number(storeData.percent);
+    }
+
+    return { base, target: base * (1 + (rate / 100)), rate, rule: 'Acumulada' };
   };
 
   const handleSave = async () => {
@@ -43,21 +58,26 @@ export default function GoalsSettingsModal({
     try {
       const batch = writeBatch(db);
 
-      // Salva Configurações Globais, Clientes e Canais
       batch.set(doc(db, "settings", "global"), {
         globalGrowth: Number(localGlobal),
         clientGrowthMap: localClientMap,
         marketplaceGrowthMap: localMktMap
       }, { merge: true });
 
-      // Salva edições individuais de Loja
       Object.entries(localStoreMap).forEach(([storeId, val]) => {
-        const finalVal = (val === '' || val === null) ? deleteField() : Number(val);
-        batch.update(doc(db, "stores", storeId.toString()), { customGrowth: finalVal });
+        const updates = { targetType: val.type };
+        if (val.type === 'fixed') {
+           updates.fixedGmvTarget = Number(val.fixed) || 0;
+           updates.customGrowth = deleteField();
+        } else {
+           updates.fixedGmvTarget = deleteField();
+           updates.customGrowth = (val.percent === '' || val.percent === null) ? deleteField() : Number(val.percent);
+        }
+        batch.update(doc(db, "stores", storeId.toString()), updates);
       });
 
       await batch.commit();
-      toast.success("Sistema de Metas atualizado com sucesso!");
+      toast.success("Metas Acumulativas atualizadas!");
       onClose();
     } catch (error) {
       toast.error("Erro ao salvar metas.");
@@ -72,48 +92,41 @@ export default function GoalsSettingsModal({
 
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[150] p-4 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-[#0B0F19] border border-white/10 w-full max-w-5xl rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+      <div className="bg-[#0B0F19] border border-white/10 w-full max-w-6xl rounded-3xl shadow-2xl flex flex-col max-h-[95vh] overflow-hidden">
         
         {/* HEADER */}
         <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
           <div>
             <h2 className="text-2xl font-black text-white flex items-center gap-2">
-              <Target className="text-indigo-400" /> Control Center: Metas (MoM)
+              <Target className="text-indigo-400" /> Central de Controle de Metas
             </h2>
-            <p className="text-sm text-gray-400 mt-1">Simule e defina a hierarquia de crescimento. Prioridade: <strong className="text-white">Loja &gt; Cliente &gt; Canal &gt; Global</strong>.</p>
+            <p className="text-sm text-gray-400 mt-1">Simule o crescimento. A meta final é a SOMA: <strong className="text-white">Global + Canal + Cliente + Loja</strong>.</p>
           </div>
           <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-xl text-gray-400 transition-colors">
             <X size={20} />
           </button>
         </div>
 
-        {/* CORPO: SIDEBAR + CONTEÚDO */}
+        {/* CORPO */}
         <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
           
-          {/* TABS SIDEBAR */}
-          <div className="w-full md:w-64 border-r border-white/10 bg-black/20 p-4 space-y-2 shrink-0 overflow-x-auto md:overflow-y-auto flex md:flex-col custom-scrollbar">
-            <button onClick={() => setActiveTab('global')} className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'global' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
-              <Globe size={18} /> Meta Global
-            </button>
-            <button onClick={() => setActiveTab('canais')} className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'canais' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
-              <ShoppingBag size={18} /> Marketplaces
-            </button>
-            <button onClick={() => setActiveTab('clientes')} className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'clientes' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
-              <Briefcase size={18} /> Clientes
-            </button>
-            <button onClick={() => setActiveTab('lojas')} className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'lojas' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
-              <TrendingUp size={18} /> Lojas (Individual)
-            </button>
+          {/* TABS */}
+          <div className="w-full md:w-56 border-r border-white/10 bg-black/20 p-4 space-y-2 shrink-0 overflow-x-auto md:overflow-y-auto flex md:flex-col custom-scrollbar">
+            <button onClick={() => setActiveTab('global')} className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'global' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}><Globe size={18} /> Taxa Global</button>
+            <button onClick={() => setActiveTab('canais')} className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'canais' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}><ShoppingBag size={18} /> Marketplaces</button>
+            <button onClick={() => setActiveTab('clientes')} className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'clientes' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}><Briefcase size={18} /> Clientes</button>
+            <button onClick={() => setActiveTab('lojas')} className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'lojas' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}><TrendingUp size={18} /> Lojas</button>
+            <button onClick={() => setActiveTab('eventos')} className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap mt-4 border-t border-white/10 pt-4 ${activeTab === 'eventos' ? 'bg-orange-600 text-white shadow-md' : 'text-orange-500 hover:bg-orange-500/10'}`}><CalendarDays size={18} /> Sazonalidades</button>
           </div>
 
-          {/* ÁREA DE CONTEÚDO E SIMULAÇÃO */}
+          {/* SIMULAÇÃO */}
           <div className="flex-1 overflow-y-auto p-6 bg-transparent custom-scrollbar">
             
             {activeTab === 'global' && (
               <div className="space-y-6 animate-in fade-in">
                 <div className="bg-indigo-500/10 border border-indigo-500/20 p-6 rounded-2xl">
                   <h3 className="text-lg font-bold text-white mb-2">Meta Global Base</h3>
-                  <p className="text-sm text-indigo-200/70 mb-6">Taxa de crescimento padrão aplicada a todas as lojas que não possuam regras específicas.</p>
+                  <p className="text-sm text-indigo-200/70 mb-6">Ponto de partida do crescimento de TODAS as lojas. As demais taxas serão somadas ou subtraídas deste valor.</p>
                   <div className="flex items-center gap-3">
                     <input type="number" value={localGlobal} onChange={e => setLocalGlobal(e.target.value)} className="bg-black/40 border border-white/10 text-white rounded-xl p-3 w-32 outline-none font-black text-2xl text-center focus:border-indigo-500" />
                     <span className="text-xl font-bold text-gray-500">%</span>
@@ -121,16 +134,19 @@ export default function GoalsSettingsModal({
                 </div>
 
                 <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl shadow-sm">
-                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Simulação de Impacto</h4>
-                  <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Simulação de Impacto (Lojas Filtradas)</h4>
+                  <div className="grid grid-cols-3 items-center gap-4">
                     <div>
-                      <p className="text-[10px] text-gray-500 uppercase font-bold">Meta Total Atual</p>
-                      <p className="text-xl font-bold text-gray-400">{formatCurrency(stores.reduce((acc, s) => acc + (s.gmvTarget || 0), 0))}</p>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">GMV Base (Partida)</p>
+                      <p className="text-lg font-bold text-gray-300">{formatCurrency(stores.reduce((acc, s) => acc + (Number(s.gmvBase) || 0), 0))}</p>
                     </div>
-                    <ArrowRight className="text-gray-600" />
-                    <div className="text-right">
-                      <p className="text-[10px] text-indigo-400 uppercase font-bold">Nova Meta Total Esperada</p>
-                      <p className="text-2xl font-black text-indigo-400">{formatCurrency(stores.reduce((acc, s) => acc + getSimulatedTarget(s).target, 0))}</p>
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">Meta Atual (Antes de salvar)</p>
+                      <p className="text-lg font-bold text-gray-400">{formatCurrency(stores.reduce((acc, s) => acc + calculateTarget(s, false).target, 0))}</p>
+                    </div>
+                    <div className="bg-indigo-900/20 p-3 rounded-xl border border-indigo-500/30 text-right">
+                      <p className="text-[10px] text-indigo-400 uppercase font-bold">Nova Meta Esperada</p>
+                      <p className="text-2xl font-black text-indigo-400">{formatCurrency(stores.reduce((acc, s) => acc + calculateTarget(s, true).target, 0))}</p>
                     </div>
                   </div>
                 </div>
@@ -139,98 +155,128 @@ export default function GoalsSettingsModal({
 
             {activeTab === 'canais' && (
               <div className="space-y-4 animate-in fade-in">
-                <p className="text-sm text-gray-400 mb-4">Metas específicas por Canal de Venda. Sobrepõe a Meta Global.</p>
-                {activeMkts.map(mkt => {
-                  const mktStores = stores.filter(s => s.marketplace?.toUpperCase() === mkt);
-                  const currentTarget = mktStores.reduce((acc, s) => acc + (s.gmvTarget || 0), 0);
-                  const expectedTarget = mktStores.reduce((acc, s) => acc + getSimulatedTarget(s).target, 0);
+                <p className="text-sm text-gray-400 mb-4">Crescimento por Canal. Deixe vazio para somar 0% à meta Global. Use negativo para subtrair.</p>
+                <div className="space-y-3">
+                  {activeMkts.map(mkt => {
+                    const mktStores = stores.filter(s => s.marketplace?.toUpperCase() === mkt);
+                    const baseTotal = mktStores.reduce((acc, s) => acc + (Number(s.gmvBase) || 0), 0);
+                    const currentTarget = mktStores.reduce((acc, s) => acc + calculateTarget(s, false).target, 0);
+                    const expectedTarget = mktStores.reduce((acc, s) => acc + calculateTarget(s, true).target, 0);
 
-                  return (
-                    <div key={mkt} className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="min-w-[150px]">
-                        <h4 className="font-bold text-white uppercase">{mkt}</h4>
-                        <p className="text-xs text-gray-500 mt-1">{mktStores.length} lojas ativas</p>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 bg-black/40 px-3 py-2 rounded-lg border border-white/10 w-max">
-                        <input type="number" placeholder="Usa Global" value={localMktMap[mkt] !== undefined ? localMktMap[mkt] : ''} onChange={e => { const val = e.target.value; setLocalMktMap(p => { const newMap = {...p}; if(val === '') delete newMap[mkt]; else newMap[mkt] = val; return newMap; })}} className="bg-transparent text-white w-20 outline-none font-bold text-center text-sm placeholder:text-gray-600 placeholder:font-normal" />
-                        <span className="text-gray-500 font-bold text-sm">%</span>
-                      </div>
+                    return (
+                      <div key={mkt} className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                        <div className="min-w-[150px]">
+                          <h4 className="font-bold text-white uppercase">{mkt}</h4>
+                          <p className="text-[10px] text-gray-500 mt-1">{mktStores.length} lojas • Base: {formatCurrency(baseTotal)}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 bg-black/40 px-3 py-2 rounded-lg border border-white/10 w-max shrink-0">
+                          <span className="text-gray-500 font-bold">+</span>
+                          <input type="number" placeholder="0" value={localMktMap[mkt] !== undefined ? localMktMap[mkt] : ''} onChange={e => { const val = e.target.value; setLocalMktMap(p => { const newMap = {...p}; if(val === '') delete newMap[mkt]; else newMap[mkt] = val; return newMap; })}} className="bg-transparent text-white w-16 outline-none font-bold text-center text-sm placeholder:text-gray-600 placeholder:font-normal" />
+                          <span className="text-gray-500 font-bold text-sm">%</span>
+                        </div>
 
-                      <div className="flex items-center gap-4 text-sm md:ml-auto">
-                        <div className="text-right"><p className="text-[9px] text-gray-500 uppercase font-bold">Atual</p><p className="text-gray-400 font-medium">{formatCurrency(currentTarget)}</p></div>
-                        <ArrowRight size={14} className="text-gray-600" />
-                        <div className="text-right"><p className="text-[9px] text-indigo-400 uppercase font-bold">Esperado</p><p className="text-indigo-400 font-bold">{formatCurrency(expectedTarget)}</p></div>
+                        <div className="flex items-center gap-4 text-sm w-full xl:w-auto xl:justify-end">
+                          <div className="text-right flex-1 xl:flex-none"><p className="text-[9px] text-gray-500 uppercase font-bold">Meta Atual</p><p className="text-gray-400 font-medium">{formatCurrency(currentTarget)}</p></div>
+                          <ArrowRight size={14} className="text-gray-600 shrink-0" />
+                          <div className="text-right flex-1 xl:flex-none"><p className="text-[9px] text-indigo-400 uppercase font-bold">Esperado</p><p className="text-indigo-400 font-bold">{formatCurrency(expectedTarget)}</p></div>
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
             )}
 
             {activeTab === 'clientes' && (
               <div className="space-y-4 animate-in fade-in">
-                <p className="text-sm text-gray-400 mb-4">Metas específicas por Cliente. Sobrepõe Metas de Canal e Global.</p>
-                {clients.map(client => {
-                  const clientStores = stores.filter(s => s.client === client && !s.arquivada);
-                  const currentTarget = clientStores.reduce((acc, s) => acc + (s.gmvTarget || 0), 0);
-                  const expectedTarget = clientStores.reduce((acc, s) => acc + getSimulatedTarget(s).target, 0);
+                <p className="text-sm text-gray-400 mb-4">Crescimento por Cliente. Soma-se à Global e ao Canal.</p>
+                <div className="space-y-3">
+                  {clients.map(client => {
+                    const clientStores = stores.filter(s => s.client === client && !s.arquivada);
+                    const baseTotal = clientStores.reduce((acc, s) => acc + (Number(s.gmvBase) || 0), 0);
+                    const currentTarget = clientStores.reduce((acc, s) => acc + calculateTarget(s, false).target, 0);
+                    const expectedTarget = clientStores.reduce((acc, s) => acc + calculateTarget(s, true).target, 0);
 
-                  return (
-                    <div key={client} className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="min-w-[150px]">
-                        <h4 className="font-bold text-white">{client}</h4>
-                        <p className="text-xs text-gray-500 mt-1">{clientStores.length} lojas ativas</p>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 bg-black/40 px-3 py-2 rounded-lg border border-white/10 w-max">
-                        <input type="number" placeholder="Usa Inferior" value={localClientMap[client] !== undefined ? localClientMap[client] : ''} onChange={e => { const val = e.target.value; setLocalClientMap(p => { const newMap = {...p}; if(val === '') delete newMap[client]; else newMap[client] = val; return newMap; })}} className="bg-transparent text-amber-400 w-20 outline-none font-bold text-center text-sm placeholder:text-gray-600 placeholder:font-normal" />
-                        <span className="text-gray-500 font-bold text-sm">%</span>
-                      </div>
+                    return (
+                      <div key={client} className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                        <div className="min-w-[150px]">
+                          <h4 className="font-bold text-white">{client}</h4>
+                          <p className="text-[10px] text-gray-500 mt-1">{clientStores.length} lojas • Base: {formatCurrency(baseTotal)}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 bg-black/40 px-3 py-2 rounded-lg border border-white/10 w-max shrink-0">
+                          <span className="text-gray-500 font-bold">+</span>
+                          <input type="number" placeholder="0" value={localClientMap[client] !== undefined ? localClientMap[client] : ''} onChange={e => { const val = e.target.value; setLocalClientMap(p => { const newMap = {...p}; if(val === '') delete newMap[client]; else newMap[client] = val; return newMap; })}} className="bg-transparent text-amber-400 w-16 outline-none font-bold text-center text-sm placeholder:text-gray-600 placeholder:font-normal" />
+                          <span className="text-gray-500 font-bold text-sm">%</span>
+                        </div>
 
-                      <div className="flex items-center gap-4 text-sm md:ml-auto">
-                        <div className="text-right"><p className="text-[9px] text-gray-500 uppercase font-bold">Atual</p><p className="text-gray-400 font-medium">{formatCurrency(currentTarget)}</p></div>
-                        <ArrowRight size={14} className="text-gray-600" />
-                        <div className="text-right"><p className="text-[9px] text-amber-400 uppercase font-bold">Esperado</p><p className="text-amber-400 font-bold">{formatCurrency(expectedTarget)}</p></div>
+                        <div className="flex items-center gap-4 text-sm w-full xl:w-auto xl:justify-end">
+                          <div className="text-right flex-1 xl:flex-none"><p className="text-[9px] text-gray-500 uppercase font-bold">Meta Atual</p><p className="text-gray-400 font-medium">{formatCurrency(currentTarget)}</p></div>
+                          <ArrowRight size={14} className="text-gray-600 shrink-0" />
+                          <div className="text-right flex-1 xl:flex-none"><p className="text-[9px] text-amber-400 uppercase font-bold">Esperado</p><p className="text-amber-400 font-bold">{formatCurrency(expectedTarget)}</p></div>
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
             )}
 
             {activeTab === 'lojas' && (
               <div className="space-y-4 animate-in fade-in">
-                <p className="text-sm text-gray-400 mb-4">Metas específicas por Loja. Regra máxima, sobrepõe todas as outras metas.</p>
+                <p className="text-sm text-gray-400 mb-4">Ajuste fino por Loja. Soma-se à Global, Canal e Cliente.</p>
                 <div className="grid grid-cols-1 gap-3">
                   {stores.filter(s => !s.arquivada).map(store => {
-                    const currentTarget = store.gmvTarget || 0;
-                    const sim = getSimulatedTarget(store);
+                    const currentSim = calculateTarget(store, false);
+                    const expectedSim = calculateTarget(store, true);
 
                     return (
-                      <div key={store.id} className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-white/[0.04] transition-colors">
+                      <div key={store.id} className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-white/[0.04] transition-colors">
                         <div className="flex-1 min-w-[200px]">
                           <h4 className="font-bold text-white">{store.store}</h4>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded border border-white/10">{store.client}</span>
                             <span className="text-[10px] text-indigo-300 uppercase tracking-widest">{store.marketplace}</span>
                           </div>
+                          <p className="text-[10px] text-gray-500 mt-2">Base: {formatCurrency(expectedSim.base)}</p>
                         </div>
                         
-                        <div className="flex items-center gap-2 bg-black/40 px-3 py-2 rounded-lg border border-white/10 w-max shrink-0">
-                          <input type="number" placeholder="Usa Inferior" value={localStoreMap[store.id] !== undefined ? localStoreMap[store.id] : (store.customGrowth !== undefined ? store.customGrowth : '')} onChange={e => setLocalStoreMap(p => ({...p, [store.id]: e.target.value}))} className="bg-transparent text-emerald-400 w-24 outline-none font-bold text-center text-sm placeholder:text-gray-600 placeholder:font-normal" />
-                          <span className="text-gray-500 font-bold text-sm">%</span>
+                        <div className="flex items-center gap-2 bg-black/40 px-2 py-1.5 rounded-lg border border-white/10 w-max shrink-0">
+                          <select 
+                            value={getLocalStoreData(store).type} 
+                            onChange={e => setLocalStoreMap(p => ({...p, [store.id]: { ...getLocalStoreData(store), type: e.target.value }}))} 
+                            className="bg-transparent text-gray-400 text-[11px] font-bold outline-none cursor-pointer pr-1"
+                          >
+                            <option value="percent">% Soma</option>
+                            <option value="fixed">R$ Fixo</option>
+                          </select>
+                          <div className="w-px h-5 bg-white/10 mx-1"></div>
+                          {getLocalStoreData(store).type === 'percent' ? (
+                            <>
+                              <span className="text-gray-500 font-bold text-sm">+</span>
+                              <input type="number" placeholder="0" value={getLocalStoreData(store).percent} onChange={e => setLocalStoreMap(p => ({...p, [store.id]: { ...getLocalStoreData(store), percent: e.target.value }}))} className="bg-transparent text-emerald-400 w-12 outline-none font-bold text-center text-sm placeholder:text-gray-600 placeholder:font-normal" />
+                              <span className="text-gray-500 font-bold text-sm">%</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-gray-500 font-bold text-sm">R$</span>
+                              <input type="number" placeholder="10000" value={getLocalStoreData(store).fixed} onChange={e => setLocalStoreMap(p => ({...p, [store.id]: { ...getLocalStoreData(store), fixed: e.target.value }}))} className="bg-transparent text-emerald-400 w-24 outline-none font-bold text-center text-sm placeholder:text-gray-600 placeholder:font-normal" />
+                            </>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-4 text-sm shrink-0 md:ml-auto w-[250px] justify-end">
-                          <div className="text-right">
-                            <p className="text-[9px] text-gray-500 uppercase font-bold">Atual</p>
-                            <p className="text-gray-400 font-medium">{formatCurrency(currentTarget)}</p>
+                        <div className="flex items-center gap-4 text-sm w-full xl:w-auto xl:justify-end xl:w-[350px]">
+                          <div className="text-right flex-1 xl:flex-none">
+                            <p className="text-[9px] text-gray-500 uppercase font-bold">Atual {currentSim.rule === 'Meta Fixa' ? '(Fixo)' : `(${currentSim.rate}%)`}</p>
+                            <p className="text-gray-400 font-medium">{formatCurrency(currentSim.target)}</p>
                           </div>
-                          <ArrowRight size={14} className="text-gray-600" />
-                          <div className="text-right">
-                            <p className="text-[9px] text-emerald-400 uppercase font-bold">Esperado ({sim.rate}% - {sim.rule})</p>
-                            <p className="text-emerald-400 font-bold">{formatCurrency(sim.target)}</p>
+
+
+                          <ArrowRight size={14} className="text-gray-600 shrink-0" />
+                          <div className="text-right flex-1 xl:flex-none bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+                            <p className="text-[9px] text-emerald-400 uppercase font-bold">Esperado ({expectedSim.rate}%)</p>
+                            <p className="text-emerald-400 font-bold">{formatCurrency(expectedSim.target)}</p>
                           </div>
                         </div>
                       </div>
@@ -239,16 +285,96 @@ export default function GoalsSettingsModal({
                 </div>
               </div>
             )}
+
+            {activeTab === 'eventos' && (
+              <div className="space-y-6 animate-in fade-in">
+                <div className="bg-orange-500/10 border border-orange-500/20 p-6 rounded-2xl">
+                  <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2"><CalendarDays size={18} className="text-orange-400"/> Programar Novo Evento</h3>
+                  <p className="text-sm text-orange-200/70 mb-4">Agende dias promocionais (Ex: 6/6, Black Friday). Ao iniciar um evento, a War Room é liberada.</p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Nome do Evento</label>
+                      <input type="text" value={eventForm.name} onChange={e => setEventForm({...eventForm, name: e.target.value})} placeholder="Ex: 6/6 Shopee" className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 outline-none focus:border-orange-500 text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Data</label>
+                      <input type="date" value={eventForm.date} onChange={e => setEventForm({...eventForm, date: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 outline-none focus:border-orange-500 text-sm cursor-pointer" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Meta GMV (R$)</label>
+                      <input type="number" value={eventForm.target} onChange={e => setEventForm({...eventForm, target: e.target.value})} placeholder="0.00" className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 outline-none focus:border-orange-500 text-sm" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mb-4">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Canais Participantes (Deixe vazio para todos)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {activeMkts.map(mkt => {
+                        const isSelected = eventForm.channels.includes(mkt);
+                        return (
+                          <button key={mkt} onClick={() => {
+                            setEventForm(p => ({...p, channels: isSelected ? p.channels.filter(c => c !== mkt) : [...p.channels, mkt]}));
+                          }} className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-colors border ${isSelected ? 'bg-orange-500 border-orange-400 text-white' : 'bg-black/40 border-white/10 text-gray-400 hover:border-orange-500/50'}`}>
+                            {mkt}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      if(!eventForm.name || !eventForm.target) return toast.error("Preencha nome e meta.");
+                      handleEventAction('schedule', { id: Date.now(), name: eventForm.name, date: eventForm.date, target: Number(eventForm.target), channels: eventForm.channels });
+                      setEventForm({ name: '', target: '', date: '', channels: [] });
+                    }} 
+                    className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-colors"
+                  >
+                    Agendar Evento
+                  </button>
+                </div>
+
+                <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl shadow-sm">
+                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Eventos Agendados</h4>
+                  <div className="space-y-3">
+                    {scheduledEvents.length === 0 && <p className="text-gray-500 text-sm text-center py-4">Nenhum evento agendado.</p>}
+                    {scheduledEvents.map(ev => (
+                      <div key={ev.id} className="bg-black/30 border border-white/5 p-4 rounded-xl flex items-center justify-between gap-4">
+                        <div>
+                          <h5 className="font-bold text-white text-lg">{ev.name}</h5>
+                          <div className="flex items-center gap-3 text-xs text-gray-400 mt-1">
+                            <span>📅 {ev.date ? new Date(ev.date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem data'}</span>
+                            <span>🎯 Meta: {formatCurrency(ev.target)}</span>
+                            {ev.channels.length > 0 && <span className="text-orange-400">🛍️ {ev.channels.join(', ')}</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => handleEventAction('delete', ev)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg transition-colors" title="Excluir">
+                            <Trash2 size={18} />
+                          </button>
+                          <button onClick={() => {
+                            if (activeEvent) return toast.error("Já existe um evento em andamento. Encerre-o na War Room primeiro.");
+                            handleEventAction('start', ev);
+                            onClose();
+                          }} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-lg flex items-center gap-2 shadow-md transition-colors">
+                            <Play size={16} /> Iniciar Agora
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* FOOTER */}
         <div className="p-5 border-t border-white/10 bg-black/40 flex justify-end gap-3">
-          <button onClick={onClose} className="px-5 py-2.5 rounded-xl font-bold text-gray-400 hover:text-white transition-colors text-sm">
-            Cancelar
-          </button>
+          <button onClick={onClose} className="px-5 py-2.5 rounded-xl font-bold text-gray-400 hover:text-white transition-colors text-sm">Cancelar</button>
           <button onClick={handleSave} disabled={isSaving} className="px-6 py-2.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md transition-all text-sm flex items-center gap-2 disabled:opacity-50">
-            {isSaving ? '⏳ Salvando...' : <><Save size={16} /> Salvar Hierarquia de Metas</>}
+            {isSaving ? '⏳ Salvando...' : <><Save size={16} /> Salvar Metas Acumulativas</>}
           </button>
         </div>
       </div>
