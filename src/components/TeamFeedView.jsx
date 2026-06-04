@@ -306,9 +306,19 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
             });
         }
 
+        if (searchTerm) {
+            const termo = searchTerm.toLowerCase().trim();
+            filteredItems = filteredItems.filter(item => {
+                return item.storeName?.toLowerCase().includes(termo) || 
+                       item.clientName?.toLowerCase().includes(termo) ||
+                       item.title?.toLowerCase().includes(termo) ||
+                       item.responsavel?.toLowerCase().includes(termo);
+            });
+        }
+
         return filteredItems.sort((a, b) => a.timeDiff - b.timeDiff);
 
-    }, [stores, radarFilter, liveStatus]);
+    }, [stores, radarFilter, liveStatus, searchTerm]);
     
     const visibleLogs = useMemo(() => {
         return allLogs

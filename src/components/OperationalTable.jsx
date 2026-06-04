@@ -105,7 +105,21 @@ export default function OperationalTable({
               </div>
 
               <div className="flex items-center justify-between lg:justify-end gap-3 flex-[0.5]" onClick={e => e.stopPropagation()}>
+                {/* Como deve ficar (com o botão de Adicionar Loja): */}
                 <div className="flex gap-2">
+                  {canEdit && (
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation();
+                        addNewStoreToClient(group.client); 
+                      }} 
+                      className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-xl transition-all shadow-sm flex items-center justify-center"
+                      title="Adicionar Nova Loja"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  )}
+                  
                   <a href={generateClientWhatsAppLink(group)} target="_blank" rel="noopener noreferrer" className={`p-2 rounded-xl transition-all border shadow-sm text-white flex items-center justify-center ${group.status === 'danger' ? 'bg-red-500/20 border-red-500/30 hover:bg-red-500/40 text-red-300' : group.status === 'warning' ? 'bg-amber-500/20 border-amber-500/30 hover:bg-amber-500/40 text-amber-300' : 'bg-emerald-500/20 border-emerald-500/30 hover:bg-emerald-500/40 text-emerald-300'}`} title="Gerar Relatório WhatsApp">
                     <MessageCircle size={16} />
                   </a>

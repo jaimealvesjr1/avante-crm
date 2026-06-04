@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, TrendingDown, Briefcase } from 'lucide-react';
+import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, TrendingDown, Edit2, Briefcase } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
@@ -68,13 +68,39 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, formatCurrency }) => 
 };
 
 export default function ClientFileModal({ 
-  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, 
-  updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, 
-  teamMembers, addNewStoreToClient, handleSaveIndividualEntry, 
-  handleSaveRetroactiveMonth, handleDeleteRetroactiveMonth
+  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, addNewStoreToClient, handleSaveIndividualEntry 
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
+
+  const [isEditingContract, setIsEditingContract] = useState(false);
+  const [contractForm, setContractForm] = useState({
+    feeType: clientGroup?.feeType || 'percent',
+    feePercent: clientGroup?.feePercent || 0,
+    fixedFee: clientGroup?.fixedFee || 0
+  });
+
+  const handleSaveContract = () => {
+    if (!canEdit) return toast.error("Sem permissão.");
+    
+    let updatedStoresGlobal = [...stores];
+    const liveStores = stores.filter(s => s.client === clientGroup.client && !s.arquivada);
+    
+    liveStores.forEach(store => {
+      const updatedStore = {
+        ...store,
+        feeType: contractForm.feeType,
+        feePercent: Number(contractForm.feePercent) || 0,
+        fixedFee: contractForm.feeType === 'percent' ? 0 : (Number(contractForm.fixedFee) || 0)
+      };
+      updateStoreInCloud(updatedStore);
+      updatedStoresGlobal = updatedStoresGlobal.map(globalStore => globalStore.id === store.id ? updatedStore : globalStore);
+    });
+
+    setStores(updatedStoresGlobal);
+    setIsEditingContract(false);
+    toast.success("Contrato da agência atualizado com sucesso!");
+  };
   
   const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
@@ -269,20 +295,62 @@ export default function ClientFileModal({
         
         {/* CABEÇALHO DO MODAL */}
         <div className="p-6 border-b border-white/10 bg-black/20 flex flex-col gap-5 shrink-0">
-          <div className="flex justify-between items-start">
+          <div className="flex justify-between items-start">           
             <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl shadow-inner shrink-0">
                   <Briefcase size={28} className="text-indigo-400" />
                 </div>
-                <div>
-                  <h2 className="text-2xl font-black text-white leading-tight">{clientGroup.client}</h2>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-xs text-gray-400 bg-white/5 px-2 py-0.5 rounded-md border border-white/10">
-                      {clientGroup.stores.length} Lojas Ativas
-                    </span>
+                <div className="flex items-center gap-3 mb-1 flex-wrap">
+                    <h2 className="text-2xl font-bold text-white uppercase tracking-wide">{clientGroup.client}</h2>
+                    
+                    {isEditingContract ? (
+                      <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-lg border border-indigo-500/30 animate-in fade-in">
+                        <select 
+                          value={contractForm.feeType} 
+                          onChange={e => setContractForm({...contractForm, feeType: e.target.value})}
+                          className="bg-gray-800 text-white text-xs rounded p-1.5 outline-none border border-gray-600 focus:border-indigo-500"
+                        >
+                          <option value="percent">Percentual (%)</option>
+                          <option value="fixed">Fixo Mensal (R$)</option>
+                        </select>
+                        
+                        {contractForm.feeType === 'percent' ? (
+                          <div className="flex items-center gap-1">
+                            <input type="number" value={contractForm.feePercent} onChange={e => setContractForm({...contractForm, feePercent: e.target.value})} className="bg-gray-800 text-white text-xs rounded p-1.5 w-16 outline-none border border-gray-600 focus:border-indigo-500" step="0.1" />
+                            <span className="text-gray-400 text-xs font-bold">%</span>
+                          </div>
+                        ) : (
+                          <input type="number" value={contractForm.fixedFee} onChange={e => setContractForm({...contractForm, fixedFee: e.target.value})} className="bg-gray-800 text-white text-xs rounded p-1.5 w-24 outline-none border border-gray-600 focus:border-indigo-500" placeholder="R$" />
+                        )}
+                        
+                        <button onClick={handleSaveContract} className="bg-green-600 hover:bg-green-500 text-white p-1.5 rounded transition-colors shadow-sm ml-1" title="Salvar Contrato">
+                          <Save size={14} />
+                        </button>
+                        <button onClick={() => setIsEditingContract(false)} className="bg-gray-700 hover:bg-gray-600 text-white p-1.5 rounded transition-colors" title="Cancelar">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 group">
+                        <span className="bg-indigo-500/10 text-indigo-300 text-xs font-bold px-2.5 py-1 rounded-md border border-indigo-500/20 shadow-sm">
+                          {clientGroup.feeType === 'fixed' ? `Fixo: ${formatCurrency(clientGroup.fixedFee)}` : `Fee: ${clientGroup.feePercent}%`}
+                        </span>
+                        {canEdit && (
+                          <button 
+                            onClick={() => {
+                              setContractForm({ feeType: clientGroup.feeType || 'percent', feePercent: clientGroup.feePercent || 0, fixedFee: clientGroup.fixedFee || 0 });
+                              setIsEditingContract(true);
+                            }} 
+                            className="opacity-0 group-hover:opacity-100 p-1 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-indigo-400 rounded-md transition-all"
+                            title="Editar Regra de Contrato"
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
               </div>
             </div>
 

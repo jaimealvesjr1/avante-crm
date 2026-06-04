@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { DollarSign, TrendingUp, TrendingDown, CheckCircle, Clock, FileText, Edit2, Briefcase, X, Save, Plus, Trash2, ArrowUpRight, ArrowDownRight, Activity, Calculator, Calendar, Shield, Target } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, CheckCircle, Clock, FileText, Edit2, Briefcase, X, Save, Plus, Trash2, ArrowUpRight, ArrowDownRight, Activity, Calculator, Calendar, Shield, Target, Building, AlertCircle } from 'lucide-react';
 import { collection, onSnapshot, doc, updateDoc, writeBatch, addDoc, deleteDoc } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
 import html2canvas from 'html2canvas';
 import { getVisualRole } from '../App';
 import { getSemanaDoMes, getMesAno } from '../utils/dateUtils';
 import { calcularFolhaMembro } from '../utils/financeUtils';
+
+const CONTAS_PADRAO = ['AVANTE PJ', 'EDUARDA', 'Carteira'];
 
 export default function FinanceDashboard({ db, dashboardData, formatCurrency, canEdit, teamMembers, searchTerm }) {
   if (!canEdit) {
@@ -18,22 +20,19 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     );
   }
 
-  const [activeTab, setActiveTab] = useState('clientes'); 
+  const [activeTab, setActiveTab] = useState('caixa'); 
   const [recebimentos, setRecebimentos] = useState([]);
   const [despesas, setDespesas] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [contratoEmEdicao, setContratoEmEdicao] = useState(null); 
-  const [contratoForm, setContratoForm] = useState({ name: '', feeType: 'percent', feePercent: 0, fixedFee: 0 });
-
   const [despesaEmEdicao, setDespesaEmEdicao] = useState(null);
   const [despesaForm, setDespesaForm] = useState({ 
-    descricao: '', valor: '', desconto: '', categoria: 'Folha de Pagamento', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
+    descricao: '', valor: '', desconto: '', categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
   });
 
   const [recebimentoEmEdicao, setRecebimentoEmEdicao] = useState(null);
   const [recebimentoForm, setRecebimentoForm] = useState({ 
-    cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
+    cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
   });
 
   const [mesFolha, setMesFolha] = useState('Atual');
@@ -80,15 +79,14 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const totalReceitaAgencia = mesFolha === 'Atual' ? dashboardData.totalAgencyRevenueActual : metricasFolha.faturamentoBruto;
   const metaAgencia = mesFolha === 'Atual' ? dashboardData.agencyTarget : metricasFolha.metaAgenciaHistorica;
 
-  // Filtra as listas baseando-se na busca global (searchTerm vindo do App.jsx)
   const busca = (searchTerm || '').toLowerCase();
   
   const recebimentosFiltrados = recebimentos.filter(rec => 
-    !busca || rec.cliente.toLowerCase().includes(busca) || rec.mesReferencia.toLowerCase().includes(busca)
+    !busca || rec.cliente.toLowerCase().includes(busca) || (rec.mesReferencia || '').toLowerCase().includes(busca) || (rec.contaBancaria && rec.contaBancaria.toLowerCase().includes(busca))
   );
 
   const despesasFiltradas = despesas.filter(d => 
-    !busca || d.descricao.toLowerCase().includes(busca) || d.categoria.toLowerCase().includes(busca)
+    !busca || d.descricao.toLowerCase().includes(busca) || d.categoria.toLowerCase().includes(busca) || (d.contaBancaria && d.contaBancaria.toLowerCase().includes(busca))
   );
 
   const totalPendenteGeral = recebimentos.filter(r => r.status === 'Pendente').reduce((acc, curr) => acc + curr.valorAgencia, 0);
@@ -118,6 +116,60 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
   const mesPassadoExato = `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`;
 
+  const agruparPorTempo = (lista) => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    
+    const inicioSemana = new Date(hoje);
+    inicioSemana.setDate(hoje.getDate() - hoje.getDay()); // Domingo atual
+    const fimSemana = new Date(inicioSemana);
+    fimSemana.setDate(inicioSemana.getDate() + 6); // Sábado atual
+    const fimProximaSemana = new Date(fimSemana);
+    fimProximaSemana.setDate(fimSemana.getDate() + 7);
+
+    const grupos = {
+      'Atrasados': [],
+      'Esta Semana': [],
+      'Próxima Semana': [],
+      'Futuro': [],
+      'Concluídos': []
+    };
+
+    // Função interna que joga o item na semana correta
+    const alocarNoGrupo = (itemAlocavel) => {
+      if (itemAlocavel.status === 'Pago') {
+        grupos['Concluídos'].push(itemAlocavel);
+        return;
+      }
+      const dataVenc = new Date(itemAlocavel.dataVencimento + 'T00:00:00');
+      if (dataVenc < hoje) grupos['Atrasados'].push(itemAlocavel);
+      else if (dataVenc >= inicioSemana && dataVenc <= fimSemana) grupos['Esta Semana'].push(itemAlocavel);
+      else if (dataVenc > fimSemana && dataVenc <= fimProximaSemana) grupos['Próxima Semana'].push(itemAlocavel);
+      else grupos['Futuro'].push(itemAlocavel);
+    };
+
+    lista.forEach(item => {
+      if (item.desembolsos && item.desembolsos.length > 0) {
+        item.desembolsos.forEach((desem, idx) => {
+          alocarNoGrupo({
+            ...item,
+            ...desem,
+            idPai: item.id,
+            isParcela: true,
+            numeroParcela: idx + 1
+          });
+        });
+      } else {
+        alocarNoGrupo(item);
+      }
+    });
+
+    return grupos;
+  };
+
+  const recebimentosAgrupados = agruparPorTempo(recebimentosFiltrados);
+  const despesasAgrupadas = agruparPorTempo(despesasFiltradas);
+
   const folhaCalculada = useMemo(() => {
     if (!teamMembers) return [];
     return teamMembers.filter(m => m.paymentConfig).map(m => {
@@ -133,10 +185,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     const hoje = new Date();
     const lancamentos = [];
     
-    // Gerar a explicação de como a comissão foi calculada
     const regraTexto = `${config.percentual}% ${config.gatilho > 0 ? `acima de ${formatCurrency(config.gatilho)}` : `s/ ${config.baseCalculo === 'LL' ? 'Lucro Líq.' : 'Fat. Bruto'}`}`;
 
-    // Objeto do holerite que será salvo no banco para consulta futura
     const dadosHolerite = {
       nome: membro.nomeCompleto,
       funcao: getVisualRole(membro.role) || 'Colaborador',
@@ -145,7 +195,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       meta: metricasFolha.metaAgenciaHistorica,
       base: membro.calculo.fixo,
       comissao: membro.calculo.comissao,
-      regra: regraTexto, // <-- Regra explícita salva aqui
+      regra: regraTexto,
       bonus: membro.calculo.bonus,
       total: membro.calculo.total,
       p1V: membro.calculo.fixo,
@@ -164,13 +214,12 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     try {
       for (const item of lancamentos) {
           await addDoc(collection(db, "financeiro_despesas"), {
-            ...item, categoria: 'Folha de Pagamento', status: 'Pendente', 
-            holerite: dadosHolerite, // <-- Salvamos o holerite na despesa!
+            ...item, categoria: 'Folha de Pagamento', status: 'Pendente', contaBancaria: 'AVANTE PJ',
+            holerite: dadosHolerite,
             criadoEm: new Date().toISOString()
           });
       }
       toast.success(`Pagamento de ${membro.nome} lançado com sucesso!`);
-      // Mostra o demonstrativo na hora para conferência
       setDemonstrativoData(dadosHolerite);
     } catch (error) { toast.error("Erro ao lançar pagamento."); }
   };
@@ -188,51 +237,60 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const fluxoDeCaixa = useMemo(() => {
     const relatorio = {};
 
+    const registrarLancamento = (dataLancamento, valor, tipo, status) => {
+      let dataSegura = dataLancamento;
+      if (!dataSegura || isNaN(new Date(dataSegura).getTime())) {
+          dataSegura = new Date().toISOString(); 
+      }
+
+      const mes = getMesAno(dataSegura);
+      const semana = getSemanaDoMes(dataSegura);
+      const tipoStatus = status === 'Pago' ? 'Real' : 'Prev';
+
+      if (!relatorio[mes]) relatorio[mes] = { 
+        semanas: {}, 
+        totalRealEntradas: 0, totalPrevEntradas: 0, totalRealSaidas: 0, totalPrevSaidas: 0,
+        qtdRealEntradas: 0, qtdPrevEntradas: 0, qtdRealSaidas: 0, qtdPrevSaidas: 0
+      };
+      if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { 
+        entradasReal: 0, entradasPrev: 0, saidasReal: 0, saidasPrev: 0,
+        qtdEntradasReal: 0, qtdEntradasPrev: 0, qtdSaidasReal: 0, qtdSaidasPrev: 0
+      };
+
+      if (tipo === 'entrada') {
+        relatorio[mes].semanas[semana][`entradas${tipoStatus}`] += valor;
+        relatorio[mes].semanas[semana][`qtdEntradas${tipoStatus}`] += 1;
+        relatorio[mes][`total${tipoStatus}Entradas`] += valor;
+        relatorio[mes][`qtd${tipoStatus}Entradas`] += 1;
+      } else {
+        relatorio[mes].semanas[semana][`saidas${tipoStatus}`] += valor;
+        relatorio[mes].semanas[semana][`qtdSaidas${tipoStatus}`] += 1;
+        relatorio[mes][`total${tipoStatus}Saidas`] += valor;
+        relatorio[mes][`qtd${tipoStatus}Saidas`] += 1;
+      }
+    };
+
     recebimentos.forEach(r => {
       if (r.desembolsos && r.desembolsos.length > 0) {
-        r.desembolsos.filter(x => x.status === 'Pago' && x.dataPagamentoRealizado).forEach(x => {
-          const mes = getMesAno(x.dataPagamentoRealizado);
-          const semana = getSemanaDoMes(x.dataPagamentoRealizado);
-          if (!relatorio[mes]) relatorio[mes] = { totalEntradas: 0, totalSaidas: 0, saldo: 0, semanas: {} };
-          if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { entradas: 0, saidas: 0, saldo: 0 };
-          relatorio[mes].semanas[semana].entradas += x.valor;
-          relatorio[mes].semanas[semana].saldo += x.valor;
-          relatorio[mes].totalEntradas += x.valor;
-          relatorio[mes].saldo += x.valor;
+        r.desembolsos.forEach(x => {
+            const dataBase = x.status === 'Pago' ? x.dataPagamentoRealizado : x.dataVencimento;
+            registrarLancamento(dataBase, x.valor, 'entrada', x.status);
         });
-      } else if (r.status === 'Pago' && r.dataPagamentoRealizado) {
-        const mes = getMesAno(r.dataPagamentoRealizado);
-        const semana = getSemanaDoMes(r.dataPagamentoRealizado);
-        if (!relatorio[mes]) relatorio[mes] = { totalEntradas: 0, totalSaidas: 0, saldo: 0, semanas: {} };
-        if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { entradas: 0, saidas: 0, saldo: 0 };
-        relatorio[mes].semanas[semana].entradas += r.valorAgencia;
-        relatorio[mes].semanas[semana].saldo += r.valorAgencia;
-        relatorio[mes].totalEntradas += r.valorAgencia;
-        relatorio[mes].saldo += r.valorAgencia;
+      } else {
+        const dataBase = r.status === 'Pago' ? r.dataPagamentoRealizado : r.dataVencimento;
+        registrarLancamento(dataBase, r.valorAgencia, 'entrada', r.status);
       }
     });
 
     despesas.forEach(d => {
       if (d.desembolsos && d.desembolsos.length > 0) {
-        d.desembolsos.filter(x => x.status === 'Pago' && x.dataPagamentoRealizado).forEach(x => {
-          const mes = getMesAno(x.dataPagamentoRealizado);
-          const semana = getSemanaDoMes(x.dataPagamentoRealizado);
-          if (!relatorio[mes]) relatorio[mes] = { totalEntradas: 0, totalSaidas: 0, saldo: 0, semanas: {} };
-          if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { entradas: 0, saidas: 0, saldo: 0 };
-          relatorio[mes].semanas[semana].saidas += x.valor;
-          relatorio[mes].semanas[semana].saldo -= x.valor;
-          relatorio[mes].totalSaidas += x.valor;
-          relatorio[mes].saldo -= x.valor;
+        d.desembolsos.forEach(x => {
+          const dataBase = x.status === 'Pago' ? x.dataPagamentoRealizado : x.dataVencimento;
+          registrarLancamento(dataBase, x.valor, 'saida', x.status);
         });
-      } else if (d.status === 'Pago' && d.dataPagamentoRealizado) {
-        const mes = getMesAno(d.dataPagamentoRealizado);
-        const semana = getSemanaDoMes(d.dataPagamentoRealizado);
-        if (!relatorio[mes]) relatorio[mes] = { totalEntradas: 0, totalSaidas: 0, saldo: 0, semanas: {} };
-        if (!relatorio[mes].semanas[semana]) relatorio[mes].semanas[semana] = { entradas: 0, saidas: 0, saldo: 0 };
-        relatorio[mes].semanas[semana].saidas += d.valor;
-        relatorio[mes].semanas[semana].saldo -= d.valor;
-        relatorio[mes].totalSaidas += d.valor;
-        relatorio[mes].saldo -= d.valor;
+      } else {
+        const dataBase = d.status === 'Pago' ? d.dataPagamentoRealizado : d.dataVencimento;
+        registrarLancamento(dataBase, d.valor, 'saida', d.status);
       }
     });
 
@@ -250,37 +308,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     );
   };
 
-  const iniciarEdicaoCliente = (grupo) => {
-    setContratoEmEdicao(grupo.client);
-    setContratoForm({ name: grupo.client, feeType: grupo.feeType || 'percent', feePercent: grupo.feePercent || 0, fixedFee: grupo.fixedFee || 0 });
-  };
-
-  const salvarEdicaoCliente = async (oldClientName) => {
-    if (!canEdit) return toast.error("Sem permissão.");
-    if (!contratoForm.name.trim()) return toast.error("O nome do cliente não pode ser vazio.");
-    
-    const batch = writeBatch(db);
-    const grupo = dashboardData.groupedClients.find(g => g.client === oldClientName);
-    if (!grupo) return toast.error("Cliente não encontrado.");
-
-    const upperNewName = contratoForm.name.toUpperCase();
-    grupo.stores.forEach(store => {
-      const storeRef = doc(db, "stores", store.id.toString());
-      batch.update(storeRef, {
-        client: upperNewName, 
-        feeType: contratoForm.feeType,
-        feePercent: Number(contratoForm.feePercent) || 0,
-        fixedFee: contratoForm.feeType === 'percent' ? 0 : (Number(contratoForm.fixedFee) || 0)
-      });
-    });
-
-    try {
-      await batch.commit();
-      toast.success(`Dados atualizados!`);
-      setContratoEmEdicao(null);
-    } catch (error) { toast.error("Erro ao salvar os dados."); }
-  };
-
   const iniciarEdicaoRecebimento = (r) => {
     const formElement = document.getElementById('form-recebimento');
     if (formElement) formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -289,8 +316,9 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     setRecebimentoForm({ 
       cliente: r.cliente, 
       mesReferencia: r.mesReferencia || '', 
-      valorAgencia: r.valorBruto || r.valorAgencia, // Puxa o bruto, se existir
+      valorAgencia: r.valorBruto || r.valorAgencia,
       desconto: r.desconto || '', 
+      contaBancaria: r.contaBancaria || 'AVANTE PJ',
       dataVencimento: r.dataVencimento ? r.dataVencimento.split('T')[0] : new Date().toISOString().split('T')[0], 
       status: r.status,
       desembolsos: r.desembolsos || []
@@ -325,7 +353,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       if (recebimentoEmEdicao) {
         await updateDoc(doc(db, "financeiro_recebimentos", recebimentoEmEdicao), {
           cliente: recebimentoForm.cliente.trim(), mesReferencia: recebimentoForm.mesReferencia,
-          valorBruto: numValorBruto, desconto: numDesconto, valorAgencia: numValorLiquido,
+          valorBruto: numValorBruto, desconto: numDesconto, valorAgencia: numValorLiquido, contaBancaria: recebimentoForm.contaBancaria,
           dataVencimento: recebimentoForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos
         });
         toast.success("Recebimento atualizado!");
@@ -333,26 +361,42 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       } else {
         await addDoc(collection(db, "financeiro_recebimentos"), {
           cliente: recebimentoForm.cliente.trim(), mesReferencia: recebimentoForm.mesReferencia || 'Avulso',
-          valorBruto: numValorBruto, desconto: numDesconto, valorAgencia: numValorLiquido,
+          valorBruto: numValorBruto, desconto: numDesconto, valorAgencia: numValorLiquido, contaBancaria: recebimentoForm.contaBancaria,
           dataVencimento: recebimentoForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
           dataPagamentoRealizado: finalStatus === 'Pago' && parsedDesembolsos.length === 0 ? new Date().toISOString() : null,
           dataEmissao: new Date().toISOString()
         });
         toast.success("Entrada registrada!");
       }
-      setRecebimentoForm({ cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
+      setRecebimentoForm({ cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
     } catch (error) { toast.error("Erro ao salvar entrada."); }
   };
 
-  const marcarDesembolsoRecebimentoComoPago = async (idReceb, idDesembolso) => {
+  const toggleRecebimento = async (idFatura, currentStatus) => {
+    if (!canEdit) return toast.error("Sem permissão.");
+    const novoStatus = currentStatus === 'Pago' ? 'Pendente' : 'Pago';
+    try {
+      await updateDoc(doc(db, "financeiro_recebimentos", idFatura), { 
+        status: novoStatus, 
+        dataPagamentoRealizado: novoStatus === 'Pago' ? new Date().toISOString() : null 
+      });
+      toast.success(novoStatus === 'Pago' ? "Pagamento recebido!" : "Baixa desfeita!");
+    } catch (error) { toast.error("Erro ao alterar status."); }
+  };
+
+  const toggleDesembolsoRecebimento = async (idReceb, idDesembolso) => {
     if (!canEdit) return toast.error("Sem permissão.");
     try {
       const rec = recebimentos.find(r => r.id === idReceb);
       if (!rec) return;
 
-      const novosDesembolsos = rec.desembolsos.map(d => 
-        d.id === idDesembolso ? { ...d, status: 'Pago', dataPagamentoRealizado: new Date().toISOString() } : d
-      );
+      const novosDesembolsos = rec.desembolsos.map(d => {
+        if (d.id === idDesembolso) {
+            const novoStatus = d.status === 'Pago' ? 'Pendente' : 'Pago';
+            return { ...d, status: novoStatus, dataPagamentoRealizado: novoStatus === 'Pago' ? new Date().toISOString() : null };
+        }
+        return d;
+      });
 
       const todosPagos = novosDesembolsos.every(d => d.status === 'Pago');
       const algumPago = novosDesembolsos.some(d => d.status === 'Pago');
@@ -360,9 +404,9 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       
       await updateDoc(doc(db, "financeiro_recebimentos", idReceb), {
         desembolsos: novosDesembolsos, status: novoStatus,
-        dataPagamentoRealizado: todosPagos ? new Date().toISOString() : (rec.dataPagamentoRealizado || null)
+        dataPagamentoRealizado: todosPagos ? new Date().toISOString() : null
       });
-      toast.success("Parcela recebida!");
+      toast.success("Status da parcela alterado!");
     } catch (error) { toast.error("Erro ao registrar parcela."); }
   };
 
@@ -371,16 +415,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     if (window.confirm("Deseja realmente apagar esta entrada?")) {
       await deleteDoc(doc(db, "financeiro_recebimentos", id));
       toast.success("Entrada apagada.");
-    }
-  };
-
-  const marcarRecebimentoComoPago = async (idFatura, cliente, mes) => {
-    if (!canEdit) return toast.error("Sem permissão.");
-    if(window.confirm(`Confirmar recebimento de ${cliente} referente a ${mes}?`)) {
-      try {
-        await updateDoc(doc(db, "financeiro_recebimentos", idFatura), { status: 'Pago', dataPagamentoRealizado: new Date().toISOString() });
-        toast.success("Pagamento recebido!");
-      } catch (error) { toast.error("Erro ao registrar."); }
     }
   };
 
@@ -400,7 +434,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
     if (parsedDesembolsos.length > 0) {
       const sum = parsedDesembolsos.reduce((acc, curr) => acc + curr.valor, 0);
-      if (Math.abs(sum - numValorLiquido) > 0.01) { // margem de erro de 1 centavo
+      if (Math.abs(sum - numValorLiquido) > 0.01) { 
         return toast.error(`A soma dos desembolsos deve bater o valor líquido final: ${formatCurrency(numValorLiquido)}`);
       }
     }
@@ -412,8 +446,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       if (despesaEmEdicao) {
         await updateDoc(doc(db, "financeiro_despesas", despesaEmEdicao), {
           descricao: despesaForm.descricao.trim(), 
-          valorBruto: numValorBruto, desconto: numDesconto, valor: numValorLiquido, // <-- Salva os 3 valores
-          categoria: despesaForm.categoria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos
+          valorBruto: numValorBruto, desconto: numDesconto, valor: numValorLiquido, 
+          categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos
         });
         toast.success("Despesa atualizada!");
         setDespesaEmEdicao(null);
@@ -421,13 +455,13 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         await addDoc(collection(db, "financeiro_despesas"), {
           descricao: despesaForm.descricao.trim(), 
           valorBruto: numValorBruto, desconto: numDesconto, valor: numValorLiquido, 
-          categoria: despesaForm.categoria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
+          categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
           dataPagamentoRealizado: finalStatus === 'Pago' && parsedDesembolsos.length === 0 ? new Date().toISOString() : null,
           criadoEm: new Date().toISOString()
         });
         toast.success("Despesa registada!");
       }
-      setDespesaForm({ descricao: '', valor: '', desconto: '', categoria: 'Folha de Pagamento', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
+      setDespesaForm({ descricao: '', valor: '', desconto: '', categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
     } catch (error) { toast.error("Erro ao salvar despesa."); }
   };
 
@@ -439,20 +473,38 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       descricao: d.descricao, 
       valor: d.valorBruto || d.valor,
       desconto: d.desconto || '', 
-      categoria: d.categoria, dataVencimento: d.dataVencimento, status: d.status,
+      categoria: d.categoria, 
+      contaBancaria: d.contaBancaria || 'AVANTE PJ',
+      dataVencimento: d.dataVencimento, status: d.status,
       desembolsos: d.desembolsos || []
     });
   };
 
-  const marcarDesembolsoComoPago = async (idDespesa, idDesembolso) => {
+  const toggleDespesa = async (idDespesa, currentStatus) => {
+    if (!canEdit) return toast.error("Sem permissão.");
+    const novoStatus = currentStatus === 'Pago' ? 'Pendente' : 'Pago';
+    try {
+      await updateDoc(doc(db, "financeiro_despesas", idDespesa), { 
+        status: novoStatus, 
+        dataPagamentoRealizado: novoStatus === 'Pago' ? new Date().toISOString() : null 
+      });
+      toast.success(novoStatus === 'Pago' ? "Despesa total paga!" : "Baixa desfeita!");
+    } catch (error) { toast.error("Erro ao alterar status."); }
+  };
+
+  const toggleDesembolsoDespesa = async (idDespesa, idDesembolso) => {
     if (!canEdit) return toast.error("Sem permissão.");
     try {
       const despesa = despesas.find(d => d.id === idDespesa);
       if (!despesa) return;
 
-      const novosDesembolsos = despesa.desembolsos.map(d => 
-        d.id === idDesembolso ? { ...d, status: 'Pago', dataPagamentoRealizado: new Date().toISOString() } : d
-      );
+      const novosDesembolsos = despesa.desembolsos.map(d => {
+        if (d.id === idDesembolso) {
+            const novoStatus = d.status === 'Pago' ? 'Pendente' : 'Pago';
+            return { ...d, status: novoStatus, dataPagamentoRealizado: novoStatus === 'Pago' ? new Date().toISOString() : null };
+        }
+        return d;
+      });
 
       const todosPagos = novosDesembolsos.every(d => d.status === 'Pago');
       const algumPago = novosDesembolsos.some(d => d.status === 'Pago');
@@ -461,18 +513,10 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       await updateDoc(doc(db, "financeiro_despesas", idDespesa), {
         desembolsos: novosDesembolsos,
         status: novoStatus,
-        dataPagamentoRealizado: todosPagos ? new Date().toISOString() : despesa.dataPagamentoRealizado
+        dataPagamentoRealizado: todosPagos ? new Date().toISOString() : null
       });
-      toast.success("Parcela/Desembolso pago!");
+      toast.success("Status do desembolso alterado!");
     } catch (error) { toast.error("Erro ao registrar desembolso."); }
-  };
-
-  const marcarDespesaComoPaga = async (idDespesa) => {
-    if (!canEdit) return toast.error("Sem permissão.");
-    try {
-      await updateDoc(doc(db, "financeiro_despesas", idDespesa), { status: 'Pago', dataPagamentoRealizado: new Date().toISOString() });
-      toast.success("Despesa total paga!");
-    } catch (error) { toast.error("Erro ao registrar."); }
   };
 
   const handleExcluirDespesa = async (id) => {
@@ -483,10 +527,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     }
   };
 
-  // --- LÓGICA DA BARRA DE META DA AGÊNCIA ---
   const renderAgencyProgressBar = () => {
     const safeTarget = metaAgencia > 0 ? metaAgencia : 1;
-    // O 100% da meta fica em 80% da barra. Se chegar a 125% ou mais, preenche a barra toda.
     const currentWidth = Math.min((totalReceitaAgencia / safeTarget) * 80, 100);
     const projectedWidth = Math.min((projecaoReceitaAgencia / safeTarget) * 80, 100);
     
@@ -519,173 +561,129 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         </div>
 
         <div className="relative pt-6 pb-2">
-          {/* Track/Fundo */}
           <div className="h-8 bg-black/40 rounded-full border border-white/10 shadow-inner overflow-hidden relative">
-            {/* Projeção */}
             <div 
               className="absolute top-0 left-0 h-full bg-indigo-500/20 transition-all duration-1000 ease-out border-r border-indigo-500/50"
               style={{ width: `${projectedWidth}%` }}
             >
               <div className="w-full h-full opacity-30" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.2) 10px, rgba(255,255,255,0.2) 20px)' }}></div>
             </div>
-
-            {/* Hoje */}
             <div 
               className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(16,185,129,0.4)] "
               style={{ width: `${currentWidth}%` }}
             ></div>
           </div>
-
-          {/* Marcador da Meta exata (80%) */}
           <div className="absolute top-0 bottom-0 w-0.5 bg-gradient-to-b from-white to-gray-300 shadow-[0_0_15px_rgba(255,255,255,1)] z-10" style={{ left: '80%' }}>
-            <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-white text-black text-[11px] font-black px-2 py-0.5 rounded shadow-lg">
-              META
-            </div>
-            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-gray-400 text-[10px] font-bold">
-              100%
-            </div>
+            <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-white text-black text-[11px] font-black px-2 py-0.5 rounded shadow-lg">META</div>
+            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-gray-400 text-[10px] font-bold">100%</div>
           </div>
         </div>
       </div>
     );
   };
 
+  const renderTableRow = (item, isReceita) => {
+    const isAtrasado = item.status === 'Pendente' && new Date(item.dataVencimento) < new Date();
+    
+    const nomePrincipal = isReceita ? item.cliente : item.descricao;
+    const descricaoFinal = item.isParcela ? `${nomePrincipal} (Parcela ${item.numeroParcela})` : nomePrincipal;
+    const valorParaExibir = isReceita ? (item.isParcela ? item.valor : item.valorAgencia) : item.valor;
+    
+    return (
+      <tr key={item.id} className="hover:bg-white/5 transition-colors">
+        <td className="p-4 pl-6 font-bold text-white">
+            <div className="flex flex-col">
+                <span className="flex items-center gap-2"><FileText size={14} className="text-gray-500" />{descricaoFinal}</span>
+                <span className="text-[10px] text-gray-500 flex items-center gap-1 mt-1 uppercase font-medium"><Building size={10}/> {item.contaBancaria || 'Não Informada'}</span>
+            </div>
+        </td>
+        <td className="p-4 text-sm font-bold text-indigo-300">{isReceita ? (item.mesReferencia || '-') : <span className="bg-gray-800 text-gray-300 text-[10px] px-2 py-1 rounded-md border border-gray-700">{item.categoria}</span>}</td>
+        <td className={`p-4 text-sm font-bold ${isAtrasado ? 'text-red-400' : 'text-gray-300'}`}>
+          {new Date(item.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')} <span className="text-[10px] font-normal text-gray-500 ml-1">(Sem. {getSemanaDoMes(item.dataVencimento)})</span>
+          {isAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
+        </td>
+        <td className="p-4 font-bold text-white text-right">
+          {formatCurrency(valorParaExibir)}
+        </td>
+        <td className="p-4 text-center">
+          {item.status === 'Pago' ? <span className="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold border border-green-500/20">Pago</span> : 
+           item.status === 'Parcial' ? <span className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full text-[10px] font-bold border border-indigo-500/20">Parcial</span> :
+           <span className="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full text-[10px] font-bold border border-amber-500/20">Pendente</span>}
+        </td>
+        <td className="p-4 pr-6 text-center flex items-center justify-center gap-2">
+            {item.status === 'Pendente' ? (
+                <button onClick={() => {
+                    if (item.isParcela) {
+                        isReceita ? toggleDesembolsoRecebimento(item.idPai, item.id) : toggleDesembolsoDespesa(item.idPai, item.id);
+                    } else {
+                        isReceita ? toggleRecebimento(item.id, item.status) : toggleDespesa(item.id, item.status);
+                    }
+                }} className={`${isReceita ? 'bg-green-600 hover:bg-green-500' : 'bg-rose-600 hover:bg-rose-500'} text-white text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-xl font-bold shadow-md transition-all`}>Dar Baixa</button>
+            ) : (
+                <button onClick={() => {
+                    if (item.isParcela) {
+                        isReceita ? toggleDesembolsoRecebimento(item.idPai, item.id) : toggleDesembolsoDespesa(item.idPai, item.id);
+                    } else {
+                        isReceita ? toggleRecebimento(item.id, item.status) : toggleDespesa(item.id, item.status);
+                    }
+                }} className="text-[10px] text-gray-500 underline hover:text-white mr-2">Desfazer</button>
+            )}
+            {!isReceita && item.holerite && !item.isParcela && <button onClick={() => setDemonstrativoData(item.holerite)} className="p-2 text-indigo-300 hover:text-indigo-100 bg-indigo-500/20 hover:bg-indigo-500/40 rounded-xl transition-colors" title="Ver Demonstrativo"><FileText size={14}/></button>}
+            <button onClick={() => isReceita ? iniciarEdicaoRecebimento(item.isParcela ? recebimentos.find(r=>r.id===item.idPai) : item) : iniciarEdicaoDespesa(item.isParcela ? despesas.find(d=>d.id===item.idPai) : item)} className="p-2 text-gray-400 hover:text-indigo-400 bg-white/5 rounded-xl transition-colors" title="Editar"><Edit2 size={14}/></button>
+            {!item.isParcela && <button onClick={() => isReceita ? handleExcluirRecebimento(item.id) : handleExcluirDespesa(item.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir"><Trash2 size={14}/></button>}
+        </td>
+      </tr>
+    );
+  };
+
+  const renderGroupedTable = (groupedData, isReceita) => {
+    const ordenacaoSessoes = ['Atrasados', 'Esta Semana', 'Próxima Semana', 'Futuro', 'Concluídos'];
+    
+    return ordenacaoSessoes.map(grupo => {
+      const items = groupedData[grupo];
+      if (!items || items.length === 0) return null;
+
+      let corGrupo = 'text-gray-400';
+      if (grupo === 'Atrasados') corGrupo = 'text-red-400';
+      if (grupo === 'Esta Semana') corGrupo = 'text-amber-400';
+      if (grupo === 'Próxima Semana') corGrupo = 'text-indigo-400';
+      if (grupo === 'Concluídos') corGrupo = 'text-green-400';
+
+      return (
+        <React.Fragment key={grupo}>
+          <tr className="bg-black/40">
+            <td colSpan="6" className={`p-3 pl-6 font-black text-xs uppercase tracking-widest ${corGrupo} border-b border-white/5`}>
+              <div className="flex items-center gap-2">
+                {grupo === 'Atrasados' && <AlertCircle size={14} />}
+                {grupo === 'Esta Semana' && <Clock size={14} />}
+                {grupo === 'Próxima Semana' && <Calendar size={14} />}
+                {grupo === 'Concluídos' && <CheckCircle size={14} />}
+                {grupo} ({items.length})
+              </div>
+            </td>
+          </tr>
+          {items.map(item => renderTableRow(item, isReceita))}
+        </React.Fragment>
+      );
+    });
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300 w-full">
-      
-      {/* BARRA DE PROGRESSÃO DE META (No Topo Absoluto) */}
       {renderAgencyProgressBar()}
 
-      {/* CABEÇALHO E NAVEGAÇÃO PADRONIZADO */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2"><DollarSign className="text-green-400" size={28} /> Financeiro</h1>
           <p className="text-gray-400 text-sm mt-1">Gestão centralizada de receitas, despesas e fluxo de caixa.</p>
         </div>
         <div className="flex bg-black/40 p-1.5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto max-w-full custom-scrollbar">
-            <button onClick={() => setActiveTab('clientes')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'clientes' ? 'bg-green-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}><Briefcase size={16} /> Contratos</button>
+            <button onClick={() => setActiveTab('caixa')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'caixa' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}><Activity size={16} /> Fluxo de Caixa</button>
             <button onClick={() => setActiveTab('receber')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'receber' ? 'bg-green-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>Entradas ({recebimentos.filter(r => r.status === 'Pendente').length})</button>
             <button onClick={() => setActiveTab('pagar')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'pagar' ? 'bg-rose-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>Saídas ({despesas.filter(d => d.status === 'Pendente').length})</button>
-            <button onClick={() => setActiveTab('caixa')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'caixa' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}><Activity size={16} /> Fluxo de Caixa</button>
         </div>
       </div>
 
-      {/* ABA 1: CLIENTES E CONTRATOS */}
-      {activeTab === 'clientes' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-[#0B0F19]/80 backdrop-blur-xl p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border-l-4 border-l-green-500">
-              <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Receita da Agência (Realizado)</p>
-              <h2 className="text-3xl font-black text-white">{formatCurrency(totalReceitaAgencia)}</h2>
-            </div>
-            <div className="bg-[#0B0F19]/80 backdrop-blur-xl p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border-l-4 border-l-indigo-500">
-              <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Projeção Final do Mês</p>
-              <h2 className="text-3xl font-black text-white">{formatCurrency(projecaoReceitaAgencia)}</h2>
-            </div>
-            <div className="bg-[#0B0F19]/80 backdrop-blur-xl p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border-l-4 border-l-amber-500">
-              <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Faturas a Receber (Em Aberto)</p>
-              <h2 className="text-3xl font-black text-amber-400 mt-1">{formatCurrency(totalPendenteGeral)}</h2>
-            </div>
-          </div>
-
-          <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden">
-            <div className="p-5 border-b border-white/10 bg-white/5">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Briefcase className="text-indigo-400" size={18} /> Base de Clientes e Rentabilidade
-              </h3>
-            </div>
-            <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-black/20 text-gray-400 text-xs uppercase tracking-wider">
-                    <th className="p-4 font-semibold pl-6">Cliente</th>
-                    <th className="p-4 font-semibold">Regra de Comissão</th>
-                    <th className="p-4 font-semibold">GMV Gerado (Atual)</th>
-                    <th className="p-4 font-semibold text-green-400">Receita Agência</th>
-                    <th className="p-4 font-semibold text-center pr-6">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {dashboardData.groupedClients.map((group, idx) => {
-                    const isEditing = contratoEmEdicao === group.client;
-                    const isFixed = group.feeType === 'fixed' || group.fixedFee > 0;
-                    const valorComissao = isFixed ? Number(group.fixedFee) : (group.totalCurrentRevenue * (Number(group.feePercent) / 100));
-
-                    const pastGmv = group.stores.reduce((acc, store) => {
-                        const hist = (store.monthlyHistory || []).find(h => h.month === mesPassadoExato);
-                        return acc + (hist ? Number(hist.gmv) : 0);
-                    }, 0);
-                    
-                    const pastComissao = group.stores.reduce((acc, store) => {
-                        const hist = (store.monthlyHistory || []).find(h => h.month === mesPassadoExato);
-                        return acc + (hist ? Number(hist.agencyRevenue) : 0);
-                    }, 0);
-
-                    return (
-                      <tr key={idx} className={`${isEditing ? 'bg-indigo-900/20' : 'hover:bg-white/5'} transition-colors`}>
-                        <td className="p-4 pl-6">
-                          {isEditing ? (
-                            <input type="text" value={contratoForm.name} onChange={e => setContratoForm({...contratoForm, name: e.target.value})} className="bg-gray-800 text-white font-bold text-sm rounded-lg p-2 w-full outline-none border border-gray-600 focus:border-indigo-500 uppercase" placeholder="Nome do Cliente" />
-                          ) : (
-                            <span className="font-bold text-white">{group.client}</span>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          {isEditing ? (
-                            <div className="flex items-center gap-2 bg-black/30 p-2 rounded-xl border border-white/10">
-                              <select value={contratoForm.feeType} onChange={e => setContratoForm({...contratoForm, feeType: e.target.value})} className="bg-gray-800 text-white text-sm rounded-lg p-1.5 outline-none border border-gray-600">
-                                <option value="percent">Percentual (%)</option>
-                                <option value="fixed">Fixo (R$)</option>
-                              </select>
-                              {contratoForm.feeType === 'percent' ? (
-                                <input type="number" value={contratoForm.feePercent} onChange={e => setContratoForm({...contratoForm, feePercent: e.target.value})} className="bg-gray-800 text-white text-sm rounded-lg p-1.5 w-16 outline-none border border-gray-600" step="0.1" />
-                              ) : (
-                                <input type="number" value={contratoForm.fixedFee} onChange={e => setContratoForm({...contratoForm, fixedFee: e.target.value})} className="bg-gray-800 text-white text-sm rounded-lg p-1.5 w-24 outline-none border border-gray-600" />
-                              )}
-                            </div>
-                          ) : (
-                            <div className="text-sm">
-                              {isFixed ? (
-                                <span className="bg-indigo-500/10 text-indigo-300 px-2 py-1 rounded-md border border-indigo-500/20">Fixo: {formatCurrency(group.fixedFee)}</span>
-                              ) : (
-                                <span className="bg-blue-500/10 text-blue-300 px-2 py-1 rounded-md border border-blue-500/20">Variável: {group.feePercent}% s/ Fat.</span>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-4 text-sm text-gray-300">
-                           <div className="flex flex-col">
-                               <span>{formatCurrency(group.totalCurrentRevenue)}</span>
-                               {renderGrowthBadge(group.totalCurrentRevenue, pastGmv)}
-                           </div>
-                        </td>
-                        <td className="p-4 font-bold text-green-400">
-                           <div className="flex flex-col">
-                               <span>{formatCurrency(valorComissao)}</span>
-                               {renderGrowthBadge(valorComissao, pastComissao)}
-                           </div>
-                        </td>
-                        <td className="p-4 pr-6 text-center">
-                          {isEditing ? (
-                            <div className="flex items-center justify-center gap-2">
-                              <button onClick={() => salvarEdicaoCliente(group.client)} className="p-2 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors shadow-md" title="Salvar"><Save size={16} /></button>
-                              <button onClick={() => setContratoEmEdicao(null)} className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors" title="Cancelar"><X size={16} /></button>
-                            </div>
-                          ) : (
-                            <button onClick={() => iniciarEdicaoCliente(group)} className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-indigo-400 rounded-xl transition-all shadow-sm" title="Editar Contrato"><Edit2 size={16} /></button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ABA 2: CONTAS A RECEBER */}
       {activeTab === 'receber' && (
         <div className="space-y-6 animate-in fade-in">
           
@@ -702,17 +700,16 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* LADO ESQUERDO: LISTA DE HISTÓRICO */}
             <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden h-max">
               <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2"><ArrowUpRight size={18} className="text-green-400"/> Histórico de Faturas</h3>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2"><ArrowUpRight size={18} className="text-green-400"/> Cronograma de Entradas</h3>
                 {busca && <span className="text-xs bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full">Filtrado por: "{busca}"</span>}
               </div>
-              <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
+              <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-xs uppercase tracking-wider">
+                  <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-xs uppercase tracking-wider z-10">
                     <tr>
-                      <th className="p-4 font-semibold pl-6">Cliente</th>
+                      <th className="p-4 font-semibold pl-6">Cliente / C. Custo</th>
                       <th className="p-4 font-semibold">Competência</th>
                       <th className="p-4 font-semibold">Vencimento</th>
                       <th className="p-4 font-semibold text-right">Valor Final</th>
@@ -721,60 +718,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {recebimentosFiltrados.map((rec) => {
-                      const hasDesembolsos = rec.desembolsos && rec.desembolsos.length > 0;
-                      const dataVenc = new Date(rec.dataVencimento);
-                      const isAtrasado = !hasDesembolsos && rec.status === 'Pendente' && dataVenc < new Date();
-                      
-                      return (
-                        <React.Fragment key={rec.id}>
-                          <tr className="hover:bg-white/5 transition-colors">
-                            <td className="p-4 pl-6 font-bold text-white flex items-center gap-2"><FileText size={16} className="text-gray-500" />{rec.cliente}</td>
-                            <td className="p-4 text-sm font-bold text-indigo-300">{rec.mesReferencia || '-'}</td>
-                            <td className={`p-4 text-sm font-bold ${isAtrasado ? 'text-red-400' : 'text-gray-300'}`}>
-                              {hasDesembolsos ? 'Múltiplos Venc.' : dataVenc.toLocaleDateString('pt-BR')}
-                              {isAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
-                            </td>
-                            <td className="p-4 font-bold text-white text-right">
-                              {formatCurrency(rec.valorAgencia)}
-                            </td>
-                            <td className="p-4 text-center">
-                              {rec.status === 'Pago' ? <span className="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold border border-green-500/20">Pago</span> : 
-                               rec.status === 'Parcial' ? <span className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full text-[10px] font-bold border border-indigo-500/20">Parcial</span> :
-                               <span className="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full text-[10px] font-bold border border-amber-500/20">Pendente</span>}
-                            </td>
-                            <td className="p-4 pr-6 text-center flex items-center justify-center gap-2">
-                                {!hasDesembolsos && rec.status === 'Pendente' && <button onClick={() => marcarRecebimentoComoPago(rec.id, rec.cliente, rec.mesReferencia)} className="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-xl font-bold shadow-md transition-all">Dar Baixa</button>}
-                                <button onClick={() => iniciarEdicaoRecebimento(rec)} className="p-2 text-gray-400 hover:text-indigo-400 bg-white/5 rounded-xl transition-colors" title="Editar / Adicionar Parcelas"><Edit2 size={14}/></button>
-                                <button onClick={() => handleExcluirRecebimento(rec.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir"><Trash2 size={14}/></button>
-                            </td>
-                          </tr>
-
-                          {hasDesembolsos && rec.desembolsos.map((desem, idx) => {
-                            const isDesemAtrasado = desem.status === 'Pendente' && new Date(desem.dataVencimento) < new Date();
-                            return (
-                              <tr key={desem.id} className="bg-white/[0.01] hover:bg-white/[0.03] transition-colors border-l border-emerald-500/30">
-                                <td className="p-3 pl-10 text-gray-500 text-[11px] font-medium uppercase tracking-wider">↳ Parcela {idx + 1}</td>
-                                <td className="p-3"></td>
-                                <td className={`p-3 font-bold text-xs ${isDesemAtrasado ? 'text-red-400' : 'text-gray-400'}`}>
-                                  {new Date(desem.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')}
-                                  {isDesemAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
-                                </td>
-                                <td className="p-3 font-bold text-emerald-300/80 text-right text-sm">{formatCurrency(desem.valor)}</td>
-                                <td className="p-3 text-center">
-                                  {desem.status === 'Pago' ? <span className="text-[10px] font-bold text-green-400">Pago</span> : <span className="text-[10px] font-bold text-amber-400">Pendente</span>}
-                                </td>
-                                <td className="p-3 pr-6 text-center flex justify-center">
-                                  {desem.status === 'Pendente' && (
-                                    <button onClick={() => marcarDesembolsoRecebimentoComoPago(rec.id, desem.id)} className="bg-emerald-600/80 hover:bg-emerald-500 text-white text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-lg font-bold shadow-md transition-all">Receber</button>
-                                  )}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </React.Fragment>
-                      );
-                    })}
+                    {renderGroupedTable(recebimentosAgrupados, true)}
                     {recebimentosFiltrados.length === 0 && (
                        <tr><td colSpan="6" className="p-12 text-center text-gray-500">Nenhuma entrada encontrada.</td></tr>
                     )}
@@ -783,7 +727,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
               </div>
             </div>
 
-            {/* LADO DIREITO: FORMULÁRIO DE EDIÇÃO/ENTRADA AVULSA */}
             <div className="lg:col-span-1 flex flex-col gap-6">
               <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-6">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
@@ -795,6 +738,13 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                   <div>
                     <label className="text-[10px] font-bold text-gray-400 uppercase">Cliente / Origem</label>
                     <input type="text" required value={recebimentoForm.cliente} onChange={e => setRecebimentoForm({...recebimentoForm, cliente: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Conta Bancária de Destino</label>
+                    <select required value={recebimentoForm.contaBancaria} onChange={e => setRecebimentoForm({...recebimentoForm, contaBancaria: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 shadow-inner text-xs cursor-pointer">
+                      {CONTAS_PADRAO.map(c => <option key={c} value={c} className="bg-gray-900">{c}</option>)}
+                    </select>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-4">
@@ -844,7 +794,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
                        return (
                         <>
-                          <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1 mb-3">
+                          <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1 mb-3">
                             {recebimentoForm.desembolsos.map((desem, idx) => (
                               <div key={desem.id} className="flex items-center gap-2 bg-black/20 p-2 rounded-xl border border-white/5 shadow-inner">
                                 <span className="text-[10px] text-gray-500 font-bold ml-1">{idx + 1}º</span>
@@ -864,7 +814,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
                   <div className="flex gap-3 mt-4">
                     {recebimentoEmEdicao && (
-                      <button type="button" onClick={() => { setRecebimentoEmEdicao(null); setRecebimentoForm({ cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] }); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm">
+                      <button type="button" onClick={() => { setRecebimentoEmEdicao(null); setRecebimentoForm({ cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] }); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm">
                         Cancelar
                       </button>
                     )}
@@ -896,76 +846,25 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* LADO ESQUERDO: LISTA DE HISTÓRICO (Ocupa 2/3) */}
+            {/* HISTÓRICO DE SAÍDAS AGRUPADO */}
             <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden h-max">
               <div className="p-5 border-b border-white/10 bg-white/5">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2"><Clock size={18} className="text-gray-400"/> Histórico de Saídas</h3>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2"><Clock size={18} className="text-gray-400"/> Cronograma de Saídas</h3>
               </div>
-              <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
+              <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left">
-                  <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-xs uppercase tracking-wider">
+                  <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-xs uppercase tracking-wider z-10">
                     <tr>
-                      <th className="p-4 pl-6">Vencimento</th>
-                      <th className="p-4">Descrição</th>
+                      <th className="p-4 pl-6">Descrição / C. Custo</th>
                       <th className="p-4">Categoria</th>
+                      <th className="p-4">Vencimento</th>
                       <th className="p-4 text-right">Valor</th>
                       <th className="p-4 text-center">Status</th>
                       <th className="p-4 text-center pr-6">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {despesasFiltradas.map(d => {
-                      const hasDesembolsos = d.desembolsos && d.desembolsos.length > 0;
-                      const isAtrasado = !hasDesembolsos && d.status === 'Pendente' && new Date(d.dataVencimento) < new Date();
-                      
-                      return (
-                        <React.Fragment key={d.id}>
-                          <tr className="hover:bg-white/5 transition-colors">
-                            <td className={`p-4 pl-6 text-sm font-bold ${isAtrasado ? 'text-red-400' : 'text-gray-300'}`}>
-                              {hasDesembolsos ? 'Parcelado' : new Date(d.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')}
-                              {isAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
-                            </td>
-                            <td className="p-4 font-bold text-white">{d.descricao}</td>
-                            <td className="p-4"><span className="bg-gray-800 text-gray-300 text-[10px] px-2 py-1 rounded-md border border-gray-700">{d.categoria}</span></td>
-                            <td className="p-4 font-bold text-rose-400 text-right">{formatCurrency(d.valor)}</td>
-                            <td className="p-4 text-center">
-                              {d.status === 'Pago' ? <span className="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold border border-green-500/20">Pago</span> : 
-                               d.status === 'Parcial' ? <span className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full text-[10px] font-bold border border-indigo-500/20">Parcial</span> :
-                               <span className="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full text-[10px] font-bold border border-amber-500/20">Pendente</span>}
-                            </td>
-                            <td className="p-4 pr-6 text-center flex items-center justify-center gap-2">
-                              {!hasDesembolsos && d.status === 'Pendente' && <button onClick={() => marcarDespesaComoPaga(d.id)} className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-xl font-bold shadow-md transition-all">Dar Baixa</button>}
-                              {d.holerite && <button onClick={() => setDemonstrativoData(d.holerite)} className="p-2 text-indigo-300 hover:text-indigo-100 bg-indigo-500/20 hover:bg-indigo-500/40 rounded-xl transition-colors" title="Ver Demonstrativo"><FileText size={14}/></button>}
-                              <button onClick={() => iniciarEdicaoDespesa(d)} className="p-2 text-gray-400 hover:text-indigo-400 bg-white/5 rounded-xl transition-colors" title="Editar Despesa"><Edit2 size={14}/></button>
-                              <button onClick={() => handleExcluirDespesa(d.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir"><Trash2 size={14}/></button>
-                            </td>
-                          </tr>
-                          
-                          {hasDesembolsos && d.desembolsos.map((desem, idx) => {
-                            const isDesemAtrasado = desem.status === 'Pendente' && new Date(desem.dataVencimento) < new Date();
-                            return (
-                              <tr key={desem.id} className="bg-white/[0.01] hover:bg-white/[0.03] transition-colors border-l border-indigo-500/30">
-                                <td className="p-3 pl-10 text-gray-500 text-[11px] font-medium uppercase tracking-wider">↳ Parcela {idx + 1}</td>
-                                <td className={`p-3 font-bold text-xs ${isDesemAtrasado ? 'text-red-400' : 'text-gray-400'}`}>
-                                  {new Date(desem.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')}
-                                  {isDesemAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
-                                </td>
-                                <td className="p-3"></td>
-                                <td className="p-3 font-bold text-rose-300/80 text-right text-sm">{formatCurrency(desem.valor)}</td>
-                                <td className="p-3 text-center">
-                                  {desem.status === 'Pago' ? <span className="text-[10px] font-bold text-green-400">Pago</span> : <span className="text-[10px] font-bold text-amber-400">Pendente</span>}
-                                </td>
-                                <td className="p-3 pr-6 text-center flex justify-center">
-                                  {desem.status === 'Pendente' && (
-                                    <button onClick={() => marcarDesembolsoComoPago(d.id, desem.id)} className="bg-rose-600/80 hover:bg-rose-500 text-white text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-lg font-bold shadow-md transition-all">Dar Baixa</button>
-                                  )}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </React.Fragment>
-                      )
-                    })}
+                    {renderGroupedTable(despesasAgrupadas, false)}
                     {despesasFiltradas.length === 0 && (
                        <tr><td colSpan="6" className="p-12 text-center text-gray-500">Nenhuma despesa encontrada.</td></tr>
                     )}
@@ -974,10 +873,9 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
               </div>
             </div>
 
-            {/* LADO DIREITO: BLOCOS EMPILHADOS VERTICALMENTE (Ocupa 1/3) */}
             <div className="lg:col-span-1 flex flex-col gap-6">
               
-              {/* BLOCO 2: LANÇAR DESPESA MANUAL */}
+              {/* BLOCO: LANÇAR DESPESA MANUAL */}
               <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-6">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
                   <Plus size={18} className="text-rose-400" /> Lançamento de Despesa
@@ -986,6 +884,13 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                   <div>
                     <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
                     <input type="text" required value={despesaForm.descricao} onChange={e => setDespesaForm({...despesaForm, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Conta Bancária de Origem</label>
+                    <select required value={despesaForm.contaBancaria} onChange={e => setDespesaForm({...despesaForm, contaBancaria: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 shadow-inner text-xs cursor-pointer">
+                      {CONTAS_PADRAO.map(c => <option key={c} value={c} className="bg-gray-900">{c}</option>)}
+                    </select>
                   </div>
                   
                   <div className="grid grid-cols-3 gap-4">
@@ -1041,7 +946,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
                        return (
                         <>
-                          <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1 mb-3">
+                          <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1 mb-3">
                             {despesaForm.desembolsos.map((desem, idx) => (
                               <div key={desem.id} className="flex items-center gap-2 bg-black/20 p-2 rounded-xl border border-white/5 shadow-inner">
                                 <span className="text-[10px] text-gray-500 font-bold ml-1">{idx + 1}º</span>
@@ -1061,7 +966,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
                   <div className="flex gap-3 mt-4">
                     {despesaEmEdicao && (
-                      <button type="button" onClick={() => { setDespesaEmEdicao(null); setDespesaForm({ descricao: '', valor: '', categoria: 'Folha de Pagamento', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] }); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm">
+                      <button type="button" onClick={() => { setDespesaEmEdicao(null); setDespesaForm({ descricao: '', valor: '', categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] }); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm">
                         Cancelar Edição
                       </button>
                     )}
@@ -1072,7 +977,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                 </form>
               </div>
 
-              {/* BLOCO 1: FOLHA AUTOMÁTICA */}
+              {/* BLOCO: FOLHA AUTOMÁTICA */}
               <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-6">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
                   <Calculator size={18} className="text-indigo-400" /> Folha Automática
@@ -1136,42 +1041,81 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         </div>
       )}
 
+      {/* ABA 4: FLUXO DE CAIXA REAL VS PREVISTO */}
       {activeTab === 'caixa' && (
         <div className="space-y-6 animate-in fade-in">
           {Object.keys(fluxoDeCaixa).sort().reverse().map(mes => {
             const dadosMes = fluxoDeCaixa[mes];
+            
+            const saldoReal = dadosMes.totalRealEntradas - dadosMes.totalRealSaidas;
+            const saldoPrevisto = (dadosMes.totalRealEntradas + dadosMes.totalPrevEntradas) - (dadosMes.totalRealSaidas + dadosMes.totalPrevSaidas);
+
             return (
               <div key={mes} className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden">
-                <div className="p-6 border-b border-white/10 bg-gradient-to-r from-blue-900/20 to-transparent flex flex-col md:flex-row justify-between items-center gap-4">
+                <div className="p-6 border-b border-white/10 bg-gradient-to-r from-blue-900/20 to-transparent flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                   <h3 className="text-xl font-black text-white flex items-center gap-2"><Calendar size={20} className="text-indigo-400"/> CAIXA: {mes}</h3>
+                  
                   <div className="flex flex-wrap gap-4">
-                    <span className="text-sm font-bold text-green-400 flex items-center gap-1 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10"><ArrowUpRight size={16}/> Entradas: {formatCurrency(dadosMes.totalEntradas)}</span>
-                    <span className="text-sm font-bold text-rose-400 flex items-center gap-1 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10"><ArrowDownRight size={16}/> Saídas: {formatCurrency(dadosMes.totalSaidas)}</span>
-                    <span className={`text-sm font-black px-4 py-1.5 rounded-lg border ${dadosMes.saldo >= 0 ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>Saldo Mês: {formatCurrency(dadosMes.saldo)}</span>
+                    <div className="bg-white/5 rounded-xl p-3 border border-white/10 flex flex-col gap-1 min-w-[150px]">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><CheckCircle size={12}/> Dinheiro na Conta (Real)</span>
+                      <span className="text-sm font-bold text-green-400 flex items-center justify-between">Entradas: <span>{formatCurrency(dadosMes.totalRealEntradas)}</span></span>
+                      <span className="text-sm font-bold text-rose-400 flex items-center justify-between">Saídas: <span>{formatCurrency(dadosMes.totalRealSaidas)}</span></span>
+                      <div className="w-full h-px bg-white/10 my-1"></div>
+                      <span className={`text-sm font-black flex items-center justify-between ${saldoReal >= 0 ? 'text-indigo-300' : 'text-red-400'}`}>Saldo Atual: <span>{formatCurrency(saldoReal)}</span></span>
+                    </div>
+
+                    <div className="bg-black/40 rounded-xl p-3 border border-white/5 flex flex-col gap-1 min-w-[150px] shadow-inner">
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1"><Clock size={12}/> Projeção Final (Se tudo for pago)</span>
+                      <span className="text-sm font-medium text-green-400/50 flex items-center justify-between">Entradas: <span>{formatCurrency(dadosMes.totalRealEntradas + dadosMes.totalPrevEntradas)}</span></span>
+                      <span className="text-sm font-medium text-rose-400/50 flex items-center justify-between">Saídas: <span>{formatCurrency(dadosMes.totalRealSaidas + dadosMes.totalPrevSaidas)}</span></span>
+                      <div className="w-full h-px bg-white/10 my-1"></div>
+                      <span className={`text-sm font-bold flex items-center justify-between ${saldoPrevisto >= 0 ? 'text-indigo-400/70' : 'text-red-400/70'}`}>Saldo Final: <span>{formatCurrency(saldoPrevisto)}</span></span>
+                    </div>
                   </div>
                 </div>
                 
                 <div className="overflow-x-auto custom-scrollbar">
                   <table className="w-full text-left">
-                    <thead className="bg-black/20 text-gray-400 text-xs uppercase tracking-wider">
+                    <thead className="bg-black/20 text-gray-400 text-[10px] uppercase tracking-wider">
                       <tr>
-                        <th className="p-4 pl-6 font-semibold">Período</th>
-                        <th className="p-4 font-semibold text-green-400">Soma Entradas (+)</th>
-                        <th className="p-4 font-semibold text-rose-400">Soma Saídas (-)</th>
-                        <th className="p-4 pr-6 font-semibold">Saldo da Semana</th>
+                        <th className="p-4 pl-6 font-semibold border-r border-white/5" rowSpan={2}>Semana</th>
+                        <th className="p-2 text-center border-r border-b border-white/5" colSpan={3}>REALIZADO (Já Pago)</th>
+                        <th className="p-2 text-center text-gray-500 border-b border-white/5" colSpan={3}>PREVISTO (Pendente)</th>
+                      </tr>
+                      <tr>
+                        <th className="p-3 font-semibold text-green-400">Entradas (+)</th>
+                        <th className="p-3 font-semibold text-rose-400">Saídas (-)</th>
+                        <th className="p-3 font-semibold border-r border-white/5">Saldo</th>
+                        <th className="p-3 font-semibold text-green-400/50">Entradas (+)</th>
+                        <th className="p-3 font-semibold text-rose-400/50">Saídas (-)</th>
+                        <th className="p-3 font-semibold text-gray-500 pr-6">Saldo Prev.</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
-                      {['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4', 'Semana 5'].map(semana => {
+                      {['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4', 'Semana 5', 'Semana 6'].map(semana => {
                         const dadosSemana = dadosMes.semanas[semana];
                         if (!dadosSemana) return null;
+
+                        const saldoSemanaReal = dadosSemana.entradasReal - dadosSemana.saidasReal;
+                        const saldoSemanaPrevisto = dadosSemana.entradasPrev - dadosSemana.saidasPrev;
                         
+                        if (dadosSemana.entradasReal === 0 && dadosSemana.saidasReal === 0 && dadosSemana.entradasPrev === 0 && dadosSemana.saidasPrev === 0) return null;
+
                         return (
-                          <tr key={semana} className="hover:bg-white/5 transition-colors">
-                            <td className="p-4 pl-6 font-bold text-gray-300">{semana}</td>
-                            <td className="p-4 font-bold text-green-400">{formatCurrency(dadosSemana.entradas)}</td>
-                            <td className="p-4 font-bold text-rose-400">{formatCurrency(dadosSemana.saidas)}</td>
-                            <td className={`p-4 pr-6 font-bold ${dadosSemana.saldo >= 0 ? 'text-indigo-300' : 'text-red-400'}`}>{formatCurrency(dadosSemana.saldo)}</td>
+                          <tr key={semana} className="hover:bg-white/5 transition-colors text-sm">
+                            <td className="p-4 pl-6 font-bold text-gray-300 border-r border-white/5">{semana}</td>
+                            
+                            <td className="p-4 font-bold text-green-400">{formatCurrency(dadosSemana.entradasReal)}</td>
+                            <td className="p-4 font-bold text-rose-400">{formatCurrency(dadosSemana.saidasReal)}</td>
+                            <td className={`p-4 font-bold border-r border-white/5 ${saldoSemanaReal >= 0 ? 'text-indigo-300' : 'text-red-400'}`}>
+                              {formatCurrency(saldoSemanaReal)}
+                            </td>
+
+                            <td className="p-4 font-medium text-green-400/50">{formatCurrency(dadosSemana.entradasPrev)}</td>
+                            <td className="p-4 font-medium text-rose-400/50">{formatCurrency(dadosSemana.saidasPrev)}</td>
+                            <td className={`p-4 pr-6 font-medium ${saldoSemanaPrevisto >= 0 ? 'text-indigo-400/50' : 'text-red-400/50'}`}>
+                              {formatCurrency(saldoSemanaPrevisto)}
+                            </td>
                           </tr>
                         );
                       })}
@@ -1184,9 +1128,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
           {Object.keys(fluxoDeCaixa).length === 0 && (
             <div className="bg-[#0B0F19]/80 rounded-3xl border border-white/10 p-16 text-center text-gray-400 shadow-lg">
               <Activity size={48} className="mx-auto mb-4 opacity-20 text-indigo-400" />
-              <p className="text-lg font-bold text-white mb-2">Sem movimentações concluídas</p>
-              <p>Nenhuma transação financeira com status "Pago" foi encontrada.</p>
-              <p className="text-sm mt-2">Dê baixa em contas a pagar ou a receber para popular o fluxo de caixa em tempo real.</p>
+              <p className="text-lg font-bold text-white mb-2">Sem movimentações financeiras</p>
+              <p>Cadastre despesas ou feche um mês para gerar o fluxo de caixa.</p>
             </div>
           )}
         </div>
@@ -1195,8 +1138,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     {demonstrativoData && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 backdrop-blur-sm overflow-y-auto">
             <div className="flex flex-col items-center animate-in zoom-in-95 duration-200">
-                
-                {/* O COMPROVANTE */}
                 <div id="comprovante-export" className="bg-[#f0f2f5] w-[450px] rounded-[16px] shadow-2xl overflow-hidden border border-gray-100 font-sans">
                     <div className="px-5 py-8 text-center border-b-2 border-[#eef4fc] bg-white">
                         <img src="https://i.ibb.co/PszR8C1j/Whats-App-Image-2025-12-10-at-17-17-30.jpg" crossOrigin="anonymous" alt="Logo" className="h-[70px] rounded-full mx-auto mb-4" />
@@ -1204,7 +1145,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                         <p className="m-0 mt-1 text-[13px] text-[#555555]">Referência: {demonstrativoData.ref}</p>
                     </div>
                     <div className="p-6 text-[#1a1a1a]">
-                        
                         <div className="border border-[#e0e0e0] rounded-xl p-4 mb-4 bg-white">
                             <span className="text-[10px] uppercase tracking-wide text-[#888888] font-bold mb-2 block">Colaborador</span>
                             <strong className="text-[16px] text-[#1a1a1a] block leading-tight">{demonstrativoData.nome}</strong>
@@ -1253,7 +1193,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                     </div>
                 </div>
 
-                {/* AÇÕES DO MODAL */}
                 <div className="mt-6 flex gap-4 w-[450px]">
                     <button onClick={() => setDemonstrativoData(null)} className="flex-1 py-3 rounded-xl bg-gray-800 text-white font-bold hover:bg-gray-700 transition">Fechar</button>
                     <button onClick={baixarDemonstrativo} className="flex-1 py-3 rounded-xl bg-green-600 text-white font-bold hover:bg-green-500 transition shadow-lg">Baixar PNG</button>
