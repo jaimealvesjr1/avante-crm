@@ -40,7 +40,14 @@ export function useAvanteData(user) {
 
   const updateStoreInCloud = useCallback(async (updatedStore) => {
     try {
-      await setDoc(doc(db, "stores", updatedStore.id.toString()), updatedStore, { merge: true });
+      const safeStore = { ...updatedStore };
+      Object.keys(safeStore).forEach(key => {
+        if (safeStore[key] === undefined) {
+          delete safeStore[key];
+        }
+      });
+
+      await setDoc(doc(db, "stores", safeStore.id.toString()), safeStore, { merge: true });
     } catch (e) {
       console.error("Erro ao salvar:", e);
       toast.error("Falha de sincronização com o banco.");

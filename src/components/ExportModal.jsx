@@ -31,7 +31,6 @@ export default function ExportModal({ isOpen, onClose, onExport, filterCount, al
         return toast.error("Por favor, selecione a Competência (Mês/Ano) para gerar os relatórios.");
     }
     
-    // Removido o parâmetro "showAgencyFee"
     onExport({ 
         json, 
         pdf, 

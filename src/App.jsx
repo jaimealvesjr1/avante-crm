@@ -43,7 +43,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.7.6';
+  const CURRENT_VERSION = '2.7.7';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -1239,37 +1239,47 @@ export default function App() {
     setStoreEditData({ 
       store: store.store, 
       marketplace: store.marketplace || '', 
+      gmvBase: store.gmvBase || 0,
       targetType: store.targetType || 'percent',
-      customGrowth: store.customGrowth !== undefined ? store.customGrowth : '',
+      customGrowth: store.customGrowth !== undefined && store.customGrowth !== null ? store.customGrowth : '',
       fixedGmvTarget: store.fixedGmvTarget || ''
     }); 
   };
   
   const saveStoreEdit = (id) => {
     const target = stores.find(s => s.id === id);
+    
     if(target) {
-      const updatedData = {
+      // 1. Montamos o objeto atualizado garantindo que não há undefined na raiz
+      const updatedStore = {
         ...target, 
-        store: storeEditData.store.toUpperCase(), 
-        marketplace: (storeEditData.marketplace || '').toUpperCase(),
-        targetType: storeEditData.targetType
+        store: (storeEditData.store || '').toUpperCase(), 
+        marketplace: (storeEditData.marketplace || '').toUpperCase(), 
+        gmvBase: Number(storeEditData.gmvBase) || 0,
+        targetType: storeEditData.targetType || 'percent'
       };
-      
-      if (storeEditData.targetType === 'fixed') {
-        updatedData.fixedGmvTarget = Number(storeEditData.fixedGmvTarget) || 0;
-        updatedData.customGrowth = deleteField();
+
+      // 2. Tratamento seguro para as metas (Fixa ou Percentual)
+      if (updatedStore.targetType === 'fixed') {
+          updatedStore.fixedGmvTarget = Number(storeEditData.fixedGmvTarget) || 0;
+          updatedStore.customGrowth = null; // Se a meta é fixa, anulamos a percentual
       } else {
-        updatedData.fixedGmvTarget = deleteField();
-        if (storeEditData.customGrowth === '' || storeEditData.customGrowth === null || storeEditData.customGrowth === undefined) {
-          updatedData.customGrowth = deleteField();
-        } else {
-          updatedData.customGrowth = Number(storeEditData.customGrowth);
-        }
+          updatedStore.customGrowth = storeEditData.customGrowth !== '' ? Number(storeEditData.customGrowth) : null;
+          updatedStore.fixedGmvTarget = null; // Se a meta é percentual, anulamos a fixa
       }
-      
-      updateStoreInCloud(updatedData);
+
+      // 3. Filtro de Segurança: Varre o objeto e remove qualquer vestígio de undefined
+      Object.keys(updatedStore).forEach(key => {
+          if (updatedStore[key] === undefined) {
+              delete updatedStore[key];
+          }
+      });
+
+      // 4. Salva na nuvem
+      updateStoreInCloud(updatedStore);
       toast.success('Loja atualizada com sucesso!');
     }
+    
     setEditingStoreId(null);
   };
 
@@ -1347,7 +1357,7 @@ export default function App() {
 
       const projectedGmv = currentDay > 0 ? ((Number(store.currentRevenue) || 0) / currentDay) * daysInMonth : 0;
       const percentReached = gmvTarget > 0 ? (projectedGmv / gmvTarget) * 100 : 0;
-      return { ...store, gmvTarget, projectedGmv, percentReached, growthRate, appliedGrowthType, targetType: store.targetType, status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger' };
+      return { ...store, gmvTarget, projectedGmv, percentReached, growthRate, appliedGrowthType, targetType: store.targetType || 'percent', status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger' };
     });
 
     const filteredStores = processedStores.filter(store => {
@@ -1588,7 +1598,7 @@ export default function App() {
               </button>
             )}
 
-            {(canEdit && !isVisitante) && (
+            {isManager && (
               <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                 <Shield size={16} /> <span className="hidden md:inline">Equipe</span>
               </button>
