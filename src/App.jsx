@@ -43,7 +43,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.7.7';
+  const CURRENT_VERSION = '2.7.9';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -82,6 +82,7 @@ export default function App() {
   
   const [activeEvent, setActiveEvent] = useState(null);
   const [scheduledEvents, setScheduledEvents] = useState([]);
+  const [scheduledVisits, setScheduledVisits] = useState([]);
 
   const activeEventStats = useMemo(() => {
     if (!activeEvent) return { gmv: 0 };
@@ -94,11 +95,31 @@ export default function App() {
     return { gmv: totalGmv };
   }, [stores, activeEvent]);
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('name');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [mktFilter, setMktFilter] = useState('all');
-  const [respFilter, setRespFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('avante_sync_search') || '');
+  const [sortBy, setSortBy] = useState(() => localStorage.getItem('avante_sync_sort') || 'name');
+  const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('avante_sync_status') || 'all');
+  const [mktFilter, setMktFilter] = useState(() => localStorage.getItem('avante_sync_mkt') || 'all');
+  const [respFilter, setRespFilter] = useState(() => localStorage.getItem('avante_sync_resp') || 'all');
+
+  useEffect(() => {
+    localStorage.setItem('avante_sync_search', searchTerm);
+    localStorage.setItem('avante_sync_sort', sortBy);
+    localStorage.setItem('avante_sync_status', statusFilter);
+    localStorage.setItem('avante_sync_mkt', mktFilter);
+    localStorage.setItem('avante_sync_resp', respFilter);
+  }, [searchTerm, sortBy, statusFilter, mktFilter, respFilter]);
+
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'avante_sync_search') setSearchTerm(e.newValue || '');
+      if (e.key === 'avante_sync_sort') setSortBy(e.newValue || 'name');
+      if (e.key === 'avante_sync_status') setStatusFilter(e.newValue || 'all');
+      if (e.key === 'avante_sync_mkt') setMktFilter(e.newValue || 'all');
+      if (e.key === 'avante_sync_resp') setRespFilter(e.newValue || 'all');
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   const [expandedClients, setExpandedClients] = useState([]);
   const [bulkTaskModalOpen, setBulkTaskModalOpen] = useState(false);
@@ -151,6 +172,7 @@ export default function App() {
   const isManager = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager';
   const canUseBatchEntry = isManager || currentUserData?.role === 'Supervisor';
   const isVisitante = currentUserData?.role === 'Visitante';
+  const canAccessWarRoom = currentUserData && !isVisitante; 
 
   useEffect(() => {
     if (isVisitante && ['dashboard', 'operacional', 'admin'].includes(activeView)) {
@@ -244,6 +266,7 @@ export default function App() {
         
         setActiveEvent(data.activeEvent || null);
         setScheduledEvents(data.scheduledEvents || []);
+        setScheduledVisits(data.scheduledVisits || []);
         
         if (data.versao && data.versao !== CURRENT_VERSION) {
           const isPWA = window.matchMedia('(display-mode: standalone)').matches;
@@ -352,6 +375,21 @@ export default function App() {
       const updatedScheduled = scheduledEvents.filter(e => e.id !== payload.id);
       await setDoc(globalRef, { scheduledEvents: updatedScheduled }, { merge: true });
       toast.success("Evento removido da agenda.");
+    }
+  };
+
+  const handleVisitAction = async (action, payload) => {
+    if (!canEdit) return;
+    const globalRef = doc(db, "settings", "global");
+    
+    if (action === 'schedule') {
+      const newVisit = { ...payload, id: Date.now().toString() };
+      await setDoc(globalRef, { scheduledVisits: [...scheduledVisits, newVisit] }, { merge: true });
+      toast.success("Visita agendada com sucesso!");
+    } else if (action === 'delete' || action === 'complete') {
+      const updatedVisits = scheduledVisits.filter(v => v.id !== payload.id);
+      await setDoc(globalRef, { scheduledVisits: updatedVisits }, { merge: true });
+      toast.success(action === 'complete' ? "Visita marcada como realizada!" : "Visita cancelada.");
     }
   };
 
@@ -1555,36 +1593,39 @@ export default function App() {
       )}      
       
       <header className="sticky top-0 z-40 bg-[#0B0F19]/50 backdrop-blur-xl border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.3)]">
-        <div className="w-full px-4 md:px-8 2xl:px-12 mx-auto h-16 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <img src="/logo.jpg" alt="Avante HUB" className="h-9 w-auto object-contain rounded-lg shadow-sm" />
-              <div className="flex items-center gap-3">
-                <span className="text-xl font-black text-white tracking-tighter">
-                  AVANTE<span className="text-indigo-500">HUB</span>
-                </span>
-                <span className="text-[10px] bg-white/5 border border-white/10 text-gray-400 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
-                  v{CURRENT_VERSION}
-                </span>
-              </div>
+        <div className="w-full px-3 md:px-6 2xl:px-12 mx-auto h-16 flex items-center justify-between gap-3 overflow-hidden flex-nowrap">
+          
+          {/* LOGO - Esconde o texto "AVANTE HUB" em monitores verticais/mobile */}
+          <div className="flex items-center gap-3 shrink-0">
+            <img src="/logo.jpg" alt="Avante HUB" className="h-8 md:h-9 w-auto object-contain rounded-lg shadow-sm shrink-0" />
+            <div className="hidden xl:flex items-center gap-3">
+              <span className="text-xl font-black text-white tracking-tighter">
+                AVANTE<span className="text-indigo-500">HUB</span>
+              </span>
+              <span className="text-[10px] bg-white/5 border border-white/10 text-gray-400 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                v{CURRENT_VERSION}
+              </span>
             </div>
           </div>
 
-          <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
-            <button onClick={() => setActiveView('feed_equipe')} className={`relative px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'feed_equipe' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-              <Activity size={16} /> Feed
+          {/* NAVEGAÇÃO - Dock centralizada. Textos só aparecem em monitor horizontal (xl) */}
+          <nav className="flex items-center gap-1 xl:gap-1.5 bg-white/5 p-1.5 rounded-full border border-white/10 backdrop-blur-md shadow-inner overflow-x-auto flex-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] shrink-1">
+            
+            <button onClick={() => setActiveView('feed_equipe')} className={`relative p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'feed_equipe' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`} title="Feed da Equipe">
+              <Activity size={18} className="shrink-0" /> <span className="hidden xl:inline">Feed</span>
             </button>
-            <button onClick={() => setActiveView('rotinas')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'rotinas' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-              <CalendarDays size={16} /> <span className="hidden md:inline">Workflow</span>
+            
+            <button onClick={() => setActiveView('rotinas')} className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'rotinas' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`} title="Workflow e Rotinas">
+              <CalendarDays size={18} className="shrink-0" /> <span className="hidden xl:inline">Workflow</span>
             </button>
             
             {!isVisitante && (
               <>
-                <button onClick={() => setActiveView('operacional')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'operacional' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-                  <Briefcase size={16} /> <span className="hidden md:inline">Portfólio</span>
+                <button onClick={() => setActiveView('operacional')} className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'operacional' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`} title="Portfólio de Lojas">
+                  <Briefcase size={18} className="shrink-0" /> <span className="hidden xl:inline">Portfólio</span>
                 </button>
-                <button onClick={() => setActiveView('dashboard')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'dashboard' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-                  <PieChartIcon size={16} /> <span className="hidden md:inline">Dashboard</span>
+                <button onClick={() => setActiveView('dashboard')} className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'dashboard' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`} title="Dashboard Executivo">
+                  <PieChartIcon size={18} className="shrink-0" /> <span className="hidden xl:inline">Dashboard</span>
                 </button>
               </>
             )}
@@ -1592,21 +1633,22 @@ export default function App() {
             {(!isVisitante && canEdit) && (
               <button 
                 onClick={() => setActiveView('financeiro')} 
-                className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'financeiro' ? 'bg-green-900 text-green-100 shadow-md border border-green-500/30' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'financeiro' ? 'bg-green-900 text-green-100 shadow-md border border-green-500/30' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                title="Financeiro"
               >
-                <DollarSign size={16} /> <span className="hidden md:inline">Financeiro</span>
+                <DollarSign size={18} className="shrink-0" /> <span className="hidden xl:inline">Financeiro</span>
               </button>
             )}
 
             {isManager && (
-              <button onClick={() => setActiveView('admin')} className={`px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-                <Shield size={16} /> <span className="hidden md:inline">Equipe</span>
+              <button onClick={() => setActiveView('admin')} className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`} title="Gestão de Equipe">
+                <Shield size={18} className="shrink-0" /> <span className="hidden xl:inline">Equipe</span>
               </button>
             )}
             
-            {canEdit && activeEvent && (
-              <div className="flex items-center gap-3 bg-orange-500/10 border border-orange-500/20 rounded-full p-1 pl-4 shadow-inner">
-                <div className="hidden sm:flex flex-col justify-center cursor-pointer" onClick={() => setActiveView('war_room')}>
+            {canAccessWarRoom && activeEvent && (
+              <div className="flex items-center gap-1 xl:gap-3 bg-orange-500/10 border border-orange-500/20 rounded-full p-1 xl:pl-4 shadow-inner shrink-0">
+                <div className="hidden xl:flex flex-col justify-center cursor-pointer" onClick={() => setActiveView('war_room')}>
                   <span className="text-[9px] text-orange-500 font-bold uppercase tracking-wider leading-none flex items-center gap-1.5 mb-1">
                     <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span> {activeEvent.name}
                   </span>
@@ -1614,34 +1656,25 @@ export default function App() {
                     {safeFormatCurrency(activeEventStats.gmv)}
                   </span>
                 </div>
-                <button onClick={() => setActiveView('war_room')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all ${activeView === 'war_room' ? 'bg-orange-600 text-white shadow-md border border-orange-500/50' : 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 border border-orange-500/30'}`}>
-                  <Flame size={16} /> <span className="hidden md:inline">War Room</span>
+                <button onClick={() => setActiveView('war_room')} className={`p-2 xl:px-4 xl:py-1 rounded-full text-sm font-bold flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'war_room' ? 'bg-orange-600 text-white shadow-md border border-orange-500/50' : 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 border border-orange-500/30'}`} title="War Room de Evento">
+                  <Flame size={18} className="shrink-0" /> <span className="hidden xl:inline">War Room</span>
                 </button>
               </div>
             )}     
           </nav>
 
-          <div className="flex items-center gap-4">
+          {/* PERFIL E AÇÕES - Esconde o nome do usuário em telas menores */}
+          <div className="flex items-center gap-2 xl:gap-4 shrink-0">
             {canEdit && (
-              <div className="hidden lg:flex gap-1 items-center">
-                
-                <button 
-                  onClick={() => setIsExportModalOpen(true)} 
-                  className="text-orange-600 hover:text-orange-400 p-2 rounded-full hover:bg-orange-500/10 transition-all border border-transparent hover:border-orange-500/30" 
-                  title="Exportar Relatórios"
-                >
+              <div className="hidden xl:flex gap-1 items-center shrink-0">
+                <button onClick={() => setIsExportModalOpen(true)} className="text-orange-600 hover:text-orange-400 p-2 rounded-full hover:bg-orange-500/10 transition-all border border-transparent hover:border-orange-500/30" title="Exportar Relatórios">
                   <Download size={18} />
                 </button>
-
                 {isManager && (
                   <>
                     <div className="w-px h-4 bg-white/10 mx-1"></div>
                     <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
-                    <button 
-                      onClick={() => fileInputRef.current.click()} 
-                      className="text-gray-400 hover:text-gray-200 p-2 rounded-full hover:bg-gray-700/50 transition-all border border-transparent hover:border-gray-600" 
-                      title="Restaurar Backup"
-                    >
+                    <button onClick={() => fileInputRef.current.click()} className="text-gray-400 hover:text-gray-200 p-2 rounded-full hover:bg-gray-700/50 transition-all border border-transparent hover:border-gray-600" title="Restaurar Backup">
                       <ArchiveRestore size={18} />
                     </button>
                   </>
@@ -1649,17 +1682,17 @@ export default function App() {
               </div>
             )}
 
-            <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              <div className="flex items-center gap-2 bg-white/5 py-1 pl-1 pr-4 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
-                <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${currentUserData?.avatarColor || 'from-indigo-500 to-purple-600'} flex items-center justify-center text-sm font-bold text-white shadow-md border border-white/20 overflow-hidden shrink-0`}>
+            <div className="flex items-center gap-1 md:gap-2 xl:pl-4 xl:border-l border-white/10 shrink-0">
+              <div className="flex items-center gap-2 bg-white/5 p-1 xl:py-1 xl:pl-1 xl:pr-4 rounded-full border border-white/10 backdrop-blur-md shadow-inner shrink-0 cursor-pointer">
+                <div className={`w-8 h-8 xl:w-10 xl:h-10 rounded-full bg-gradient-to-br ${currentUserData?.avatarColor || 'from-indigo-500 to-purple-600'} flex items-center justify-center text-sm font-bold text-white shadow-md border border-white/20 overflow-hidden shrink-0`}>
                   {currentUserData?.avatarUrl ? (
                     <img src={currentUserData.avatarUrl} alt="Perfil" className="w-full h-full object-cover" />
                   ) : (
                     (currentUserData?.nomeCompleto || 'U').charAt(0).toUpperCase()
                   )}
                 </div>
-                <div>
-                  <p className="text-[11px] font-bold text-white leading-tight">
+                <div className="hidden xl:block">
+                  <p className="text-[11px] font-bold text-white leading-tight truncate max-w-[120px]">
                     {currentUserData?.nomeCompleto || 'Usuário'}
                   </p>
                   <p className="text-[9px] text-indigo-300 uppercase tracking-widest leading-tight">
@@ -1667,84 +1700,86 @@ export default function App() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
+              
+              <div className="flex items-center gap-0.5 shrink-0">
                 <button onClick={() => setShowValues(!showValues)} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-full text-gray-400 hover:text-white transition-all shadow-sm" title={showValues ? "Ocultar Valores Financeiros" : "Mostrar Valores Financeiros"}>
                   {showValues ? <Eye size={16} /> : <EyeOff size={16} className="text-amber-400" />}
                 </button>
-                <button onClick={() => setPasswordModalOpen(true)} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-full text-gray-400 hover:text-white transition-all shadow-sm" title="Mudar Senha"><Key size={16} /></button>
-                <button onClick={handleLogout} className="p-2 bg-white/5 hover:bg-red-500/20 border border-transparent hover:border-red-500/30 rounded-full text-gray-400 hover:text-red-400 transition-all shadow-sm" title="Sair"><LogOut size={16} /></button>
+                <button onClick={() => setPasswordModalOpen(true)} className="hidden sm:block p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-full text-gray-400 hover:text-white transition-all shadow-sm" title="Mudar Senha">
+                  <Key size={16} />
+                </button>
+                <button onClick={handleLogout} className="p-2 bg-white/5 hover:bg-red-500/20 border border-transparent hover:border-red-500/30 rounded-full text-gray-400 hover:text-red-400 transition-all shadow-sm" title="Sair">
+                  <LogOut size={16} />
+                </button>
               </div>
             </div>
           </div>
+
         </div>
       </header>
 
-<main className="flex-1 w-full px-4 md:px-8 2xl:px-12 pt-6 relative mx-auto">
+      <main className="flex-1 w-full px-4 md:px-8 2xl:px-12 pt-6 relative mx-auto">
         {['dashboard', 'operacional', 'rotinas', 'feed_equipe', 'financeiro', 'war_room'].includes(activeView) && (
-          <div className="sticky top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-4 md:p-5 rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
-            <div className="flex flex-col md:flex-row items-center gap-4 justify-between w-full">
+          <div className="sticky top-[70px] md:top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-3 xl:p-5 rounded-2xl xl:rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
+            {/* TRAVA ABSOLUTA: flex-nowrap impede quebra. overflow-x-auto gera scroll invisível se a tela for menor que o conteúdo */}
+            <div className="flex items-center gap-3 justify-between w-full flex-nowrap overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               
-              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto flex-1">
-                <div className="relative flex-1 min-w-[250px]">
+              {/* Busca e Sort */}
+              <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                <div className="relative w-full">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <input 
                     type="text" 
-                    placeholder="Buscar por conta ou loja..." 
+                    placeholder="Buscar conta ou loja..." 
                     value={searchTerm} 
                     onChange={(e) => setSearchTerm(e.target.value)} 
-                    className="w-full bg-black/20 border border-white/10 text-white rounded-xl py-2.5 pl-10 pr-4 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 text-sm transition-all shadow-inner" 
+                    className="w-full bg-black/20 border border-white/10 text-white rounded-xl py-2 pl-10 pr-4 outline-none focus:border-indigo-500 text-sm shadow-inner transition-all" 
                   />
                 </div>
-          
-                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-black/20 border border-white/10 text-gray-300 rounded-xl py-2.5 px-4 text-sm font-medium outline-none cursor-pointer hover:bg-white/5 transition-all shadow-inner hidden md:flex">
+                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="hidden md:block bg-black/20 border border-white/10 text-gray-300 rounded-xl py-2 px-3 text-sm font-medium outline-none cursor-pointer hover:bg-white/5 transition-all shadow-inner shrink-0">
                   <option value="name" className="bg-gray-900 text-white">Por Nome (A-Z)</option>
-                  <option value="gmv" className="bg-gray-900 text-white">Maior Faturamento</option>
-                  <option value="status" className="bg-gray-900 text-white">Por Status</option>
+                  <option value="gmv" className="bg-gray-900 text-white">Faturamento</option>
+                  <option value="status" className="bg-gray-900 text-white">Status</option>
                 </select>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 bg-black/20 p-1.5 rounded-xl border border-white/10 shadow-inner w-full md:w-auto">
-                <div className="flex gap-1 border-r border-white/10 pr-2">
+              {/* Filtros em Trilho Horizontal Estrito */}
+              <div className="flex flex-nowrap items-center gap-2 bg-black/20 p-1 rounded-xl border border-white/10 shadow-inner shrink-0">
+                <div className="flex flex-nowrap gap-1 border-r border-white/10 pr-2 pl-1">
                     {['all', 'danger', 'warning', 'success'].map(f => (
-                      <button key={f} onClick={() => setStatusFilter(f)} className={`p-1.5 rounded-lg transition-all ${statusFilter === f ? 'bg-white/10 text-white shadow-md' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
+                      <button key={f} onClick={() => setStatusFilter(f)} className={`p-1.5 rounded-lg shrink-0 transition-all ${statusFilter === f ? 'bg-white/10 text-white shadow-md' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
                         {f === 'all' ? <Filter size={16}/> : f === 'danger' ? <AlertTriangle size={16}/> : f === 'warning' ? <Clock size={16}/> : <CheckCircle size={16}/>}
                       </button>
                     ))}
                 </div>
 
-                <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors border-r border-white/10">
+                <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors border-r border-white/10 shrink-0">
                   <option value="all" className="bg-gray-900 text-white">🛍️ CANAIS</option>
                   {uniqueMkts.map(m => <option key={m} value={m} className="bg-gray-900 text-white">{m}</option>)}
                 </select>
-                <select value={respFilter} onChange={e => setRespFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors">
-                  <option value="all" className="bg-gray-900 text-white">👥 TODOS RESP.</option>
-                  <option value="unassigned" className="bg-gray-900 text-amber-400">⚠️ SEM RESPONSÁVEL</option>
+
+                <select value={respFilter} onChange={e => setRespFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors shrink-0">
+                  <option value="all" className="bg-gray-900 text-white">👥 TODOS</option>
+                  <option value="unassigned" className="bg-gray-900 text-amber-400">⚠️ SEM RESP.</option>
                   {teamMembers.map(m => <option key={m.email} value={m.nomeCompleto || m.nome} className="bg-gray-900 text-white">{m.nomeCompleto || m.nome}</option>)}
                 </select>
               </div>
               
-              <div className="flex w-full md:w-auto">
+              <div className="flex gap-2 items-center shrink-0">
+                <button 
+                  onClick={() => { setSearchTerm(''); setSortBy('name'); setStatusFilter('all'); setMktFilter('all'); setRespFilter('all'); toast.success('Filtros resetados!'); }} 
+                  className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2 rounded-xl transition-colors shrink-0"
+                  title="Limpar todos os filtros"
+                >
+                  <Eraser size={16}/>
+                </button>
+
                 {currentUserData?.role !== 'Operacional' && !isVisitante && (
-                  <button onClick={addNewStore} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 px-6 rounded-xl text-sm font-bold flex justify-center items-center gap-2 transition-all shadow-md">
-                    <Plus size={16} /> Novo Cliente
+                  <button onClick={addNewStore} className="bg-indigo-600 hover:bg-indigo-500 text-white py-2 px-4 rounded-xl text-sm font-bold flex justify-center items-center gap-2 transition-all shadow-md shrink-0">
+                    <Plus size={16} /> <span className="hidden md:inline">Novo Cliente</span>
                   </button>
                 )}
               </div>
-
-              <button 
-                onClick={() => {
-                  setSearchTerm('');
-                  setSortBy('name');
-                  setStatusFilter('all');
-                  setMktFilter('all');
-                  setRespFilter('all');
-                  toast.success('Filtros resetados!');
-                }} 
-                className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2.5 rounded-xl transition-colors"
-                title="Limpar todos os filtros"
-              >
-                <Eraser size={16}/>
-              </button>
 
             </div>
           </div>
@@ -1761,6 +1796,9 @@ export default function App() {
             scheduledEvents={scheduledEvents}
             activeEvent={activeEvent}
             formatCurrency={safeFormatCurrency}
+            scheduledVisits={scheduledVisits}
+            handleVisitAction={handleVisitAction}
+            canEdit={canEdit}
           />
         )}
 
@@ -1834,7 +1872,7 @@ export default function App() {
           />
         )}
 
-        {activeView === 'war_room' && activeEvent && (
+        {activeView === 'war_room' && activeEvent && canAccessWarRoom && (
           <WarRoom 
             stores={dashboardData.flatFilteredStores} 
             setStores={setStores}
@@ -1844,6 +1882,7 @@ export default function App() {
             canEdit={canEdit}
             activeEvent={activeEvent}
             onEndEvent={() => handleEventAction('end')}
+            canAccessWarRoom={canAccessWarRoom}
           />
         )}
 

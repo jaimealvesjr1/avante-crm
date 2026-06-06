@@ -303,6 +303,40 @@ export default function ClientFileModal({
     })).sort((a, b) => b.roas - a.roas)
   , [liveStores]);
 
+  const consolidatedHistory = useMemo(() => {
+    if (!clientGroup || !clientGroup.stores) return [];
+    
+    const historyMap = {};
+    
+    clientGroup.stores.forEach(store => {
+      (store.monthlyHistory || []).forEach(h => {
+        if (!historyMap[h.month]) {
+          historyMap[h.month] = { 
+            month: h.month, 
+            gmv: 0, 
+            ads: 0, 
+            orders: 0, 
+            units: 0, 
+            agencyRevenue: 0 
+          };
+        }
+        historyMap[h.month].gmv += Number(h.gmv) || 0;
+        historyMap[h.month].ads += Number(h.adsInvestment) || 0;
+        historyMap[h.month].orders += Number(h.orders) || 0;
+        historyMap[h.month].units += Number(h.units) || 0;
+        historyMap[h.month].agencyRevenue += Number(h.agencyRevenue) || 0;
+      });
+    });
+
+    const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    
+    return Object.values(historyMap).sort((a, b) => {
+      const [mA, yA] = a.month.split('/');
+      const [mB, yB] = b.month.split('/');
+      return (parseInt(yB, 10) * 100 + monthsOrder.indexOf(mB)) - (parseInt(yA, 10) * 100 + monthsOrder.indexOf(mA));
+    });
+  }, [clientGroup]);
+
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
       <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col relative">
@@ -457,7 +491,7 @@ export default function ClientFileModal({
                 </div>
 
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider" title="Participação no Faturamento Global da Agência">Fatia da Agência (Share)</span>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider" title="Participação no Faturamento Global da Agência">Share na Carteira</span>
                   
                   <div className="flex items-center gap-2 mt-1">
                     <p className={`text-2xl font-bold ${shareEvolucao.evolution >= 0 ? 'text-indigo-400' : 'text-rose-400'}`}>
@@ -573,45 +607,66 @@ export default function ClientFileModal({
             </div>
           )}
 
-          {/* ABA 3: HISTÓRICO E TAREFAS */}
-          {activeTab === 'historico' && (
-            <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mt-4 animate-in fade-in duration-300">
-              <div className="xl:col-span-3 bg-white/[0.02] p-5 rounded-3xl border border-white/5 flex flex-col shadow-sm">
-                <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-gray-500/10 rounded-xl border border-gray-500/20">
-                      <History size={16} className="text-gray-400"/>
-                    </div>
-                    <h4 className="text-sm font-bold text-white tracking-wide">Linha do Tempo de Ocorrências</h4>
-                  </div>
-                  <span className="bg-white/5 text-gray-400 font-bold px-2 py-0.5 rounded text-xs">{clientHistoryLogs.length}</span>
-                </div>
+{activeTab === 'historico' && (
+            <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mt-4 animate-in fade-in">
+              
+              {/* COLUNA ESQUERDA: Fechamentos + Timeline (Ocupa 3 colunas) */}
+              <div className="xl:col-span-3 flex flex-col gap-6">
                 
-                <div className="flex-1 overflow-y-auto pr-2 space-y-3 max-h-[600px] custom-scrollbar border-l-2 border-gray-800 ml-2 pl-4">
-                  {clientHistoryLogs.length > 0 ? clientHistoryLogs.map(log => (
-                    <div key={log.id} className="relative group">
-                      <div className="absolute -left-[23px] top-1.5 w-2.5 h-2.5 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.6)]"></div>
-                      <div className="flex flex-col mb-1.5">
-                        <span className="text-[10px] font-bold text-indigo-400 flex items-center gap-1.5">
-                          {log.storeName}
-                        </span>
-                        <span className="text-[9px] text-gray-500 font-medium">
-                          {log.data} por <span className="text-gray-400">{log.author}</span>
-                        </span>
+                {/* Tabela de Fechamentos */}
+                <div className="bg-black/20 border border-white/10 rounded-2xl overflow-hidden shadow-sm">
+                  <div className="p-4 border-b border-white/5 bg-black/40 font-bold text-xs text-gray-400 uppercase tracking-widest">
+                    Fechamentos Mensais Consolidado
+                  </div>
+                  <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="sticky top-0 bg-black/50 backdrop-blur text-[10px] text-gray-500 uppercase">
+                        <tr>
+                          <th className="p-4">Mês</th>
+                          <th className="p-4 text-emerald-400">GMV</th>
+                          <th className="p-4 text-amber-400">Ads</th>
+                          <th className="p-4 text-blue-400">Comissão</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 text-xs text-gray-300">
+                        {consolidatedHistory.length > 0 ? consolidatedHistory.map(h => (
+                          <tr key={h.month} className="hover:bg-white/[0.02]">
+                            <td className="p-4 font-bold text-white">{h.month}</td>
+                            <td className="p-4 font-mono">{formatCurrency(h.gmv)}</td>
+                            <td className="p-4 font-mono">{formatCurrency(h.ads)}</td>
+                            <td className="p-4 font-mono">{formatCurrency(h.agencyRevenue)}</td>
+                          </tr>
+                        )) : (
+                          <tr><td colSpan="4" className="p-4 text-center text-gray-600 italic">Nenhum fechamento encontrado.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Timeline de Ocorrências (Logo abaixo da tabela) */}
+                <div className="bg-white/[0.02] p-5 rounded-3xl border border-white/5 flex flex-col shadow-sm flex-1">
+                  <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
+                    <h4 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+                       <History size={16} className="text-gray-400"/> Linha do Tempo
+                    </h4>
+                    <span className="text-[10px] bg-white/5 text-gray-400 font-bold px-2 py-0.5 rounded">{clientHistoryLogs.length}</span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto custom-scrollbar border-l-2 border-gray-800 ml-2 pl-4 space-y-4">
+                    {clientHistoryLogs.map(log => (
+                      <div key={log.id} className="relative">
+                        <div className="absolute -left-[23px] top-1.5 w-2.5 h-2.5 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.6)]"></div>
+                        <div className="text-[10px] font-bold text-indigo-400">{log.storeName}</div>
+                        <div className="text-[9px] text-gray-500 mb-1">{log.data} por {log.author}</div>
+                        <div className="bg-gray-900/80 p-3 rounded-xl border border-white/5 text-xs text-gray-300">{log.texto}</div>
                       </div>
-                      <div className="bg-gray-900/80 p-3 rounded-xl border border-white/5 text-xs text-gray-300 leading-relaxed shadow-sm">
-                        {log.texto}
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="text-center p-8 border border-dashed border-white/10 rounded-xl text-gray-500 text-sm ml-[-16px]">
-                      Nenhum registro histórico para este cliente.
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              <div className="xl:col-span-2 bg-white/[0.02] p-5 rounded-3xl border border-white/5 flex flex-col shadow-sm">
+              {/* COLUNA DIREITA: Tarefas Pendentes (Ocupa 2 colunas) */}
+              <div className="xl:col-span-2 bg-white/[0.02] p-5 rounded-3xl border border-white/5 flex flex-col shadow-sm max-h-[900px]">
                 <div className="flex flex-col gap-4 mb-4 border-b border-white/5 pb-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">

@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Flame, CalendarDays, Activity, Bell, Clock, CheckCircle, AlertCircle, SquareStack, Play, Search, CalendarClock, X } from 'lucide-react';
+import { Flame, CalendarDays, Activity, Bell, Clock, CheckCircle, AlertCircle, SquareStack, Play, Search, CalendarClock, X, Briefcase } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
 
-export default function TeamFeedView({ currentUserData, user, stores, teamMembers, searchTerm, openTaskModal, scheduledEvents = [], activeEvent = null, formatCurrency }) {
+export default function TeamFeedView({ currentUserData, user, stores, teamMembers, searchTerm, openTaskModal, scheduledEvents, activeEvent, formatCurrency, scheduledVisits, handleVisitAction, canEdit }) {
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
     const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
     
     const isAdmin = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager' || currentUserData?.role === 'Analista';
+    const isGestor = currentUserData?.role === 'Supervisor';
+
+    const canScheduleVisits = isAdmin || isGestor;
+    const canCompleteVisits = isAdmin || isGestor;
+    const canDeleteVisits = isAdmin;
 
     const nextEvent = useMemo(() => {
         if (scheduledEvents && scheduledEvents.length > 0) {
@@ -31,6 +36,24 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                 toast.error("Erro ao remover do radar.");
             }
         }
+    };
+
+    const [showVisitForm, setShowVisitForm] = useState(false);
+    const [visitForm, setVisitForm] = useState({ client: '', date: '', time: '', responsavel: '' });
+
+    const uniqueClients = useMemo(() => {
+        return [...new Set(stores.map(s => s.client))].filter(Boolean).sort();
+    }, [stores]);
+
+    const submitVisit = (e) => {
+        e.preventDefault();
+        if (!visitForm.client || !visitForm.date || !visitForm.time || !visitForm.responsavel) {
+        toast.error("Preencha todos os campos da visita.");
+        return;
+        }
+        handleVisitAction('schedule', visitForm);
+        setShowVisitForm(false);
+        setVisitForm({ client: '', date: '', time: '', responsavel: '' });
     };
 
     const handleDeleteFeedLog = async (e, storeName, logId) => {
@@ -343,6 +366,20 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
             .sort((a, b) => b.id - a.id)
             .slice(0, 100);
     }, [allLogs, feedClearedAt, feedFilter, myName, searchTerm]);
+
+    const upcomingVisits = useMemo(() => {
+        if (!scheduledVisits || scheduledVisits.length === 0) return [];
+        
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        return [...scheduledVisits]
+        .filter(visit => visit.date >= todayStr) // Corta o que já passou
+        .sort((a, b) => {
+            const dateA = new Date(`${a.date}T${a.time || '00:00'}:00`);
+            const dateB = new Date(`${b.date}T${b.time || '00:00'}:00`);
+            return dateA - dateB;
+        });
+    }, [scheduledVisits]);
     
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
@@ -511,6 +548,129 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                             )}
                         </div>
                     ) : null}                    
+
+
+                    {/* Bloco Exclusivo de CRM: Próximas Visitas */}
+                    {(upcomingVisits.length > 0 || canScheduleVisits) && (
+                    <div className="mb-6 bg-blue-900/10 border border-blue-500/20 p-4 rounded-2xl w-full">
+                        
+                        {/* Header com Botão de Ação */}
+                        <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                            <Briefcase size={16} /> Agenda de Visitas Presenciais
+                        </h3>
+                        {canScheduleVisits && (
+                            <button 
+                            onClick={() => setShowVisitForm(!showVisitForm)}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors border ${showVisitForm ? 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-md border-blue-500/50'}`}
+                            >
+                            {showVisitForm ? '✕ Cancelar Agendamento' : '+ Agendar Visita'}
+                            </button>
+                        )}
+                        </div>
+
+                        {showVisitForm && canScheduleVisits && (
+                        <form onSubmit={submitVisit} className="bg-black/40 border border-blue-500/30 p-4 rounded-xl mb-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end animate-in fade-in slide-in-from-top-2">                            <div className="flex flex-col gap-1 md:col-span-2">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase">Cliente</label>
+                            <select 
+                                value={visitForm.client} 
+                                onChange={e => setVisitForm({...visitForm, client: e.target.value})}
+                                className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                            >
+                                <option value="">Selecione...</option>
+                                {uniqueClients.map(client => (
+                                <option key={client} value={client}>{client}</option>
+                                ))}
+                            </select>
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase">Data</label>
+                            <input 
+                                type="date" 
+                                value={visitForm.date} 
+                                onChange={e => setVisitForm({...visitForm, date: e.target.value})}
+                                className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                            />
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase">Hora</label>
+                            <input 
+                                type="time" 
+                                value={visitForm.time} 
+                                onChange={e => setVisitForm({...visitForm, time: e.target.value})}
+                                className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                            />
+                            </div>
+
+                            <div className="flex flex-col gap-1 md:col-span-1">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase">Responsável</label>
+                            <select 
+                                value={visitForm.responsavel} 
+                                onChange={e => setVisitForm({...visitForm, responsavel: e.target.value})}
+                                className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                            >
+                                <option value="">Selecione...</option>
+                                {teamMembers.map(m => (
+                                <option key={m.email} value={m.nomeCompleto || m.nome}>{m.nomeCompleto || m.nome}</option>
+                                ))}
+                            </select>
+                            </div>
+
+                            <div className="md:col-span-5 flex justify-end mt-2">
+                            <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-5 py-2 rounded-lg shadow-md transition-colors">
+                                Confirmar Agendamento
+                            </button>
+                            </div>
+                        </form>
+                        )}
+
+                        {/* Oculta o container de visitas caso esteja vazio, a não ser que o form esteja aberto */}
+                        {upcomingVisits.length === 0 && !showVisitForm ? null : (
+                        <div className="flex gap-3 overflow-x-auto custom-scrollbar pb-2">
+                            {upcomingVisits.length === 0 ? (
+                            <div className="text-xs text-gray-500 italic p-2">Nenhuma visita agendada.</div>
+                            ) : (
+                            upcomingVisits.map(visit => (
+                                <div key={visit.id} className="min-w-[250px] bg-black/40 p-3 rounded-xl border border-white/5 flex flex-col gap-2 shadow-sm">
+                                <div className="flex justify-between items-start">
+                                    <span className="text-sm font-black text-white">{visit.client}</span>
+                                    <span className="text-[10px] text-blue-300 font-bold bg-blue-900/30 px-2 py-0.5 rounded border border-blue-500/20">
+                                    {visit.date.split('-').reverse().join('/')} às {visit.time}
+                                    </span>
+                                </div>
+                                <div className="text-[10px] text-gray-400 font-medium">
+                                    Responsável: <span className="text-gray-200">{visit.responsavel}</span>
+                                </div>
+                                
+                                {(canCompleteVisits || canDeleteVisits) && (
+                                    <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-white/5">
+                                        {canCompleteVisits && (
+                                            <button 
+                                            onClick={() => handleVisitAction('complete', visit)} 
+                                            className="text-[11px] font-bold text-emerald-500 hover:text-emerald-400 flex items-center gap-1 transition-colors"
+                                            >
+                                            ✓ Finalizar
+                                            </button>
+                                        )}
+                                        {canDeleteVisits && (
+                                            <button 
+                                            onClick={() => handleVisitAction('delete', visit)} 
+                                            className="text-[11px] font-bold text-red-500 hover:text-red-400 flex items-center gap-1 transition-colors"
+                                            >
+                                            ✕ Cancelar
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                                </div>
+                            ))
+                            )}
+                        </div>
+                        )}
+                    </div>
+                    )}
 
                     {/* 1. RADAR DA EQUIPE (Trabalhando Agora) */}
                     <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg">

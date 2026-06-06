@@ -4,7 +4,7 @@ import { toast } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const EventEntryRow = ({ store, activeEvent, onSaveDelta }) => {
+const EventEntryRow = ({ store, activeEvent, onSaveDelta, canAccessWarRoom }) => {
     const pastEventData = (store.eventLogs && store.eventLogs[activeEvent.name]) || { gmv: '', ads: '', orders: '', units: '' };
     
     const [rev, setRev] = useState(pastEventData.gmv);
@@ -39,16 +39,44 @@ const EventEntryRow = ({ store, activeEvent, onSaveDelta }) => {
                 </div>
             </td>
             <td className="p-3">
-                <input type="number" placeholder="0.00" value={rev} onChange={e => setRev(e.target.value)} className="w-28 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner" />
+                <input 
+                    disabled={!canAccessWarRoom}
+                    type="number" 
+                    placeholder="0.00" 
+                    value={rev} 
+                    onChange={e => setRev(e.target.value)} 
+                    className="w-28 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner disabled:opacity-50" 
+                />
             </td>
             <td className="p-3">
-                <input type="number" placeholder="0" value={ord} onChange={e => setOrd(e.target.value)} className="w-20 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner" />
+                <input 
+                    disabled={!canAccessWarRoom} 
+                    type="number" 
+                    placeholder="0" 
+                    value={ord} 
+                    onChange={e => setOrd(e.target.value)} 
+                    className="w-20 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner disabled:opacity-50" 
+                />
             </td>
             <td className="p-3">
-                <input type="number" placeholder="0" value={uni} onChange={e => setUni(e.target.value)} className="w-20 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner" />
+                <input 
+                    disabled={!canAccessWarRoom} 
+                    type="number" 
+                    placeholder="0" 
+                    value={uni} 
+                    onChange={e => setUni(e.target.value)} 
+                    className="w-20 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner disabled:opacity-50" 
+                />
             </td>
             <td className="p-3">
-                <input type="number" placeholder="0.00" value={ads} onChange={e => setAds(e.target.value)} className="w-28 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 shadow-inner" />
+                <input 
+                    disabled={!canAccessWarRoom} 
+                    type="number" 
+                    placeholder="0.00" 
+                    value={ads} 
+                    onChange={e => setAds(e.target.value)} 
+                    className="w-28 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 shadow-inner disabled:opacity-50" 
+                />
             </td>
             <td className="p-4 text-right">
                 <button 
@@ -63,11 +91,11 @@ const EventEntryRow = ({ store, activeEvent, onSaveDelta }) => {
     );
 };
 
-export default function WarRoom({ stores, setStores, updateStoreInCloud, formatCurrency, formatNumber, canEdit, activeEvent, onEndEvent }) {
+export default function WarRoom({ stores, setStores, updateStoreInCloud, formatCurrency, formatNumber, canEdit, activeEvent, onEndEvent, canAccessWarRoom }) {
     const [search, setSearch] = useState('');
 
     const handleSaveDelta = async (storeId, eName, newGmv, newAds, newOrders, newUnits) => {
-        if (!canEdit) return toast.error("Sem permissão para alterar dados.");
+        if (!canAccessWarRoom) return toast.error("Você não tem permissão para esta ação.");
 
         const store = stores.find(s => s.id === storeId);
         if (!store) return;
@@ -324,10 +352,10 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
                 </div>
                 <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
                     <button onClick={exportEventReport} className="bg-orange-500/10 border border-orange-500/30 hover:bg-orange-500/20 text-orange-400 px-5 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-colors justify-center">
-                        <Download size={18} /> Baixar Relatório (PDF)
+                        <Download size={18} /> Relatório Parcial
                     </button>
                     <button onClick={() => { if(window.confirm("Deseja realmente encerrar este evento e fechar a War Room?")) onEndEvent(); }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-md flex items-center gap-2 transition-colors justify-center">
-                        <XCircle size={18} /> Encerrar Evento
+                        <XCircle size={18} /> Encerrar
                     </button>
                 </div>
             </div>
@@ -374,7 +402,13 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {filteredStores.map(store => (
-                                <EventEntryRow key={store.id} store={store} activeEvent={activeEvent} onSaveDelta={handleSaveDelta} />
+                                <EventEntryRow 
+                                    key={store.id} 
+                                    store={store} 
+                                    activeEvent={activeEvent} 
+                                    onSaveDelta={handleSaveDelta} 
+                                    canAccessWarRoom={canAccessWarRoom}
+                                />
                             ))}
                         </tbody>
                     </table>

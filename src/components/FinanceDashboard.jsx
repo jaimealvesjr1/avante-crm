@@ -27,12 +27,12 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
   const [despesaEmEdicao, setDespesaEmEdicao] = useState(null);
   const [despesaForm, setDespesaForm] = useState({ 
-    descricao: '', valor: '', desconto: '', categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
+    descricao: '', valor: '', desconto: '', motivoDesconto: '', categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
   });
 
   const [recebimentoEmEdicao, setRecebimentoEmEdicao] = useState(null);
   const [recebimentoForm, setRecebimentoForm] = useState({ 
-    cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
+    cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', motivoDesconto: '', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
   });
 
   const [mesFolha, setMesFolha] = useState('Atual');
@@ -318,6 +318,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       mesReferencia: r.mesReferencia || '', 
       valorAgencia: r.valorBruto || r.valorAgencia,
       desconto: r.desconto || '', 
+      motivoDesconto: r.motivoDesconto || '',
       contaBancaria: r.contaBancaria || 'AVANTE PJ',
       dataVencimento: r.dataVencimento ? r.dataVencimento.split('T')[0] : new Date().toISOString().split('T')[0], 
       status: r.status,
@@ -353,7 +354,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       if (recebimentoEmEdicao) {
         await updateDoc(doc(db, "financeiro_recebimentos", recebimentoEmEdicao), {
           cliente: recebimentoForm.cliente.trim(), mesReferencia: recebimentoForm.mesReferencia,
-          valorBruto: numValorBruto, desconto: numDesconto, valorAgencia: numValorLiquido, contaBancaria: recebimentoForm.contaBancaria,
+          valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: recebimentoForm.motivoDesconto.trim(), valorAgencia: numValorLiquido, contaBancaria: recebimentoForm.contaBancaria,
           dataVencimento: recebimentoForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos
         });
         toast.success("Recebimento atualizado!");
@@ -361,14 +362,14 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       } else {
         await addDoc(collection(db, "financeiro_recebimentos"), {
           cliente: recebimentoForm.cliente.trim(), mesReferencia: recebimentoForm.mesReferencia || 'Avulso',
-          valorBruto: numValorBruto, desconto: numDesconto, valorAgencia: numValorLiquido, contaBancaria: recebimentoForm.contaBancaria,
+          valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: recebimentoForm.motivoDesconto.trim(), valorAgencia: numValorLiquido, contaBancaria: recebimentoForm.contaBancaria,
           dataVencimento: recebimentoForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
           dataPagamentoRealizado: finalStatus === 'Pago' && parsedDesembolsos.length === 0 ? new Date().toISOString() : null,
           dataEmissao: new Date().toISOString()
         });
         toast.success("Entrada registrada!");
       }
-      setRecebimentoForm({ cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
+      setRecebimentoForm({ cliente: '', mesReferencia: '', valorAgencia: '', desconto: '', motivoDesconto: '', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
     } catch (error) { toast.error("Erro ao salvar entrada."); }
   };
 
@@ -446,7 +447,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       if (despesaEmEdicao) {
         await updateDoc(doc(db, "financeiro_despesas", despesaEmEdicao), {
           descricao: despesaForm.descricao.trim(), 
-          valorBruto: numValorBruto, desconto: numDesconto, valor: numValorLiquido, 
+          valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: despesaForm.motivoDesconto.trim(), valor: numValorLiquido, 
           categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos
         });
         toast.success("Despesa atualizada!");
@@ -454,14 +455,14 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       } else {
         await addDoc(collection(db, "financeiro_despesas"), {
           descricao: despesaForm.descricao.trim(), 
-          valorBruto: numValorBruto, desconto: numDesconto, valor: numValorLiquido, 
+          valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: despesaForm.motivoDesconto.trim(), valor: numValorLiquido, 
           categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
           dataPagamentoRealizado: finalStatus === 'Pago' && parsedDesembolsos.length === 0 ? new Date().toISOString() : null,
           criadoEm: new Date().toISOString()
         });
         toast.success("Despesa registada!");
       }
-      setDespesaForm({ descricao: '', valor: '', desconto: '', categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
+      setDespesaForm({ descricao: '', valor: '', desconto: '', motivoDesconto: '', categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
     } catch (error) { toast.error("Erro ao salvar despesa."); }
   };
 
@@ -473,6 +474,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       descricao: d.descricao, 
       valor: d.valorBruto || d.valor,
       desconto: d.desconto || '', 
+      motivoDesconto: d.motivoDesconto || '', 
       categoria: d.categoria, 
       contaBancaria: d.contaBancaria || 'AVANTE PJ',
       dataVencimento: d.dataVencimento, status: d.status,
@@ -761,18 +763,22 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="col-span-1">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
                       <label className="text-[10px] font-bold text-gray-400 uppercase">Vencimento</label>
                       <input type="date" required value={recebimentoForm.dataVencimento} onChange={e => setRecebimentoForm({...recebimentoForm, dataVencimento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm" />
                     </div>
-                    <div className="col-span-1">
+                    <div>
                       <label className="text-[10px] font-bold text-gray-400 uppercase">Bruto (R$)</label>
                       <input type="number" step="0.01" required value={recebimentoForm.valorAgencia} onChange={e => setRecebimentoForm({...recebimentoForm, valorAgencia: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm" />
                     </div>
-                    <div className="col-span-1">
+                    <div>
                       <label className="text-[10px] font-bold text-gray-400 uppercase">Desc. (R$)</label>
                       <input type="number" step="0.01" placeholder="0.00" value={recebimentoForm.desconto} onChange={e => setRecebimentoForm({...recebimentoForm, desconto: e.target.value})} className="w-full bg-black/40 border border-white/10 text-rose-300 rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Motivo do Desconto</label>
+                      <input type="text" placeholder="Ex: Impostos, Estorno" value={recebimentoForm.motivoDesconto} onChange={e => setRecebimentoForm({...recebimentoForm, motivoDesconto: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm" />
                     </div>
                   </div>
 
@@ -893,18 +899,22 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                     </select>
                   </div>
                   
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="col-span-1">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
                       <label className="text-[10px] font-bold text-gray-400 uppercase">Vencimento</label>
                       <input type="date" required value={despesaForm.dataVencimento} onChange={e => setDespesaForm({...despesaForm, dataVencimento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
                     </div>
-                    <div className="col-span-1">
+                    <div>
                       <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Bruto (R$)</label>
                       <input type="number" step="0.01" required value={despesaForm.valor} onChange={e => setDespesaForm({...despesaForm, valor: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
                     </div>
-                    <div className="col-span-1">
+                    <div>
                       <label className="text-[10px] font-bold text-gray-400 uppercase">Desconto (R$)</label>
                       <input type="number" step="0.01" placeholder="0.00" value={despesaForm.desconto} onChange={e => setDespesaForm({...despesaForm, desconto: e.target.value})} className="w-full bg-black/40 border border-white/10 text-rose-300 rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Motivo do Desconto</label>
+                      <input type="text" placeholder="Ex: Multa, Abatimento" value={despesaForm.motivoDesconto} onChange={e => setDespesaForm({...despesaForm, motivoDesconto: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
                     </div>
                   </div>
 
