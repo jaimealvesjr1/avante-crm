@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, Award, Settings } from 'lucide-react';
+import { TrendingUp, ShoppingCart, Activity, CreditCard, AlertCircle, CheckCircle, Clock, Zap, Target, Award, Settings, PieChart as PieChartIcon } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Area, Line, Legend } from 'recharts';
 
 export default function ExecutiveDashboard({ dashboardData, formatCurrency, formatNumber, pieData, roasData, COLORS, currentDay, daysInMonth, canEdit, openGoalsModal }) {
@@ -46,6 +46,28 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
   };
 
   const [showSettings, setShowSettings] = useState(false);
+
+  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }) => {
+    const RADIAN = Math.PI / 180;
+    // Joga o texto um pouco para fora do gráfico (1.2x o raio)
+    const radius = outerRadius * 1.2;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+    return (
+      <text 
+        x={x} 
+        y={y} 
+        fill="white" 
+        textAnchor={x > cx ? 'start' : 'end'} 
+        dominantBaseline="central" 
+        fontSize={11} 
+        fontWeight="bold"
+      >
+        {`${name} ${(percent * 100).toFixed(1)}%`}
+      </text>
+    );
+  };
 
   const renderGlobalProgressBar = () => {
     const target = dashboardData.totalTarget || 0;
@@ -218,7 +240,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
       </div>
 
       {/* 🌟 3. GRÁFICOS SECUNDÁRIOS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         
         {/* Gráfico 1: TOP 5 LOJAS */}
         <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
@@ -243,25 +265,43 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
           </div>
         </div>
 
-        {/* Gráfico 2: Market Share */}
+        {/* Gráfico 2: Market Share (Adicionado!) */}
         <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20"><Target size={20} className="text-indigo-400"/></div>
             <h3 className="text-lg font-bold text-white tracking-wide">Market Share (Clientes)</h3>
           </div>
           <div className="h-[300px] relative">
-            <ResponsiveContainer width="99%" height={250} minWidth={0}>
-              <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" innerRadius={90} outerRadius={125} paddingAngle={4} dataKey="value" stroke="none">
-                  {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                </Pie>
-                <Tooltip contentStyle={glassTooltipStyle} itemStyle={{ color: '#fff', fontWeight: 'bold' }} formatter={(value) => formatCurrency(value)} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">Total Global</span>
-              <span className="text-xl font-bold text-white">{formatCurrency(dashboardData.totalCurrentRevenue)}</span>
-            </div>
+            {pieData && pieData.length > 0 ? (
+              <ResponsiveContainer width="99%" height={250} minWidth={0}>
+                <PieChart>
+                  <Pie 
+                    data={pieData} 
+                    cx="50%" 
+                    cy="50%" 
+                    innerRadius={70} 
+                    outerRadius={100} 
+                    paddingAngle={4} 
+                    dataKey="value" 
+                    stroke="none"
+                    label={renderCustomizedLabel}
+                  >
+                    {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={glassTooltipStyle} 
+                    itemStyle={{ color: '#fff', fontWeight: 'bold' }} 
+                    formatter={(value) => {
+                      const total = pieData.reduce((sum, data) => sum + data.value, 0);
+                      const percent = ((value / total) * 100).toFixed(1);
+                      return [`${formatCurrency(value)} (${percent}%)`, 'Faturamento'];
+                    }} 
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500 text-sm">Sem dados.</div>
+            )}
           </div>
         </div>
 

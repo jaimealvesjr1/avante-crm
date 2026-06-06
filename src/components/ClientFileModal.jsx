@@ -68,10 +68,63 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, formatCurrency }) => 
 };
 
 export default function ClientFileModal({ 
-  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, addNewStoreToClient, handleSaveIndividualEntry 
+  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, addNewStoreToClient, handleSaveIndividualEntry, dashboardData 
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
+
+  const liveStores = useMemo(() => {
+    return stores.filter(s => s.client === clientGroup.client && !s.arquivada);
+  }, [stores, clientGroup.client]);
+
+  const mesPassadoExato = useMemo(() => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - 1);
+      const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+      return `${meses[d.getMonth()]}/${String(d.getFullYear()).slice(-2)}`;
+  }, []);
+
+  const allTimeTotalGmv = useMemo(() => {
+    return liveStores.reduce((acc, s) => {
+        let storeTotal = Number(s.currentRevenue) || 0; 
+        if (s.monthlyHistory) {
+            s.monthlyHistory.forEach(h => storeTotal += (Number(h.gmv) || 0)); 
+        }
+        return acc + storeTotal;
+    }, 0);
+  }, [liveStores]);
+
+  const lastMonthTotalGmv = useMemo(() => {
+    return liveStores.reduce((acc, s) => {
+        if (s.monthlyHistory && s.monthlyHistory.length > 0) {
+            const prevData = s.monthlyHistory.find(h => h.month === mesPassadoExato);
+            return acc + (prevData ? Number(prevData.gmv) : 0);
+        }
+        return acc;
+    }, 0);
+  }, [liveStores, mesPassadoExato]);
+
+  const momGrowth = lastMonthTotalGmv > 0 
+    ? ((clientGroup.totalProjectedGmv - lastMonthTotalGmv) / lastMonthTotalGmv) * 100 
+    : 0;
+
+  const shareEvolucao = useMemo(() => {
+      // 1. Share Atual (Mês em andamento até hoje)
+      const faturamentoGlobalAtual = dashboardData?.totalCurrentRevenue || 1; // Evita divisão por zero
+      const faturamentoClienteAtual = clientGroup.totalCurrentRevenue || 0;
+      const currentShare = (faturamentoClienteAtual / faturamentoGlobalAtual) * 100;
+
+      // 2. Share do Mês Passado (Fechado)
+      const pastGlobalData = dashboardData?.historicalChartData?.find(h => h.month === mesPassadoExato);
+      const faturamentoGlobalPassado = pastGlobalData ? (pastGlobalData.ReceitaGlobal || 1) : 1;
+      const faturamentoClientePassado = lastMonthTotalGmv || 0;
+      const pastShare = faturamentoGlobalPassado > 1 ? (faturamentoClientePassado / faturamentoGlobalPassado) * 100 : 0;
+      
+      // 3. Evolução (Diferença em pontos percentuais)
+      const evolution = currentShare - pastShare;
+
+      return { currentShare, pastShare, evolution };
+  }, [dashboardData, clientGroup, lastMonthTotalGmv, mesPassadoExato]);
 
   const [isEditingContract, setIsEditingContract] = useState(false);
   const [contractForm, setContractForm] = useState({
@@ -84,8 +137,6 @@ export default function ClientFileModal({
     if (!canEdit) return toast.error("Sem permissão.");
     
     let updatedStoresGlobal = [...stores];
-    const liveStores = stores.filter(s => s.client === clientGroup.client && !s.arquivada);
-    
     liveStores.forEach(store => {
       const updatedStore = {
         ...store,
@@ -101,7 +152,8 @@ export default function ClientFileModal({
     setIsEditingContract(false);
     toast.success("Contrato da agência atualizado com sucesso!");
   };
-  
+
+  // 4. RESTANTE DAS CONFIGURAÇÕES (Tarefas, Gráficos, etc)
   const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
   const handleBulkTaskSave = (selectedStoreIds, taskData) => {
@@ -138,9 +190,7 @@ export default function ClientFileModal({
     if (!clientGroup || !clientGroup.stores) return [];
     const open = [];
     
-    const currentClientStores = stores.filter(s => s.client === clientGroup.client && !s.arquivada);
-    
-    currentClientStores.forEach(store => {
+    liveStores.forEach(store => {
       if (store.checklists) {
         store.checklists.forEach(task => {
           if (!task.feita) {
@@ -154,7 +204,7 @@ export default function ClientFileModal({
       const dateB = new Date(`${b.data || '2099-01-01'}T${b.hora || '00:00'}`);
       return dateA - dateB;
     });
-  }, [clientGroup, stores]);
+  }, [clientGroup, liveStores]);
 
   const handleToggleTask = (storeId, taskId) => {
     const store = stores.find(s => s.id === storeId);
@@ -171,42 +221,6 @@ export default function ClientFileModal({
   };
 
   if (!clientGroup) return null;
-
-  const liveStores = useMemo(() => {
-    return stores.filter(s => s.client === clientGroup.client && !s.arquivada);
-  }, [stores, clientGroup.client]);
-
-  const allTimeTotalGmv = useMemo(() => {
-    return liveStores.reduce((acc, s) => {
-        let storeTotal = Number(s.currentRevenue) || 0; 
-        if (s.monthlyHistory) {
-            s.monthlyHistory.forEach(h => storeTotal += (Number(h.gmv) || 0)); 
-        }
-        return acc + storeTotal;
-    }, 0);
-  }, [liveStores]);
-
-  const mesPassadoExato = useMemo(() => {
-      const d = new Date();
-      d.setMonth(d.getMonth() - 1);
-      const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-      return `${meses[d.getMonth()]}/${String(d.getFullYear()).slice(-2)}`;
-  }, []);
-
-  const lastMonthTotalGmv = useMemo(() => {
-    return liveStores.reduce((acc, s) => {
-        // Agora lê unicamente do histórico oficial. O gmvBase foi extirpado.
-        if (s.monthlyHistory && s.monthlyHistory.length > 0) {
-            const prevData = s.monthlyHistory.find(h => h.month === mesPassadoExato);
-            return acc + (prevData ? Number(prevData.gmv) : 0);
-        }
-        return acc;
-    }, 0);
-  }, [liveStores, mesPassadoExato]);
-
-  const momGrowth = lastMonthTotalGmv > 0 
-    ? ((clientGroup.totalProjectedGmv - lastMonthTotalGmv) / lastMonthTotalGmv) * 100 
-    : 0;
 
   const activeMarketplaces = useMemo(() => {
     const active = new Set();
@@ -443,16 +457,30 @@ export default function ClientFileModal({
                 </div>
 
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Pacing de Metas</span>
-                  <p className={`text-2xl font-bold mt-1 ${clientGroup.percentReached >= 95 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {clientGroup.percentReached.toFixed(1)}%
-                  </p>
-                  <div className="w-full bg-black/40 h-2 rounded-full mt-2 overflow-hidden border border-white/5">
-                    <div className="bg-indigo-500 h-full rounded-full transition-all" style={{width: `${Math.min(clientGroup.percentReached, 100)}%`}}></div>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider" title="Participação no Faturamento Global da Agência">Fatia da Agência (Share)</span>
+                  
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className={`text-2xl font-bold ${shareEvolucao.evolution >= 0 ? 'text-indigo-400' : 'text-rose-400'}`}>
+                      {shareEvolucao.currentShare.toFixed(1)}%
+                    </p>
+                    {shareEvolucao.evolution >= 0 ? <TrendingUp size={20} className="text-indigo-400" /> : <TrendingDown size={20} className="text-rose-400" />}
+                  </div>
+                  
+                  <div className="flex flex-col mt-3 pt-3 border-t border-white/10 gap-1.5">
+                    <p className="text-[10px] text-gray-400 flex justify-between">
+                      Mês passado (Fechado): 
+                      <span className="text-gray-300 font-bold">{shareEvolucao.pastShare.toFixed(1)}%</span>
+                    </p>
+                    <p className="text-[10px] text-gray-400 flex justify-between">
+                      Evolução de espaço: 
+                      <span className={`font-bold ${shareEvolucao.evolution >= 0 ? 'text-indigo-400' : 'text-rose-400'}`}>
+                        {shareEvolucao.evolution > 0 ? '+' : ''}{shareEvolucao.evolution.toFixed(1)} pp
+                      </span>
+                    </p>
                   </div>
                 </div>
-              </div>
 
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
                   <h3 className="text-sm font-bold text-white mb-4">Participação por Loja (Share)</h3>

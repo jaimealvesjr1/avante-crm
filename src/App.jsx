@@ -43,7 +43,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.7.5';
+  const CURRENT_VERSION = '2.7.6';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -1988,7 +1988,7 @@ export default function App() {
           clientGroup={activeClientGroup} 
           onClose={() => setClientFileOpen(false)}
           openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
-          formatCurrency={safeFormatCurrency}
+          formatCurrency={formatCurrency}
           stores={stores}
           setStores={setStores}
           updateStoreInCloud={updateStoreInCloud}
@@ -2000,10 +2000,7 @@ export default function App() {
           teamMembers={teamMembers}
           addNewStoreToClient={addNewStoreToClient}
           handleSaveIndividualEntry={handleSaveIndividualEntry}
-          handleSaveRetroactiveMonth={handleSaveRetroactiveMonth}
-          handleDeleteRetroactiveMonth={handleDeleteRetroactiveMonth}
-          clientGrowthMap={clientGrowthMap}
-          updateGlobalSettings={updateGlobalSettings}
+          dashboardData={dashboardData}
           />
       )}
 
