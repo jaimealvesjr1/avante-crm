@@ -91,7 +91,7 @@ const EventEntryRow = ({ store, activeEvent, onSaveDelta, canAccessWarRoom }) =>
     );
 };
 
-export default function WarRoom({ stores, setStores, updateStoreInCloud, formatCurrency, formatNumber, canEdit, activeEvent, onEndEvent, canAccessWarRoom }) {
+export default function WarRoom({ stores, setStores, updateStoreInCloud, formatCurrency, formatNumber, canEdit, activeEvent, onEndEvent, canAccessWarRoom, sortBy, currentDay }) {
     const [search, setSearch] = useState('');
 
     const handleSaveDelta = async (storeId, eName, newGmv, newAds, newOrders, newUnits) => {
@@ -126,7 +126,7 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
     };
 
     const filteredStores = useMemo(() => {
-        return stores.filter(s => {
+        let result = stores.filter(s => {
             if (s.arquivada) return false;
             if (activeEvent.channels && activeEvent.channels.length > 0) {
                 if (!s.marketplace || !activeEvent.channels.includes(s.marketplace.toUpperCase())) return false;
@@ -134,19 +134,59 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
             if (search && !s.store.toLowerCase().includes(search.toLowerCase()) && !s.client.toLowerCase().includes(search.toLowerCase())) return false;
             return true;
         });
-    }, [stores, search, activeEvent]);
+
+        result.sort((a, b) => {
+            if (sortBy === 'name') return a.client.localeCompare(b.client);
+            if (sortBy === 'gmv') {
+                const gmvA = (a.eventLogs && a.eventLogs[activeEvent.name]) ? Number(a.eventLogs[activeEvent.name].gmv) || 0 : 0;
+                const gmvB = (b.eventLogs && b.eventLogs[activeEvent.name]) ? Number(b.eventLogs[activeEvent.name].gmv) || 0 : 0;
+                return gmvB - gmvA; // Ordem decrescente de GMV no Evento
+            }
+            if (sortBy === 'status') {
+                const w = { danger: 1, warning: 2, success: 3 };
+                return (w[a.status] || 0) - (w[b.status] || 0);
+            }
+            return 0;
+        });
+
+        return result;
+    }, [stores, search, activeEvent, sortBy]);
 
     const eventStats = useMemo(() => {
-        let totalGmv = 0, totalAds = 0, totalOrders = 0;
+        let totalGmv = 0, totalAds = 0, totalOrders = 0, totalAgencyRevenue = 0, totalGmvBefore = 0;
+        
+        const daysBefore = Math.max(1, currentDay - 1); 
+
         stores.forEach(s => {
             if (s.eventLogs && s.eventLogs[activeEvent.name]) {
-                totalGmv += Number(s.eventLogs[activeEvent.name].gmv) || 0;
+                const eventGmv = Number(s.eventLogs[activeEvent.name].gmv) || 0;
+                totalGmv += eventGmv;
                 totalAds += Number(s.eventLogs[activeEvent.name].ads) || 0;
                 totalOrders += Number(s.eventLogs[activeEvent.name].orders) || 0;
+                
+                const feePercent = Number(s.feePercent) || 0;
+                if (s.feeType !== 'fixed') {
+                    totalAgencyRevenue += eventGmv * (feePercent / 100);
+                }
+
+                const currentRev = Number(s.currentRevenue) || 0;
+                totalGmvBefore += Math.max(0, currentRev - eventGmv);
             }
         });
-        return { totalGmv, totalAds, totalOrders, roas: totalAds > 0 ? (totalGmv / totalAds).toFixed(1) : 0 };
-    }, [stores, activeEvent]);
+
+        const avgDailyBefore = totalGmvBefore / daysBefore;
+        const boostPercentage = avgDailyBefore > 0 ? ((totalGmv - avgDailyBefore) / avgDailyBefore) * 100 : 0;
+
+        return { 
+            totalGmv, 
+            totalAds, 
+            totalOrders, 
+            totalAgencyRevenue,
+            avgDailyBefore,
+            boostPercentage,
+            roas: totalAds > 0 ? (totalGmv / totalAds).toFixed(1) : 0 
+        };
+    }, [stores, activeEvent, currentDay]);
 
     // ==== GERAÇÃO DE RELATÓRIO PDF EXCLUSIVO DO EVENTO ====
     const exportEventReport = async () => {
@@ -352,10 +392,10 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
                 </div>
                 <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
                     <button onClick={exportEventReport} className="bg-orange-500/10 border border-orange-500/30 hover:bg-orange-500/20 text-orange-400 px-5 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-colors justify-center">
-                        <Download size={18} /> Relatório Parcial
+                        <Download size={18} /> Relatório
                     </button>
                     <button onClick={() => { if(window.confirm("Deseja realmente encerrar este evento e fechar a War Room?")) onEndEvent(); }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-md flex items-center gap-2 transition-colors justify-center">
-                        <XCircle size={18} /> Encerrar
+                        <XCircle size={18} /> Fechar
                     </button>
                 </div>
             </div>
@@ -363,18 +403,45 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
             {/* PROGRESSO E MÉTRICAS */}
             {renderProgressBar()}
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Pedidos</span>
+                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Pedidos do Evento</span>
                     <p className="text-2xl font-black text-emerald-400 mt-1">{formatNumber(eventStats.totalOrders)} <span className="text-sm font-medium text-gray-500">ped</span></p>
                 </div>
-                <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Ads Investido</span>
-                    <p className="text-2xl font-black text-amber-500 mt-1">{formatCurrency(eventStats.totalAds)}</p>
-                </div>
+                
                 <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm">
                     <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">ROAS do Evento</span>
-                    <p className="text-2xl font-black text-white mt-1">{eventStats.roas}x</p>
+                    <div className="flex items-center gap-3 mt-1">
+                        <p className="text-2xl font-black text-white">{eventStats.roas}x</p>
+                        <div className="flex flex-col border-l border-white/10 pl-3">
+                            <span className="text-[9px] text-gray-500 font-bold uppercase">Ads Gasto</span>
+                            <span className="text-xs text-amber-500 font-bold">{formatCurrency(eventStats.totalAds)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm">
+                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Faturamento Avante</span>
+                    <p className="text-2xl font-black text-indigo-400 mt-1">{formatCurrency(eventStats.totalAgencyRevenue)}</p>
+                </div>
+
+                <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm relative overflow-hidden">
+                    <div className="relative z-10">
+                        <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Desempenho vs Média Diária</span>
+                        <div className="flex items-center gap-2 mt-1">
+                            <p className="text-2xl font-black text-orange-400">{formatCurrency(eventStats.totalGmv)}</p>
+                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${eventStats.boostPercentage >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                                {eventStats.boostPercentage > 0 ? '+' : ''}{eventStats.boostPercentage.toFixed(1)}%
+                            </span>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                            Média diária dos dias anteriores: <strong className="text-gray-300">{formatCurrency(eventStats.avgDailyBefore)}/dia</strong>
+                        </p>
+                    </div>
+                    {/* Efeito de brilho de fundo opcional */}
+                    {eventStats.boostPercentage > 50 && (
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl z-0 -mr-10 -mt-10"></div>
+                    )}
                 </div>
             </div>
 

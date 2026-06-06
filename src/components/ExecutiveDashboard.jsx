@@ -7,22 +7,33 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
   const predictedOrders = currentDay > 0 ? Math.round((dashboardData.totalOrders / currentDay) * daysInMonth) : 0;
   const avgAdsCostPerOrder = dashboardData.totalOrders > 0 ? dashboardData.totalGlobalAds / dashboardData.totalOrders : 0;
   const ticketMedioGlobal = dashboardData.totalOrders > 0 ? dashboardData.totalCurrentRevenue / dashboardData.totalOrders : 0;
+  const [rankCriteria, setRankCriteria] = useState('gmv'); 
+
+  const topStoresData = useMemo(() => {
+    const sortedStores = [...dashboardData.flatFilteredStores].sort((a, b) => {
+      if (rankCriteria === 'gmv') {
+        return b.currentRevenue - a.currentRevenue; // Maior faturamento primeiro
+      } else {
+        const cpaA = a.units > 0 ? (a.adsInvestment / a.units) : Infinity;
+        const cpaB = b.units > 0 ? (b.adsInvestment / b.units) : Infinity;
+        return cpaA - cpaB; // Menor CPA (melhor) primeiro
+      }
+    });
+
+    return sortedStores.slice(0, 5).map(store => {
+      const cpa = store.units > 0 ? (store.adsInvestment / store.units) : 0;
+      return {
+        name: store.store,
+        valueForChart: rankCriteria === 'gmv' ? store.currentRevenue : cpa, 
+        cpaValue: cpa,
+        gmvValue: store.currentRevenue
+      };
+    });
+  }, [dashboardData.flatFilteredStores, rankCriteria]);
   
   const avgRoas = useMemo(() => {
     return roasData.length > 0 ? roasData.reduce((acc, curr) => acc + curr.roas, 0) / roasData.length : 0;
   }, [roasData]);
-
-  const topStoresData = useMemo(() => {
-    return dashboardData.flatFilteredStores
-      .filter(s => s.projectedGmv > 0)
-      .sort((a, b) => b.projectedGmv - a.projectedGmv)
-      .slice(0, 5)
-      .map(s => ({
-        name: s.store,
-        revenue: s.projectedGmv,
-        client: s.client
-      }));
-  }, [dashboardData.flatFilteredStores]);
 
   const changeLogs = useMemo(() => {
     return dashboardData.groupedClients.filter(g => g.status !== 'success').map(g => ({
@@ -243,10 +254,25 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         
         {/* Gráfico 1: TOP 5 LOJAS */}
-        <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2.5 bg-blue-500/10 rounded-xl border border-blue-500/20"><Award size={20} className="text-blue-400"/></div>
-            <h3 className="text-lg font-bold text-white tracking-wide">Top 5 Lojas</h3>
+        <div className="bg-white/[0.02] p-6 rounded-3xl border border-white/5 shadow-sm h-full">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <TrendingUp className="text-emerald-400" size={16} /> Top 5 Lojas
+            </h3>
+            <div className="flex gap-1.5 bg-black/40 p-1 rounded-lg border border-white/5">
+              <button 
+                onClick={() => setRankCriteria('gmv')} 
+                className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors ${rankCriteria === 'gmv' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}
+              >
+                Por Faturamento
+              </button>
+              <button 
+                onClick={() => setRankCriteria('cpa')} 
+                className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors ${rankCriteria === 'cpa' ? 'bg-rose-600 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}
+              >
+                Por Custo p/ Conversão
+              </button>
+            </div>
           </div>
           <div className="h-[300px] w-full mt-4">
             <ResponsiveContainer width="99%" height={250} minWidth={0}>
@@ -254,10 +280,21 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={12} width={90} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} contentStyle={glassTooltipStyle} itemStyle={{ color: '#fff', fontWeight: 'bold' }} formatter={(value) => formatCurrency(value)} />
-                <Bar dataKey="revenue" radius={[0, 6, 6, 0]} barSize={20}>
+                <Tooltip 
+                  cursor={{ fill: 'rgba(255,255,255,0.02)' }} 
+                  contentStyle={glassTooltipStyle} 
+                  itemStyle={{ color: '#fff', fontWeight: 'bold' }} 
+                  // Formata o Tooltip dependendo do que estamos olhando
+                  formatter={(value, name, props) => [
+                    formatCurrency(value), 
+                    rankCriteria === 'gmv' ? 'Faturamento' : 'Custo p/ Conversão'
+                  ]} 
+                />
+                {/* Mudamos dataKey="revenue" para dataKey="valueForChart" */}
+                <Bar dataKey="valueForChart" radius={[0, 6, 6, 0]} barSize={20}>
                   {topStoresData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    // Opcional: Se for CPA, pinte de vermelho (rose-500) para destacar que é custo
+                    <Cell key={`cell-${index}`} fill={rankCriteria === 'cpa' ? '#F43F5E' : COLORS[index % COLORS.length]} />
                   ))}
                 </Bar>
               </BarChart>

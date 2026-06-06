@@ -396,7 +396,7 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-5 border-b border-gray-700 pb-4 mt-2 shrink-0">
                             <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
                                 <Clock size={18} className="text-indigo-400" />
-                                Radar SLA
+                                Radar de Tarefas
                                 <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">{deadlinesData.length}</span>
                             </h3>
                             
@@ -449,9 +449,9 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                                             )}
 
                                             {item.isBeingWorkedOn && (
-                                                <div className="absolute -top-1 -right-1 flex h-3 w-3">
-                                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-gray-900"></span>
+                                                <div className="absolute top-3 right-2 flex h-3 w-3">
+                                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border border-gray-900"></span>
                                                 </div>
                                             )}
 

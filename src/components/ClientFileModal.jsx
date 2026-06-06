@@ -413,11 +413,11 @@ export default function ClientFileModal({
             <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
               <PieChartIcon size={16} /> Visão Geral
             </button>
-            <button onClick={() => setActiveTab('apuracao')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'apuracao' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
-              <Zap size={16} /> Lançamento Parcial
-            </button>
             <button onClick={() => setActiveTab('historico')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'historico' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
               <History size={16} /> Histórico & Tarefas
+            </button>
+            <button onClick={() => setActiveTab('apuracao')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'apuracao' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
+              <Zap size={16} /> Lançamento Parcial
             </button>
           </div>
         </div>
@@ -451,7 +451,7 @@ export default function ClientFileModal({
               {/* Grid de Cartões */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
                 
-                {/* CARTÃO DUPLO: FATURAMENTO HISTÓRICO + FATURAMENTO DO GRUPO */}
+                {/* CARTÃO: FATURAMENTO HISTÓRICO + FATURAMENTO DO GRUPO */}
                 <div className="sm:col-span-2 bg-gradient-to-r from-indigo-900/20 to-black/20 p-5 rounded-2xl border border-indigo-500/20 shadow-sm flex flex-col justify-center">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 w-full">
                     
@@ -485,9 +485,19 @@ export default function ClientFileModal({
                 </div>
 
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Investimento Ads</span>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Investimento Ads & Eficiência</span>
                   <p className="text-2xl font-bold text-amber-500 mt-1">{formatCurrency(clientGroup.totalAds)}</p>
-                  <p className="text-xs text-gray-400 mt-1">ROAS Médio: {clientGroup.roas}x</p>
+                  
+                  <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/10">
+                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">
+                        ROAS: <span className="text-white text-xs">{clientGroup.roas} x</span>
+                     </p>
+                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">
+                        CPA: <span className="text-rose-400 text-xs">
+                          {formatCurrency(clientGroup.totalUnits > 0 ? clientGroup.totalAds / clientGroup.totalUnits : 0)}
+                        </span>
+                     </p>
+                  </div>
                 </div>
 
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
@@ -620,25 +630,31 @@ export default function ClientFileModal({
                   </div>
                   <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
                     <table className="w-full text-left border-collapse">
-                      <thead className="sticky top-0 bg-black/50 backdrop-blur text-[10px] text-gray-500 uppercase">
+                      <thead className="text-[10px] text-gray-500 uppercase">
                         <tr>
-                          <th className="p-4">Mês</th>
-                          <th className="p-4 text-emerald-400">GMV</th>
-                          <th className="p-4 text-amber-400">Ads</th>
-                          <th className="p-4 text-blue-400">Comissão</th>
+                          <th className="p-4 pl-6">Competência</th>
+                          <th className="p-4 text-emerald-400">GMV Consolidado</th>
+                          <th className="p-4 text-amber-400">Ads Investido</th>
+                          <th className="p-4 text-rose-400">Custo p/ Conv</th>
+                          <th className="p-4 text-blue-400">ROAS Médio</th>
+                          <th className="p-4">Pedidos</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/5 text-xs text-gray-300">
-                        {consolidatedHistory.length > 0 ? consolidatedHistory.map(h => (
-                          <tr key={h.month} className="hover:bg-white/[0.02]">
-                            <td className="p-4 font-bold text-white">{h.month}</td>
-                            <td className="p-4 font-mono">{formatCurrency(h.gmv)}</td>
-                            <td className="p-4 font-mono">{formatCurrency(h.ads)}</td>
-                            <td className="p-4 font-mono">{formatCurrency(h.agencyRevenue)}</td>
-                          </tr>
-                        )) : (
-                          <tr><td colSpan="4" className="p-4 text-center text-gray-600 italic">Nenhum fechamento encontrado.</td></tr>
-                        )}
+                        {consolidatedHistory.map(hist => {
+                          const roas = hist.ads > 0 ? (hist.gmv / hist.ads).toFixed(2) : '-';
+                          const cpa = hist.units > 0 ? (hist.ads / hist.units) : 0;
+                          return (
+                            <tr key={hist.month} className="hover:bg-white/[0.02] transition-colors">
+                              <td className="p-4 pl-6 font-bold text-white">{hist.month}</td>
+                              <td className="p-4 text-emerald-400 font-bold">{formatCurrency(hist.gmv)}</td>
+                              <td className="p-4 text-amber-500 font-bold">{formatCurrency(hist.ads)}</td>
+                              <td className="p-4 text-rose-400 font-bold">{formatCurrency(cpa)}</td>
+                              <td className="p-4 text-blue-400 font-bold">{roas}</td>
+                              <td className="p-4 text-gray-300 font-bold">{hist.orders} <span className="text-[10px] font-normal text-gray-500">ped</span></td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

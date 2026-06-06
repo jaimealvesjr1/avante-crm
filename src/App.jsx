@@ -43,7 +43,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.7.9';
+  const CURRENT_VERSION = '2.7.10';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -1513,6 +1513,7 @@ export default function App() {
       groupedClients, flatFilteredStores: filteredStores, totalTarget, totalProjected, totalCurrentRevenue, 
       totalAgencyRevenue, totalAgencyRevenueActual, agencyTarget, totalGlobalAds, totalOrders, totalUnits,
       globalRoas: totalGlobalAds > 0 ? (totalCurrentRevenue / totalGlobalAds).toFixed(1) : 0,
+      globalCpa: totalUnits > 0 ? (totalGlobalAds / totalUnits) : 0,
       rankingMarketplaces: Object.values(mktPerformance).sort((a, b) => b.atual - a.atual),
       historicalChartData
     };
@@ -1758,11 +1759,6 @@ export default function App() {
                   {uniqueMkts.map(m => <option key={m} value={m} className="bg-gray-900 text-white">{m}</option>)}
                 </select>
 
-                <select value={respFilter} onChange={e => setRespFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors shrink-0">
-                  <option value="all" className="bg-gray-900 text-white">👥 TODOS</option>
-                  <option value="unassigned" className="bg-gray-900 text-amber-400">⚠️ SEM RESP.</option>
-                  {teamMembers.map(m => <option key={m.email} value={m.nomeCompleto || m.nome} className="bg-gray-900 text-white">{m.nomeCompleto || m.nome}</option>)}
-                </select>
               </div>
               
               <div className="flex gap-2 items-center shrink-0">
@@ -1883,6 +1879,8 @@ export default function App() {
             activeEvent={activeEvent}
             onEndEvent={() => handleEventAction('end')}
             canAccessWarRoom={canAccessWarRoom}
+            sortBy={sortBy}
+            currentDay={currentDay}
           />
         )}
 
