@@ -43,7 +43,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.7.10';
+  const CURRENT_VERSION = '2.8';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -85,14 +85,15 @@ export default function App() {
   const [scheduledVisits, setScheduledVisits] = useState([]);
 
   const activeEventStats = useMemo(() => {
-    if (!activeEvent) return { gmv: 0 };
+    if (!activeEvent) return { gmv: 0, progress: 0 };
     let totalGmv = 0;
     stores.forEach(s => {
       if (s.eventLogs && s.eventLogs[activeEvent.name]) {
         totalGmv += Number(s.eventLogs[activeEvent.name].gmv) || 0;
       }
     });
-    return { gmv: totalGmv };
+    const progress = activeEvent.target > 0 ? (totalGmv / activeEvent.target) * 100 : 0;
+    return { gmv: totalGmv, progress };
   }, [stores, activeEvent]);
 
   const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('avante_sync_search') || '');
@@ -1089,19 +1090,18 @@ export default function App() {
           docPdf.text('Resumo Global do Período', 20, finalY + 8);
 
           docPdf.setFontSize(9); docPdf.setTextColor(71, 85, 105); docPdf.setFont('helvetica', 'normal');
-          docPdf.text(`Canais Ativados: ${Array.from(canaisAtendidos).join(', ')}`, 20, finalY + 18);
-          docPdf.text(`Crescimento do Faturamento (MoM): ${formatPercent(totalEvolucao)}`, 20, finalY + 26);
+          docPdf.text(`Crescimento do Faturamento (MoM): ${formatPercent(totalEvolucao)}`, 20, finalY + 18);
+          docPdf.text(`Investimento Total em ADS: ${formatMoney(totalAds)}`, 20, finalY + 26);
           docPdf.text(`Total de Unidades Vendidas: ${totalUnits} unidades`, 20, finalY + 34);
-          
-          docPdf.text(`Investimento Total em ADS: ${formatMoney(totalAds)}`, 110, finalY + 18);
+
+          docPdf.text(`Custo por Conversão: ${formatMoney(totalUnits > 0 ? totalAds / totalUnits : 0)}`, 110, finalY + 18);
           docPdf.text(`ROAS Médio Consolidado: ${formatRoas(totalRoas)}`, 110, finalY + 26);
-          docPdf.text(`Custo por Conversão: ${formatMoney(totalUnits > 0 ? totalAds / totalUnits : 0)}`, 110, finalY + 34);
 
           // ================= DESTAQUE DE EVENTOS =================
           let clientEventGmv = 0;
           const eventsParticipated = new Set();
           clientStores.forEach(s => {
-              if (s.reportEvents && Object.keys(s.reportEvents).length > 0) { // <-- LÊ DO PERÍODO EXATO
+              if (s.reportEvents && Object.keys(s.reportEvents).length > 0) {
                   Object.entries(s.reportEvents).forEach(([eName, eData]) => {
                       clientEventGmv += Number(eData.gmv) || 0;
                       eventsParticipated.add(eName);
@@ -1110,7 +1110,7 @@ export default function App() {
           });
 
           if (clientEventGmv > 0) {
-              let eventY = finalY + 45;
+              let eventY = finalY + 50;
               if (eventY + 30 > docPdf.internal.pageSize.height) { docPdf.addPage(); eventY = 20; }
               
               docPdf.setFillColor(255, 247, 237);
@@ -1127,7 +1127,7 @@ export default function App() {
               const avgEventGmv = clientEventGmv / eventsParticipated.size;
               const eventBoost = avgDailyNormal > 0 ? ((avgEventGmv - avgDailyNormal) / avgDailyNormal) * 100 : 0;
               
-              docPdf.text(`Faturamento gerado nos eventos: ${formatMoney(clientEventGmv)}`, 20, eventY + 15);
+              docPdf.text(`Faturamento gerado em eventos: ${formatMoney(clientEventGmv)}`, 20, eventY + 15);
               docPdf.text(`Média Diária Normal: ${formatMoney(avgDailyNormal)}/dia`, 20, eventY + 22);
               
               docPdf.setFont('helvetica', 'bold');
@@ -1135,7 +1135,7 @@ export default function App() {
           }
         });
         
-        docPdf.save(`B2X_Relatorio_${monthInput.replace('/', '-')}.pdf`);
+        docPdf.save(`B2X Relatorio ${monthInput.replace('/', '-')}.pdf`);
       }
     } catch (error) {
       console.error(error);
@@ -1647,21 +1647,31 @@ export default function App() {
               </button>
             )}
             
-            {canAccessWarRoom && activeEvent && (
-              <div className="flex items-center gap-1 xl:gap-3 bg-orange-500/10 border border-orange-500/20 rounded-full p-1 xl:pl-4 shadow-inner shrink-0">
-                <div className="hidden xl:flex flex-col justify-center cursor-pointer" onClick={() => setActiveView('war_room')}>
-                  <span className="text-[9px] text-orange-500 font-bold uppercase tracking-wider leading-none flex items-center gap-1.5 mb-1">
-                    <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span> {activeEvent.name}
-                  </span>
-                  <span className="text-xs font-black text-orange-400 leading-none">
-                    {safeFormatCurrency(activeEventStats.gmv)}
-                  </span>
+            {canAccessWarRoom && activeEvent && (() => {
+              const evColor = activeEventStats.progress >= 100 ? 'emerald' : activeEventStats.progress >= 80 ? 'amber' : 'orange';
+              const colorMap = {
+                  emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-500', textLight: 'text-emerald-400', hoverBg: 'hover:bg-emerald-500/30', activeBg: 'bg-emerald-600', activeBorder: 'border-emerald-500/50' },
+                  amber: { bg: 'bg-amber-500/10', border: 'border-amber-500/20', text: 'text-amber-500', textLight: 'text-amber-400', hoverBg: 'hover:bg-amber-500/30', activeBg: 'bg-amber-600', activeBorder: 'border-amber-500/50' },
+                  orange: { bg: 'bg-orange-500/10', border: 'border-orange-500/20', text: 'text-orange-500', textLight: 'text-orange-400', hoverBg: 'hover:bg-orange-500/30', activeBg: 'bg-orange-600', activeBorder: 'border-orange-500/50' }
+              };
+              const c = colorMap[evColor];
+
+              return (
+                <div className={`flex items-center gap-3 ${c.bg} border ${c.border} rounded-full p-1 pl-4 shadow-inner transition-colors duration-500`}>
+                  <div className="hidden sm:flex flex-col justify-center cursor-pointer" onClick={() => setActiveView('war_room')}>
+                    <span className={`text-[9px] ${c.text} font-bold uppercase tracking-wider leading-none flex items-center gap-1.5 mb-1`}>
+                      <span className={`w-1.5 h-1.5 bg-${evColor}-500 rounded-full animate-pulse`}></span> {activeEvent.name}
+                    </span>
+                    <span className={`text-xs font-black ${c.textLight} leading-none`}>
+                      {safeFormatCurrency(activeEventStats.gmv)}
+                    </span>
+                  </div>
+                  <button onClick={() => setActiveView('war_room')} className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all ${activeView === 'war_room' ? `${c.activeBg} text-white shadow-md border ${c.activeBorder}` : `${c.bg} ${c.textLight} ${c.hoverBg} border ${c.border}`}`}>
+                    <Flame size={16} /> <span className="hidden md:inline">War Room</span>
+                  </button>
                 </div>
-                <button onClick={() => setActiveView('war_room')} className={`p-2 xl:px-4 xl:py-1 rounded-full text-sm font-bold flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'war_room' ? 'bg-orange-600 text-white shadow-md border border-orange-500/50' : 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 border border-orange-500/30'}`} title="War Room de Evento">
-                  <Flame size={18} className="shrink-0" /> <span className="hidden xl:inline">War Room</span>
-                </button>
-              </div>
-            )}     
+              );
+            })()} 
           </nav>
 
           {/* PERFIL E AÇÕES - Esconde o nome do usuário em telas menores */}

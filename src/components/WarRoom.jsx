@@ -1,14 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Flame, Search, Target, CheckCircle, XCircle, Download } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const EventEntryRow = ({ store, activeEvent, onSaveDelta, canAccessWarRoom }) => {
-    const pastEventData = (store.eventLogs && store.eventLogs[activeEvent.name]) || { gmv: '', ads: '', orders: '', units: '' };
+    const pastEventData = (store.eventLogs && store.eventLogs[activeEvent.name]) || { gmv: '', orders: '', units: '' };
     
     const [rev, setRev] = useState(pastEventData.gmv);
-    const [ads, setAds] = useState(pastEventData.ads);
     const [ord, setOrd] = useState(pastEventData.orders);
     const [uni, setUni] = useState(pastEventData.units);
     const [isSaving, setIsSaving] = useState(false);
@@ -16,18 +15,17 @@ const EventEntryRow = ({ store, activeEvent, onSaveDelta, canAccessWarRoom }) =>
     const handleSave = async () => {
         setIsSaving(true);
         const numRev = Number(String(rev).replace(',', '.')) || 0;
-        const numAds = Number(String(ads).replace(',', '.')) || 0;
         const numOrd = Number(ord) || 0;
         const numUni = Number(uni) || 0;
 
-        await onSaveDelta(store.id, activeEvent.name, numRev, numAds, numOrd, numUni);
+        await onSaveDelta(store.id, activeEvent.name, numRev, 0, numOrd, numUni); // 0 no lugar do Ads
         setIsSaving(false);
     };
 
     const isUpdated = 
         Number(rev) !== Number(pastEventData.gmv) || 
-        Number(ads) !== Number(pastEventData.ads) || 
-        Number(ord) !== Number(pastEventData.orders);
+        Number(ord) !== Number(pastEventData.orders) ||
+        Number(uni) !== Number(pastEventData.units);
 
     return (
         <tr className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
@@ -39,51 +37,16 @@ const EventEntryRow = ({ store, activeEvent, onSaveDelta, canAccessWarRoom }) =>
                 </div>
             </td>
             <td className="p-3">
-                <input 
-                    disabled={!canAccessWarRoom}
-                    type="number" 
-                    placeholder="0.00" 
-                    value={rev} 
-                    onChange={e => setRev(e.target.value)} 
-                    className="w-28 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner disabled:opacity-50" 
-                />
+                <input disabled={!canAccessWarRoom} type="number" placeholder="0.00" value={rev} onChange={e => setRev(e.target.value)} className="w-28 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner disabled:opacity-50" />
             </td>
             <td className="p-3">
-                <input 
-                    disabled={!canAccessWarRoom} 
-                    type="number" 
-                    placeholder="0" 
-                    value={ord} 
-                    onChange={e => setOrd(e.target.value)} 
-                    className="w-20 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner disabled:opacity-50" 
-                />
+                <input disabled={!canAccessWarRoom} type="number" placeholder="0" value={ord} onChange={e => setOrd(e.target.value)} className="w-20 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner disabled:opacity-50" />
             </td>
             <td className="p-3">
-                <input 
-                    disabled={!canAccessWarRoom} 
-                    type="number" 
-                    placeholder="0" 
-                    value={uni} 
-                    onChange={e => setUni(e.target.value)} 
-                    className="w-20 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner disabled:opacity-50" 
-                />
-            </td>
-            <td className="p-3">
-                <input 
-                    disabled={!canAccessWarRoom} 
-                    type="number" 
-                    placeholder="0.00" 
-                    value={ads} 
-                    onChange={e => setAds(e.target.value)} 
-                    className="w-28 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-amber-400 font-bold outline-none focus:border-amber-500 shadow-inner disabled:opacity-50" 
-                />
+                <input disabled={!canAccessWarRoom} type="number" placeholder="0" value={uni} onChange={e => setUni(e.target.value)} className="w-20 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner disabled:opacity-50" />
             </td>
             <td className="p-4 text-right">
-                <button 
-                    onClick={handleSave} 
-                    disabled={isSaving || !isUpdated} 
-                    className={`px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-colors ${!isUpdated ? 'bg-white/5 text-gray-600' : 'bg-orange-600 hover:bg-orange-500 text-white'}`}
-                >
+                <button onClick={handleSave} disabled={isSaving || !isUpdated} className={`px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-colors ${!isUpdated ? 'bg-white/5 text-gray-600' : 'bg-orange-600 hover:bg-orange-500 text-white'}`}>
                     {isSaving ? '⏳' : isUpdated ? 'Atualizar' : 'Salvo'}
                 </button>
             </td>
@@ -93,6 +56,54 @@ const EventEntryRow = ({ store, activeEvent, onSaveDelta, canAccessWarRoom }) =>
 
 export default function WarRoom({ stores, setStores, updateStoreInCloud, formatCurrency, formatNumber, canEdit, activeEvent, onEndEvent, canAccessWarRoom, sortBy, currentDay }) {
     const [search, setSearch] = useState('');
+    const [goalHitTime, setGoalHitTime] = useState(() => {
+        return localStorage.getItem(`event_hit_${activeEvent.name}`) || null;
+    });
+
+    const eventStats = useMemo(() => {
+        let totalGmv = 0, totalOrders = 0, totalAgencyRevenue = 0, totalGmvBefore = 0;
+        const daysBefore = Math.max(1, currentDay - 1); 
+
+        stores.forEach(s => {
+            if (s.eventLogs && s.eventLogs[activeEvent.name]) {
+                const eventGmv = Number(s.eventLogs[activeEvent.name].gmv) || 0;
+                totalGmv += eventGmv;
+                totalOrders += Number(s.eventLogs[activeEvent.name].orders) || 0;
+                
+                const feePercent = Number(s.feePercent) || 0;
+                if (s.feeType !== 'fixed') {
+                    totalAgencyRevenue += eventGmv * (feePercent / 100);
+                }
+
+                const currentRev = Number(s.currentRevenue) || 0;
+                totalGmvBefore += Math.max(0, currentRev - eventGmv);
+            }
+        });
+
+        const avgDailyBefore = totalGmvBefore / daysBefore;
+        const boostPercentage = avgDailyBefore > 0 ? ((totalGmv - avgDailyBefore) / avgDailyBefore) * 100 : 0;
+
+        return { totalGmv, totalOrders, totalAgencyRevenue, avgDailyBefore, boostPercentage };
+    }, [stores, activeEvent, currentDay]);
+
+    const target = activeEvent.target || 1;
+    const progressPercent = (eventStats.totalGmv / target) * 100;
+    const isGoalHit = progressPercent >= 100;
+    
+    const getColorTheme = () => {
+        if (progressPercent >= 100) return { main: 'emerald-500', light: 'emerald-400', bg: 'emerald', text: 'text-emerald-400' };
+        if (progressPercent >= 80) return { main: 'amber-500', light: 'yellow-400', bg: 'amber', text: 'text-amber-400' };
+        return { main: 'orange-600', light: 'amber-400', bg: 'orange', text: 'text-orange-400' };
+    };
+    const theme = getColorTheme();
+
+    useEffect(() => {
+        if (isGoalHit && goalHitTime === null) {
+            const timeString = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            setGoalHitTime(timeString);
+            localStorage.setItem(`event_hit_${activeEvent.name}`, timeString);
+        }
+    }, [isGoalHit, goalHitTime, activeEvent.name]);
 
     const handleSaveDelta = async (storeId, eName, newGmv, newAds, newOrders, newUnits) => {
         if (!canAccessWarRoom) return toast.error("Você não tem permissão para esta ação.");
@@ -101,22 +112,20 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
         if (!store) return;
 
         const eventLogs = store.eventLogs || {};
-        const pastEventData = eventLogs[eName] || { gmv: 0, ads: 0, orders: 0, units: 0 };
+        const pastEventData = eventLogs[eName] || { gmv: 0, orders: 0, units: 0 };
 
         const deltaGmv = newGmv - Number(pastEventData.gmv);
-        const deltaAds = newAds - Number(pastEventData.ads);
         const deltaOrders = newOrders - Number(pastEventData.orders);
         const deltaUnits = newUnits - Number(pastEventData.units);
 
         const updatedStore = {
             ...store,
             currentRevenue: (Number(store.currentRevenue) || 0) + deltaGmv,
-            adsInvestment: (Number(store.adsInvestment) || 0) + deltaAds,
             orders: (Number(store.orders) || 0) + deltaOrders,
             units: (Number(store.units) || 0) + deltaUnits,
             eventLogs: {
                 ...eventLogs,
-                [eName]: { gmv: newGmv, ads: newAds, orders: newOrders, units: newUnits, updatedAt: new Date().toISOString() }
+                [eName]: { gmv: newGmv, orders: newOrders, units: newUnits, updatedAt: new Date().toISOString() }
             }
         };
 
@@ -140,7 +149,7 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
             if (sortBy === 'gmv') {
                 const gmvA = (a.eventLogs && a.eventLogs[activeEvent.name]) ? Number(a.eventLogs[activeEvent.name].gmv) || 0 : 0;
                 const gmvB = (b.eventLogs && b.eventLogs[activeEvent.name]) ? Number(b.eventLogs[activeEvent.name].gmv) || 0 : 0;
-                return gmvB - gmvA; // Ordem decrescente de GMV no Evento
+                return gmvB - gmvA;
             }
             if (sortBy === 'status') {
                 const w = { danger: 1, warning: 2, success: 3 };
@@ -148,53 +157,14 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
             }
             return 0;
         });
-
         return result;
     }, [stores, search, activeEvent, sortBy]);
 
-    const eventStats = useMemo(() => {
-        let totalGmv = 0, totalAds = 0, totalOrders = 0, totalAgencyRevenue = 0, totalGmvBefore = 0;
-        
-        const daysBefore = Math.max(1, currentDay - 1); 
-
-        stores.forEach(s => {
-            if (s.eventLogs && s.eventLogs[activeEvent.name]) {
-                const eventGmv = Number(s.eventLogs[activeEvent.name].gmv) || 0;
-                totalGmv += eventGmv;
-                totalAds += Number(s.eventLogs[activeEvent.name].ads) || 0;
-                totalOrders += Number(s.eventLogs[activeEvent.name].orders) || 0;
-                
-                const feePercent = Number(s.feePercent) || 0;
-                if (s.feeType !== 'fixed') {
-                    totalAgencyRevenue += eventGmv * (feePercent / 100);
-                }
-
-                const currentRev = Number(s.currentRevenue) || 0;
-                totalGmvBefore += Math.max(0, currentRev - eventGmv);
-            }
-        });
-
-        const avgDailyBefore = totalGmvBefore / daysBefore;
-        const boostPercentage = avgDailyBefore > 0 ? ((totalGmv - avgDailyBefore) / avgDailyBefore) * 100 : 0;
-
-        return { 
-            totalGmv, 
-            totalAds, 
-            totalOrders, 
-            totalAgencyRevenue,
-            avgDailyBefore,
-            boostPercentage,
-            roas: totalAds > 0 ? (totalGmv / totalAds).toFixed(1) : 0 
-        };
-    }, [stores, activeEvent, currentDay]);
-
-    // ==== GERAÇÃO DE RELATÓRIO PDF EXCLUSIVO DO EVENTO ====
     const exportEventReport = async () => {
         toast.loading("Compilando dados do evento...", { id: 'event-export' });
         try {
             const docPdf = new jsPDF();
             
-            // Agrupa as lojas filtradas (presentes no evento) por Cliente
             const clientsGroup = {};
             filteredStores.forEach(store => {
                 const cName = store.client || 'Sem Cliente';
@@ -217,14 +187,13 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
             clientNames.forEach((clientName, index) => {
                 if (index > 0) docPdf.addPage();
                 
-                // Ordena as lojas do cliente do maior para o menor GMV no evento
                 const clientStores = clientsGroup[clientName].sort((a, b) => {
                     const gmvA = (a.eventLogs && a.eventLogs[activeEvent.name]?.gmv) ? Number(a.eventLogs[activeEvent.name].gmv) : 0;
                     const gmvB = (b.eventLogs && b.eventLogs[activeEvent.name]?.gmv) ? Number(b.eventLogs[activeEvent.name].gmv) : 0;
                     return gmvB - gmvA;
                 });
 
-                let totalGmv = 0, totalAds = 0, totalOrders = 0, totalUnits = 0;
+                let totalGmv = 0, totalOrders = 0, totalUnits = 0;
                 const canaisAtendidos = new Set();
                 const storeRows = [];
 
@@ -233,104 +202,86 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
                 const daysBefore = Math.max(1, eventDay - 1);
 
                 clientStores.forEach((s, idx) => {
-                    const ev = (s.eventLogs && s.eventLogs[activeEvent.name]) || { gmv: 0, ads: 0, orders: 0, units: 0 };
+                    const ev = (s.eventLogs && s.eventLogs[activeEvent.name]) || { gmv: 0, orders: 0, units: 0 };
                     const gmv = Number(ev.gmv) || 0;
-                    const ads = Number(ev.ads) || 0;
                     const orders = Number(ev.orders) || 0;
                     const units = Number(ev.units) || 0;
-                    const roas = ads > 0 ? gmv / ads : 0;
 
                     const totalAccumulatedNow = Number(s.currentRevenue) || 0;
                     const revenueBefore = Math.max(0, totalAccumulatedNow - gmv);
                     const dailyAvgBefore = eventDay > 1 ? revenueBefore / daysBefore : 0;
                     const vsMedia = dailyAvgBefore > 0 ? ((gmv - dailyAvgBefore) / dailyAvgBefore) * 100 : 0;
 
-                    totalGmv += gmv; totalAds += ads; totalOrders += orders; totalUnits += units;
+                    totalGmv += gmv; totalOrders += orders; totalUnits += units;
                     if(s.marketplace) canaisAtendidos.add(s.marketplace);
 
                     storeRows.push([
-                        `${idx + 1}º`,
-                        s.marketplace || '-',
-                        s.store || '-',
-                        formatCurrency(gmv),
+                        `${idx + 1}º`, s.marketplace || '-', s.store || '-', formatCurrency(gmv),
                         vsMedia > 0 ? `+${vsMedia.toFixed(1)}%` : (vsMedia < 0 ? `${vsMedia.toFixed(1)}%` : '-'),
-                        `${orders}`,
-                        formatCurrency(ads),
-                        roas > 0 ? `${roas.toFixed(2)}x` : '-'
+                        `${orders}`, `${units}`
                     ]);
                 });
 
-                const totalRoas = totalAds > 0 ? totalGmv / totalAds : 0;
-
-                // ================= CABEÇALHO DO PDF =================
+                // CABEÇALHO DO PDF
                 docPdf.setFillColor(15, 23, 42); 
                 docPdf.rect(0, 0, 210, 46, 'F'); 
                 
-                docPdf.setFontSize(22); 
-                docPdf.setTextColor(255, 255, 255); 
+                docPdf.setFontSize(22); docPdf.setTextColor(255, 255, 255); 
                 docPdf.text(clientName.toUpperCase(), 14, 22);
                 
-                docPdf.setFontSize(9); 
-                docPdf.setTextColor(148, 163, 184); 
-                docPdf.text('RELATÓRIO DE DESEMPENHO - EVENTO', 14, 29); 
+                docPdf.setFontSize(9); docPdf.setTextColor(255, 77, 0); 
+                docPdf.text('RELATÓRIO DE DESEMPENHO - EVENTO SAZONAL', 14, 29); 
                 
-                docPdf.setFontSize(9); 
-                docPdf.setTextColor(250, 204, 21);
-                docPdf.text(`Campanha Sazonal: ${activeEvent.name}`, 14, 35);
+                docPdf.setFontSize(9); docPdf.setTextColor(250, 204, 21);
+                docPdf.text(`Campanha ${activeEvent.name}`, 14, 35);
 
-                if (logoImg) {
-                    docPdf.addImage(logoImg, 'JPEG', 178, 12, 18, 18);
-                } else {
-                    docPdf.setFontSize(14); 
-                    docPdf.setTextColor(255, 255, 255); 
-                    docPdf.text('B2X', 196, 22, { align: 'right' });
-                }
+                if (logoImg) docPdf.addImage(logoImg, 'JPEG', 178, 12, 18, 18);
+                else { docPdf.setFontSize(14); docPdf.setTextColor(255, 255, 255); docPdf.text('B2X', 196, 22, { align: 'right' }); }
 
-                docPdf.setFontSize(8); 
-                docPdf.setTextColor(107, 114, 128); 
+                docPdf.setFontSize(8); docPdf.setTextColor(107, 114, 128); 
                 docPdf.text(`Gerado em: ${dataGeracao}`, 196, 40, { align: 'right' });
 
-                // ================= BLOCO DE MÉTRICAS =================
-                docPdf.setFontSize(11); 
-                docPdf.setTextColor(75, 85, 99); 
+                // BLOCO DE MÉTRICAS
+                docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); 
                 docPdf.text('Faturamento Exclusivo do Evento:', 14, 58);
-                docPdf.setFontSize(22); 
-                docPdf.setTextColor(234, 88, 12); // Laranja (Tema War Room)
+                docPdf.setFontSize(22); docPdf.setTextColor(234, 88, 12); 
                 docPdf.text(formatCurrency(totalGmv), 14, 68);
 
-                // ================= TABELA =================
+                // TABELA (Sem colunas de Ads e ROAS)
                 autoTable(docPdf, {
                     startY: 78,
-                    head: [['Rk', 'Canal', 'Loja', 'Faturamento', 'Vs Média/Dia', 'Pedidos', 'ADS', 'ROAS']],
+                    head: [['Ranking', 'Canal', 'Loja', 'Faturamento', 'Vs Média/Dia', 'Pedidos', 'Unidades']],
                     body: storeRows, theme: 'grid',
                     headStyles: { fillColor: [234, 88, 12], textColor: [255, 255, 255], fontStyle: 'bold' },
                     styles: { fontSize: 8, cellPadding: 4 },
-                    columnStyles: { 0: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'center' }, 7: { halign: 'center' } },
-                    alternateRowStyles: { fillColor: [255, 247, 237] } // Laranja bem clarinho
+                    columnStyles: { 0: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'center' }, 6: { halign: 'center' } },
+                    alternateRowStyles: { fillColor: [255, 247, 237] }
                 });
 
-                // ================= RODAPÉ (RESUMO) =================
+                // RODAPÉ
                 let finalY = docPdf.lastAutoTable.finalY + 12;
                 if (finalY + 40 > docPdf.internal.pageSize.height) { docPdf.addPage(); finalY = 20; }
                 
                 docPdf.setFillColor(255, 247, 237); 
                 docPdf.setDrawColor(253, 186, 116);
-                docPdf.roundedRect(14, finalY, 182, 35, 3, 3, 'FD');
+                docPdf.roundedRect(14, finalY, 182, 45, 3, 3, 'FD');
 
                 docPdf.setFontSize(11); docPdf.setTextColor(154, 52, 18); 
                 docPdf.setFont('helvetica', 'bold');
-                docPdf.text('Resumo da Operação', 20, finalY + 8);
+                docPdf.text('Resumo Executivo do Evento', 20, finalY + 8);
+
+                const ticketMedio = totalOrders > 0 ? totalGmv / totalOrders : 0;
+                const upt = totalOrders > 0 ? totalUnits / totalOrders : 0;
 
                 docPdf.setFontSize(9); docPdf.setTextColor(194, 65, 12); docPdf.setFont('helvetica', 'normal');
-                docPdf.text(`Canais Ativados: ${Array.from(canaisAtendidos).join(', ')}`, 20, finalY + 18);
+
+                docPdf.text(`Ticket Médio: ${formatCurrency(ticketMedio)}`, 20, finalY + 18);
                 docPdf.text(`Total de Unidades Vendidas: ${totalUnits} unidades`, 20, finalY + 26);
+                docPdf.text(`Unidades p/ Pedido: ${upt.toFixed(2)}`, 20, finalY + 34);
                 
-                docPdf.text(`Investimento Total em ADS: ${formatCurrency(totalAds)}`, 110, finalY + 18);
-                docPdf.text(`ROAS Médio do Evento: ${totalRoas > 0 ? totalRoas.toFixed(2) + 'x' : '-'}`, 110, finalY + 26);
             });
             
-            // O nome do arquivo limpa caracteres especiais do nome do evento
-            docPdf.save(`B2X_Evento_${activeEvent.name.replace(/[^a-z0-9]/gi, '_')}.pdf`);
+            docPdf.save(`B2X Evento ${activeEvent.name.replace(/[^a-z0-9]/gi, '_')}.pdf`);
             toast.success("Relatório Sazonal gerado e baixado!", { id: 'event-export' });
         } catch (error) {
             console.error(error);
@@ -338,30 +289,49 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
         }
     };
 
-    const renderProgressBar = () => {
-        const target = activeEvent.target || 1;
-        const currentWidth = Math.min((eventStats.totalGmv / target) * 80, 100);
-        const currentPercent = ((eventStats.totalGmv / target) * 100).toFixed(1);
+    // NOVA LÓGICA DE FECHAMENTO: Baixa relatório automaticamente
+    const handleCloseWarRoom = async () => {
+        if(window.confirm("Deseja encerrar este evento? Um relatório consolidado em PDF será gerado automaticamente para todos os clientes.")) {
+            await exportEventReport();
+            onEndEvent();
+        }
+    };
 
+    const renderProgressBar = () => {
+        const currentWidth = Math.min(progressPercent, 100);
         return (
-            <div className="bg-black/30 p-6 rounded-3xl border border-white/5 mb-6 relative">
-                <div className="flex justify-between items-end mb-6">
+            <div className={`p-6 rounded-3xl border mb-6 relative transition-all duration-1000 ${isGoalHit ? 'bg-gradient-to-br from-emerald-900/40 to-black/60 border-emerald-500/50 shadow-[0_0_40px_rgba(16,185,129,0.3)]' : 'bg-black/30 border-white/5'}`}>
+                {isGoalHit && <div className="absolute inset-0 bg-emerald-500/10 rounded-3xl blur-xl z-0 animate-pulse pointer-events-none"></div>}
+                
+                <div className="relative z-10 flex justify-between items-end mb-6">
                     <div>
-                        <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Meta do Evento</p>
+                        <p className={`text-[10px] uppercase font-bold tracking-wider transition-colors ${isGoalHit ? 'text-emerald-400' : 'text-gray-500'}`}>
+                            {isGoalHit ? '🏆 Meta Superada' : 'Meta do Evento'}
+                        </p>
                         <p className="text-xl font-bold text-white">{formatCurrency(target)}</p>
                     </div>
-                    <div className="text-right">
-                        <p className="text-[10px] text-orange-500 uppercase font-bold tracking-wider">Atingido ({currentPercent}%)</p>
-                        <p className="text-3xl font-black text-orange-400">{formatCurrency(eventStats.totalGmv)}</p>
+                    <div className="text-right flex flex-col items-end">
+                        <p className={`text-[10px] uppercase font-bold tracking-wider transition-colors ${theme.text}`}>
+                            Atingido ({progressPercent.toFixed(1)}%)
+                        </p>
+                        <p className={`text-3xl font-black transition-all duration-700 ${isGoalHit ? 'text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.8)]' : theme.text}`}>
+                            {formatCurrency(eventStats.totalGmv)}
+                        </p>
+                        {isGoalHit && goalHitTime && (
+                            <p className="text-[11px] text-emerald-300 font-bold mt-1.5 bg-emerald-500/20 px-3 py-1 rounded-full animate-bounce shadow-sm border border-emerald-500/30">
+                                🚀 Batida às {goalHitTime}
+                            </p>
+                        )}
                     </div>
                 </div>
-                <div className="relative pt-6 pb-2">
+                
+                <div className="relative z-10 pt-6 pb-2">
                     <div className="h-6 bg-black/60 rounded-full border border-white/10 shadow-inner overflow-hidden relative">
-                        <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-orange-600 to-amber-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(245,158,11,0.4)]" style={{ width: `${currentWidth}%` }}></div>
+                        <div className={`absolute top-0 left-0 h-full transition-all duration-1000 ease-out bg-gradient-to-r from-${theme.main} to-${theme.light} shadow-[0_0_20px_rgba(255,255,255,0.4)]`} style={{ width: `${currentWidth}%` }}></div>
                     </div>
-                    <div className="absolute top-0 bottom-0 w-0.5 bg-gradient-to-b from-white to-gray-300 shadow-[0_0_15px_rgba(255,255,255,1)] z-10" style={{ left: '80%' }}>
-                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-white text-black text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg">META</div>
-                        <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-gray-400 text-[9px] font-bold">100%</div>
+                    <div className={`absolute top-0 bottom-0 w-0.5 z-10 transition-colors duration-1000 ${isGoalHit ? 'bg-emerald-300 shadow-[0_0_15px_rgba(16,185,129,1)]' : 'bg-gradient-to-b from-white to-gray-300'}`} style={{ left: '80%' }}>
+                        <div className={`absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg transition-colors ${isGoalHit ? 'bg-emerald-500 text-white' : 'bg-white text-black'}`}>META</div>
+                        <div className={`absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] font-bold transition-colors ${isGoalHit ? 'text-emerald-400' : 'text-gray-400'}`}>100%</div>
                     </div>
                 </div>
             </div>
@@ -371,65 +341,45 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             {/* CABEÇALHO */}
-            <div className="bg-gradient-to-r from-orange-600/20 to-black/20 p-6 rounded-3xl border border-orange-500/30 shadow-[0_8px_30px_rgba(234,88,12,0.15)] flex flex-col md:flex-row gap-6 justify-between items-start md:items-center">
+            <div className={`bg-gradient-to-r from-${theme.bg}-600/20 to-black/20 p-6 rounded-3xl border border-${theme.bg}-500/30 flex flex-col md:flex-row gap-6 justify-between items-start md:items-center transition-colors duration-500`}>
                 <div>
                     <div className="flex flex-wrap items-center gap-3">
                         <h2 className="text-3xl font-black text-white flex items-center gap-2">
-                            <Flame className="text-orange-500" size={32} /> {activeEvent.name}
+                            <Flame className={theme.text} size={32} /> {activeEvent.name}
                         </h2>
                         <span className="flex items-center gap-1.5 bg-red-500/20 border border-red-500/30 text-red-500 text-[10px] uppercase font-bold tracking-widest px-2 py-1 rounded-lg">
                             <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span> Ao Vivo
                         </span>
-                        {activeEvent.channels && activeEvent.channels.length > 0 && (
-                            <span className="bg-orange-500/20 text-orange-300 border border-orange-500/30 px-2 py-1 rounded-lg text-[10px] font-bold uppercase">
-                                Canais: {activeEvent.channels.join(', ')}
-                            </span>
-                        )}
                     </div>
-                    <p className="text-gray-400 mt-2 text-sm max-w-lg leading-relaxed">
-                        Os valores lançados aqui <strong>somam a diferença automaticamente</strong> no faturamento do mês.
-                    </p>
                 </div>
                 <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
-                    <button onClick={exportEventReport} className="bg-orange-500/10 border border-orange-500/30 hover:bg-orange-500/20 text-orange-400 px-5 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-colors justify-center">
-                        <Download size={18} /> Relatório
+                    <button onClick={exportEventReport} className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 px-5 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-colors justify-center">
+                        <Download size={18} /> Baixar Resumo
                     </button>
-                    <button onClick={() => { if(window.confirm("Deseja realmente encerrar este evento e fechar a War Room?")) onEndEvent(); }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-md flex items-center gap-2 transition-colors justify-center">
-                        <XCircle size={18} /> Fechar
+                    <button onClick={handleCloseWarRoom} className="bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-md flex items-center gap-2 transition-colors justify-center">
+                        <XCircle size={18} /> Encerrar Evento
                     </button>
                 </div>
             </div>
 
-            {/* PROGRESSO E MÉTRICAS */}
             {renderProgressBar()}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Pedidos do Evento</span>
-                    <p className="text-2xl font-black text-emerald-400 mt-1">{formatNumber(eventStats.totalOrders)} <span className="text-sm font-medium text-gray-500">ped</span></p>
-                </div>
-                
-                <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">ROAS do Evento</span>
-                    <div className="flex items-center gap-3 mt-1">
-                        <p className="text-2xl font-black text-white">{eventStats.roas}x</p>
-                        <div className="flex flex-col border-l border-white/10 pl-3">
-                            <span className="text-[9px] text-gray-500 font-bold uppercase">Ads Gasto</span>
-                            <span className="text-xs text-amber-500 font-bold">{formatCurrency(eventStats.totalAds)}</span>
-                        </div>
-                    </div>
+                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Volume do Evento</span>
+                    <p className="text-2xl font-black text-emerald-400 mt-1">{formatNumber(eventStats.totalOrders)} <span className="text-sm font-medium text-gray-500">pedidos</span></p>
                 </div>
 
                 <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm">
                     <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Faturamento Avante</span>
                     <p className="text-2xl font-black text-indigo-400 mt-1">{formatCurrency(eventStats.totalAgencyRevenue)}</p>
                 </div>
-
+            
                 <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm relative overflow-hidden">
                     <div className="relative z-10">
                         <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Desempenho vs Média Diária</span>
                         <div className="flex items-center gap-2 mt-1">
-                            <p className="text-2xl font-black text-orange-400">{formatCurrency(eventStats.totalGmv)}</p>
+                            <p className={`text-2xl font-black ${theme.text}`}>{formatCurrency(eventStats.totalGmv)}</p>
                             <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${eventStats.boostPercentage >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
                                 {eventStats.boostPercentage > 0 ? '+' : ''}{eventStats.boostPercentage.toFixed(1)}%
                             </span>
@@ -448,10 +398,10 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
             {/* TABELA */}
             <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden">
                 <div className="p-5 border-b border-white/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-black/20">
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2"><Target className="text-orange-500" size={18}/> Lançamento Dinâmico</h3>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2"><Target className={theme.text} size={18}/> Lançamento Dinâmico</h3>
                     <div className="relative w-full sm:w-64">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
-                        <input type="text" placeholder="Buscar loja ou cliente..." value={search} onChange={e => setSearch(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 pl-9 pr-4 text-xs outline-none focus:border-orange-500 transition-colors" />
+                        <input type="text" placeholder="Buscar loja ou cliente..." value={search} onChange={e => setSearch(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 pl-9 pr-4 text-xs outline-none focus:border-indigo-500 transition-colors" />
                     </div>
                 </div>
                 
@@ -463,8 +413,7 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
                                 <th className="p-4 text-blue-400">GMV ({activeEvent.name})</th>
                                 <th className="p-4 text-emerald-400">Pedidos</th>
                                 <th className="p-4 text-purple-400">Unidades</th>
-                                <th className="p-4 text-amber-400">Ads ({activeEvent.name})</th>
-                                <th className="p-4 text-right pr-6">Sincronizar</th>
+                                <th className="p-4 text-right pr-6">Ação</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">

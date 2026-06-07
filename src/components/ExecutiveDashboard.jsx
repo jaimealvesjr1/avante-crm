@@ -58,9 +58,8 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
 
   const [showSettings, setShowSettings] = useState(false);
 
-  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }) => {
+  const renderCustomizedLabel = ({ cx, cy, midAngle, outerRadius, percent, name }) => {
     const RADIAN = Math.PI / 180;
-    // Joga o texto um pouco para fora do gráfico (1.2x o raio)
     const radius = outerRadius * 1.2;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
@@ -75,7 +74,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
         fontSize={11} 
         fontWeight="bold"
       >
-        {`${name} ${(percent * 100).toFixed(1)}%`}
+        {`${name}`}
       </text>
     );
   };
@@ -141,11 +140,26 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
               <div className="w-full h-full opacity-30" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.2) 10px, rgba(255,255,255,0.2) 20px)' }}></div>
             </div>
 
-            {/* Barra Atual (Hoje) */}
-            <div 
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(56,189,248,0.4)]"
-              style={{ width: `${currentWidth}%` }}
-            ></div>
+            {/* Barra Atual (Hoje) com Cores Dinâmicas */}
+            {(() => {
+              let barGradient = "from-blue-600 to-cyan-400";
+              let shadowColor = "rgba(56,189,248,0.4)";
+              
+              if (currentPercent >= 100) {
+                  barGradient = "from-emerald-600 to-emerald-400";
+                  shadowColor = "rgba(16,185,129,0.4)";
+              } else if (currentPercent >= 80) {
+                  barGradient = "from-amber-500 to-yellow-400";
+                  shadowColor = "rgba(245,158,11,0.4)";
+              }
+
+              return (
+                <div 
+                  className={`absolute top-0 left-0 h-full bg-gradient-to-r ${barGradient} transition-all duration-1000 ease-out shadow-[0_0_20px_${shadowColor}]`}
+                  style={{ width: `${currentWidth}%` }}
+                ></div>
+              );
+            })()}
           </div>
 
           <div className="absolute top-0 bottom-0 w-0.5 bg-gradient-to-b from-white to-gray-300 shadow-[0_0_15px_rgba(255,255,255,1)] z-10" style={{ left: '80%' }}>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, TrendingDown, Edit2, Briefcase } from 'lucide-react';
+import { Flame, Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, TrendingDown, Edit2, Briefcase } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
@@ -76,6 +76,21 @@ export default function ClientFileModal({
   const liveStores = useMemo(() => {
     return stores.filter(s => s.client === clientGroup.client && !s.arquivada);
   }, [stores, clientGroup.client]);
+
+  const clientEvents = useMemo(() => {
+    const events = {};
+    liveStores.forEach(s => {
+      if (s.eventLogs) {
+        Object.entries(s.eventLogs).forEach(([eName, data]) => {
+          if (!events[eName]) events[eName] = { gmv: 0, orders: 0, units: 0 };
+          events[eName].gmv += Number(data.gmv) || 0;
+          events[eName].orders += Number(data.orders) || 0;
+          events[eName].units += Number(data.units) || 0;
+        });
+      }
+    });
+    return Object.entries(events).map(([name, stats]) => ({ name, ...stats }));
+  }, [liveStores]);
 
   const mesPassadoExato = useMemo(() => {
       const d = new Date();
@@ -448,7 +463,27 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              {/* Grid de Cartões */}
+              {clientEvents.length > 0 && (
+                <div className="bg-gradient-to-r from-orange-600/10 to-black/20 rounded-2xl p-5 border border-orange-500/20 shadow-sm">
+                    <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Flame size={14}/> Eventos do Mês Ativos</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {clientEvents.map((ev, i) => (
+                            <div key={i} className="bg-white/[0.03] border border-white/5 rounded-xl p-4 shadow-sm hover:border-orange-500/30 transition-colors">
+                                <h4 className="font-bold text-white mb-2 text-sm">{ev.name}</h4>
+                                <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-gray-400">GMV Gerado:</span>
+                                    <span className="font-bold text-emerald-400">{formatCurrency(ev.gmv)}</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                    <span className="text-gray-400">Volume:</span>
+                                    <span className="font-bold text-gray-300">{ev.orders} ped ({ev.units} un)</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
                 
                 {/* CARTÃO: FATURAMENTO HISTÓRICO + FATURAMENTO DO GRUPO */}
@@ -617,7 +652,7 @@ export default function ClientFileModal({
             </div>
           )}
 
-{activeTab === 'historico' && (
+          {activeTab === 'historico' && (
             <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mt-4 animate-in fade-in">
               
               {/* COLUNA ESQUERDA: Fechamentos + Timeline (Ocupa 3 colunas) */}
