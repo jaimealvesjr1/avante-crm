@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Flame, CalendarDays, Activity, Bell, Clock, CheckCircle, AlertCircle, SquareStack, Play, Search, CalendarClock, X, Briefcase } from 'lucide-react';
+import { Flame, CalendarDays, Activity, Clock, CheckCircle, AlertCircle, Search, CalendarClock, X, Briefcase, AlertTriangle } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
@@ -22,24 +22,8 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
         return null;
     }, [scheduledEvents]);
 
-    const handleClearGhostTask = async (ghostUserName, e) => {
-        e.stopPropagation();
-        if (window.confirm(`Forçar a remoção da tarefa de ${ghostUserName} do radar?`)) {
-            try {
-                const docRef = doc(db, "settings", "atividades_equipe");
-                await updateDoc(docRef, {
-                    [ghostUserName]: deleteField()
-                });
-                toast.success("Tarefa fantasma removida com sucesso!");
-            } catch (error) {
-                console.error("Erro ao limpar fantasma:", error);
-                toast.error("Erro ao remover do radar.");
-            }
-        }
-    };
-
     const [showVisitForm, setShowVisitForm] = useState(false);
-    const [visitForm, setVisitForm] = useState({ client: '', date: '', time: '', responsavel: '' });
+    const [visitForm, setVisitForm] = useState({ id: null, client: '', date: '', time: '', responsavel: '' });
 
     const uniqueClients = useMemo(() => {
         return [...new Set(stores.map(s => s.client))].filter(Boolean).sort();
@@ -47,31 +31,18 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
 
     const submitVisit = (e) => {
         e.preventDefault();
-        if (!visitForm.client || !visitForm.date || !visitForm.time || !visitForm.responsavel) {
-        toast.error("Preencha todos os campos da visita.");
+        if (!visitForm.client || !visitForm.date || !visitForm.time) {
+        toast.error("Preencha cliente, data e hora da visita.");
         return;
         }
         handleVisitAction('schedule', visitForm);
         setShowVisitForm(false);
-        setVisitForm({ client: '', date: '', time: '', responsavel: '' });
+        setVisitForm({ id: null, client: '', date: '', time: '', responsavel: '' });
     };
 
-    const handleDeleteFeedLog = async (e, storeName, logId) => {
-        e.stopPropagation(); 
-        if (!window.confirm("Deseja realmente apagar esta notificação do feed?")) return;
-
-        const targetStore = stores.find(s => s.store === storeName);
-        if (targetStore) {
-            try {
-                const updatedLogs = (targetStore.taskLogs || []).filter(l => l.id !== logId);
-                const storeRef = doc(db, "stores", targetStore.id.toString());
-                await updateDoc(storeRef, { taskLogs: updatedLogs });
-                toast.success("Notificação apagada com sucesso!");
-            } catch (error) {
-                console.error("Erro ao apagar log:", error);
-                toast.error("Erro ao apagar do banco de dados.");
-            }
-        }
+    const editVisit = (visit) => {
+        setVisitForm(visit);
+        setShowVisitForm(true);
     };
 
     const handleDeleteSpecificTask = async (e, storeId, taskId, isRoutine) => {
@@ -93,18 +64,41 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                 const updatedChecklists = (store.checklists || []).filter(t => t.id !== taskId);
                 const storeRef = doc(db, "stores", storeId.toString());
                 await updateDoc(storeRef, { checklists: updatedChecklists });
-                toast.success("Tarefa fantasma removida com sucesso!");
+                toast.success("Tarefa removida com sucesso!");
             } catch (error) {
                 console.error("Erro ao remover tarefa:", error);
                 toast.error("Erro ao remover a tarefa do banco.");
             }
         }
     };
+
+    const pacingLogs = useMemo(() => {
+        const grouped = {};
+        stores.forEach(s => {
+        if (s.arquivada) return;
+        if (!grouped[s.client]) grouped[s.client] = { client: s.client, gmvBase: 0, currentGmv: 0 };
+        grouped[s.client].gmvBase += Number(s.gmvBase) || 0;
+        grouped[s.client].currentGmv += Number(s.currentRevenue) || 0;
+        });
+
+        const now = new Date();
+        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const currentDay = now.getDate();
+
+        return Object.values(grouped).map(g => {
+        const target = g.gmvBase * 1.1; 
+        const projected = currentDay > 0 ? (g.currentGmv / currentDay) * daysInMonth : 0;
+        const percent = target > 0 ? (projected / target) * 100 : 0;
+        
+        return {
+            client: g.client,
+            percentReached: percent,
+            type: percent >= 95 ? 'success' : percent >= 80 ? 'warning' : 'danger'
+        };
+        }).filter(g => g.type !== 'success').sort((a,b) => a.percentReached - b.percentReached);
+    }, [stores]);
     
-    const [feedClearedAt, setFeedClearedAt] = useState(() => Number(localStorage.getItem('avante_feed_cleared_at')) || 0);
     const [liveStatus, setLiveStatus] = useState({});
-    const [feedFilter, setFeedFilter] = useState('all');
-    
     const [radarFilter, setRadarFilter] = useState(myName);
     
     useEffect(() => {
@@ -120,12 +114,10 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
     };
     
     const now = new Date();
-    const localToday = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-    const allLogs = stores.flatMap(s => (s.taskLogs || []).map(l => ({ ...l, storeName: s.store, clientName: s.client })));
+    const localTodayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     
     const rankingDiario = useMemo(() => {
         const stats = {};
-        const localTodayStr = localToday; 
 
         const globalAverages = {
             baixa: { totalTime: 0, count: 0, avg: 15 * 60000 }, 
@@ -224,7 +216,7 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
             
             return { ...r, avgBaixa, avgMedia, avgAlta };
         }).sort((a, b) => b.points - a.points);
-    }, [stores, localToday]);
+    }, [stores, localTodayStr]);
 
     const deadlinesData = useMemo(() => {
         const items = [];
@@ -342,30 +334,6 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
         return filteredItems.sort((a, b) => a.timeDiff - b.timeDiff);
 
     }, [stores, radarFilter, liveStatus, searchTerm]);
-    
-    const visibleLogs = useMemo(() => {
-        return allLogs
-            .filter(l => l.id > feedClearedAt)
-            .filter(l => {
-                if (feedFilter === 'tasks') {
-                    return l.texto?.includes('✅') || l.texto?.includes('▶️') || l.texto?.includes('⏸️');
-                }
-                if (feedFilter === 'mine') {
-                    return l.author === myName;
-                }
-                return true; 
-            })
-            .filter(l => {
-                if (!searchTerm) return true; 
-                const termo = searchTerm.toLowerCase();
-                return l.texto?.toLowerCase().includes(termo) || 
-                       l.storeName?.toLowerCase().includes(termo) || 
-                       l.clientName?.toLowerCase().includes(termo) ||
-                       l.author?.toLowerCase().includes(termo);
-            })
-            .sort((a, b) => b.id - a.id)
-            .slice(0, 100);
-    }, [allLogs, feedClearedAt, feedFilter, myName, searchTerm]);
 
     const upcomingVisits = useMemo(() => {
         if (!scheduledVisits || scheduledVisits.length === 0) return [];
@@ -373,7 +341,7 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
         const todayStr = new Date().toISOString().split('T')[0];
 
         return [...scheduledVisits]
-        .filter(visit => visit.date >= todayStr) // Corta o que já passou
+        .filter(visit => visit.date >= todayStr) 
         .sort((a, b) => {
             const dateA = new Date(`${a.date}T${a.time || '00:00'}:00`);
             const dateB = new Date(`${b.date}T${b.time || '00:00'}:00`);
@@ -384,7 +352,6 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
 
-            {/* GRID ORIGINAL DO FEED (RADAR, TIMELINE E RANKING) */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
                 {/* LADO ESQUERDO: Radar de Prazos (SLA) */}
@@ -405,7 +372,6 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                                     value={radarFilter}
                                     onChange={(e) => setRadarFilter(e.target.value)}
                                     className="w-full sm:w-auto bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-xs font-bold text-white outline-none focus:border-indigo-500 cursor-pointer shadow-sm transition-colors"
-                                    title="Filtrar Radar por Responsável"
                                 >
                                     <option value={myName}>🎯 Meu Foco ({myName})</option>
                                     <option value="">🌍 Visão Global (Todas)</option>
@@ -500,13 +466,13 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                     </div>
                 </div>
 
-                {/* COLUNA DIREITA: Trabalhando Agora -> Timeline -> Ranking */}
+                {/* COLUNA DIREITA: Trabalhando Agora -> Pacing -> Ranking */}
                 <div className="lg:col-span-1 flex flex-col gap-6">
 
 
-                    {/* BANNER DE DESTAQUE SAZONAL (AO VIVO OU PRÓXIMO EVENTO) */}
+                    {/* BANNER DE DESTAQUE SAZONAL */}
                     {activeEvent ? (
-                        <div className="bg-gradient-to-r from-orange-600/20 to-red-600/20 border border-orange-500/30 p-5 md:p-6 rounded-3xl shadow-[0_4px_20px_rgba(234,88,12,0.15)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="bg-gradient-to-r from-orange-600/20 to-red-600/20 border border-orange-500/30 p-5 rounded-3xl shadow-[0_4px_20px_rgba(234,88,12,0.15)] flex flex-col gap-4">
                             <div className="flex items-center gap-4">
                                 <div className="p-3 bg-orange-500/20 rounded-2xl border border-orange-500/30 shrink-0">
                                     <Flame className="text-orange-500 animate-pulse" size={28} />
@@ -518,29 +484,29 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                                             Ao Vivo
                                         </span>
                                     </h3>
-                                    <p className="text-orange-200/70 text-sm mt-1">O evento está acontecendo agora! Acesse a War Room para registrar os resultados em tempo real.</p>
+                                    <p className="text-orange-200/70 text-xs mt-1 leading-tight">O evento está acontecendo agora! Acesse a War Room para mais detalhes.</p>
                                 </div>
                             </div>
                         </div>
                     ) : nextEvent ? (
-                        <div className="bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 p-5 md:p-6 rounded-3xl shadow-[0_4px_20px_rgba(99,102,241,0.1)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 p-5 rounded-3xl shadow-[0_4px_20px_rgba(99,102,241,0.1)] flex flex-col gap-4">
                             <div className="flex items-center gap-4">
                                 <div className="p-3 bg-indigo-500/20 rounded-2xl border border-indigo-500/30 shrink-0">
                                     <CalendarDays className="text-indigo-400" size={28} />
                                 </div>
                                 <div>
                                     <h3 className="text-white font-black text-xl">
-                                        Próximo Evento: <span className="text-indigo-300">{nextEvent.name}</span>
+                                        Próximo: <span className="text-indigo-300">{nextEvent.name}</span>
                                     </h3>
-                                    <p className="text-indigo-200/70 text-sm mt-1">
-                                        Prepare a operação! Marcado para <strong className="text-white">{new Date(nextEvent.date + 'T12:00:00').toLocaleDateString('pt-BR')}</strong> com meta de <strong className="text-emerald-400">{formatCurrency ? formatCurrency(nextEvent.target) : nextEvent.target}</strong>.
+                                    <p className="text-indigo-200/70 text-xs mt-1 leading-tight">
+                                        Marcado para <strong className="text-white">{new Date(nextEvent.date + 'T12:00:00').toLocaleDateString('pt-BR')}</strong>
                                     </p>
                                 </div>
                             </div>
                             {nextEvent.channels && nextEvent.channels.length > 0 && (
-                                <div className="flex flex-wrap gap-2 mt-4 md:mt-0 md:justify-end">
+                                <div className="flex flex-wrap gap-1.5">
                                     {nextEvent.channels.map(mkt => (
-                                        <span key={mkt} className="bg-black/30 border border-indigo-500/20 text-indigo-300 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl">
+                                        <span key={mkt} className="bg-black/30 border border-indigo-500/20 text-indigo-300 text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg">
                                             {mkt}
                                         </span>
                                     ))}
@@ -549,28 +515,27 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                         </div>
                     ) : null}                    
 
-
-                    {/* Bloco Exclusivo de CRM: Próximas Visitas */}
+                    {/* Bloco Exclusivo de CRM: Próximas Visitas (Movido para baixo na coluna lateral) */}
                     {(upcomingVisits.length > 0 || canScheduleVisits) && (
-                    <div className="mb-6 bg-blue-900/10 border border-blue-500/20 p-4 rounded-2xl w-full">
+                    <div className="mb-6 bg-blue-900/10 border border-blue-500/20 p-5 rounded-2xl w-full">
                         
-                        {/* Header com Botão de Ação */}
                         <div className="flex justify-between items-center mb-4">
                         <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
-                            <Briefcase size={16} /> Agenda de Visitas Presenciais
+                            <Briefcase size={16} /> Visitas Presenciais
                         </h3>
                         {canScheduleVisits && (
                             <button 
                             onClick={() => setShowVisitForm(!showVisitForm)}
                             className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors border ${showVisitForm ? 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-md border-blue-500/50'}`}
                             >
-                            {showVisitForm ? '✕ Cancelar Agendamento' : '+ Agendar Visita'}
+                            {showVisitForm ? '✕ Cancelar' : '+ Agendar'}
                             </button>
                         )}
                         </div>
 
                         {showVisitForm && canScheduleVisits && (
-                        <form onSubmit={submitVisit} className="bg-black/40 border border-blue-500/30 p-4 rounded-xl mb-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end animate-in fade-in slide-in-from-top-2">                            <div className="flex flex-col gap-1 md:col-span-2">
+                        <form onSubmit={submitVisit} className="bg-black/40 border border-blue-500/30 p-4 rounded-xl mb-4 flex flex-col gap-3 items-end animate-in fade-in slide-in-from-top-2">                            
+                            <div className="flex flex-col gap-1 w-full">
                             <label className="text-[10px] font-bold text-gray-400 uppercase">Cliente</label>
                             <select 
                                 value={visitForm.client} 
@@ -584,27 +549,29 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                             </select>
                             </div>
 
-                            <div className="flex flex-col gap-1">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase">Data</label>
-                            <input 
-                                type="date" 
-                                value={visitForm.date} 
-                                onChange={e => setVisitForm({...visitForm, date: e.target.value})}
-                                className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
-                            />
+                            <div className="flex gap-2 w-full">
+                                <div className="flex flex-col gap-1 flex-1">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">Data</label>
+                                <input 
+                                    type="date" 
+                                    value={visitForm.date} 
+                                    onChange={e => setVisitForm({...visitForm, date: e.target.value})}
+                                    className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                                />
+                                </div>
+
+                                <div className="flex flex-col gap-1 flex-1">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">Hora</label>
+                                <input 
+                                    type="time" 
+                                    value={visitForm.time} 
+                                    onChange={e => setVisitForm({...visitForm, time: e.target.value})}
+                                    className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                                />
+                                </div>
                             </div>
 
-                            <div className="flex flex-col gap-1">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase">Hora</label>
-                            <input 
-                                type="time" 
-                                value={visitForm.time} 
-                                onChange={e => setVisitForm({...visitForm, time: e.target.value})}
-                                className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
-                            />
-                            </div>
-
-                            <div className="flex flex-col gap-1 md:col-span-1">
+                            <div className="flex flex-col gap-1 w-full">
                             <label className="text-[10px] font-bold text-gray-400 uppercase">Responsável</label>
                             <select 
                                 value={visitForm.responsavel} 
@@ -618,54 +585,74 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                             </select>
                             </div>
 
-                            <div className="md:col-span-5 flex justify-end mt-2">
-                            <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-5 py-2 rounded-lg shadow-md transition-colors">
+                            <div className="w-full flex justify-end mt-2">
+                            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-5 py-2.5 rounded-lg shadow-md transition-colors">
                                 Confirmar Agendamento
                             </button>
                             </div>
                         </form>
                         )}
 
-                        {/* Oculta o container de visitas caso esteja vazio, a não ser que o form esteja aberto */}
                         {upcomingVisits.length === 0 && !showVisitForm ? null : (
-                        <div className="flex gap-3 overflow-x-auto custom-scrollbar pb-2">
+                        <div className="flex flex-col gap-3 pb-2">
                             {upcomingVisits.length === 0 ? (
-                            <div className="text-xs text-gray-500 italic p-2">Nenhuma visita agendada.</div>
+                            <div className="text-xs text-gray-500 italic p-2 text-center">Nenhuma visita agendada.</div>
                             ) : (
-                            upcomingVisits.map(visit => (
-                                <div key={visit.id} className="min-w-[250px] bg-black/40 p-3 rounded-xl border border-white/5 flex flex-col gap-2 shadow-sm">
-                                <div className="flex justify-between items-start">
-                                    <span className="text-sm font-black text-white">{visit.client}</span>
-                                    <span className="text-[10px] text-blue-300 font-bold bg-blue-900/30 px-2 py-0.5 rounded border border-blue-500/20">
-                                    {visit.date.split('-').reverse().join('/')} às {visit.time}
-                                    </span>
-                                </div>
-                                <div className="text-[10px] text-gray-400 font-medium">
-                                    Responsável: <span className="text-gray-200">{visit.responsavel}</span>
-                                </div>
+                            upcomingVisits.map(visit => {
+                                const now = new Date();
+                                const visitDateTime = new Date(`${visit.date}T${visit.time}:00`);
+                                const diffMs = visitDateTime - now;
+                                const diffHours = diffMs / (1000 * 60 * 60);
+
+                                const isToday = now.toISOString().split('T')[0] === visit.date;
+                                const isWithin3Hours = diffHours > 0 && diffHours <= 3;
+                                const isLate = diffHours <= 0 && isToday;
+
+                                let cardClasses = "bg-black/40 border-white/5";
+                                let badgeClasses = "text-blue-300 bg-blue-900/30 border-blue-500/20";
                                 
-                                {(canCompleteVisits || canDeleteVisits) && (
-                                    <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-white/5">
+                                if (isLate || isWithin3Hours) {
+                                    cardClasses = "bg-red-900/20 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.15)]";
+                                    badgeClasses = "text-red-300 bg-red-900/50 border-red-500/50 animate-pulse";
+                                } else if (isToday) {
+                                    cardClasses = "bg-amber-900/20 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.1)]";
+                                    badgeClasses = "text-amber-300 bg-amber-900/50 border-amber-500/50";
+                                }
+
+                                return (
+                                    <div key={visit.id} className={`w-full p-4 rounded-xl border flex flex-col gap-2 shadow-sm transition-all ${cardClasses}`}>
+                                    <div className="flex justify-between items-start gap-2">
+                                        <span className="text-sm font-black text-white truncate">{visit.client}</span>
+                                        <span className={`text-[9px] font-bold px-2 py-1 rounded border whitespace-nowrap ${badgeClasses}`}>
+                                        {visit.date.split('-').reverse().join('/')} às {visit.time}
+                                        </span>
+                                    </div>
+                                    <div className="text-[10px] text-gray-400 font-medium">
+                                        Responsável: <span className="text-gray-200">{visit.responsavel || 'A Definir'}</span>
+                                    </div>
+                                    
+                                    {(canScheduleVisits || canCompleteVisits || canDeleteVisits) && (
+                                        <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-white/5">
+                                        {canScheduleVisits && (
+                                            <button onClick={() => editVisit(visit)} className="text-[10px] font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors">
+                                            ✎ Editar
+                                            </button>
+                                        )}
                                         {canCompleteVisits && (
-                                            <button 
-                                            onClick={() => handleVisitAction('complete', visit)} 
-                                            className="text-[11px] font-bold text-emerald-500 hover:text-emerald-400 flex items-center gap-1 transition-colors"
-                                            >
+                                            <button onClick={() => handleVisitAction('complete', visit)} className="text-[10px] font-bold text-emerald-500 hover:text-emerald-400 flex items-center gap-1 transition-colors">
                                             ✓ Finalizar
                                             </button>
                                         )}
                                         {canDeleteVisits && (
-                                            <button 
-                                            onClick={() => handleVisitAction('delete', visit)} 
-                                            className="text-[11px] font-bold text-red-500 hover:text-red-400 flex items-center gap-1 transition-colors"
-                                            >
+                                            <button onClick={() => handleVisitAction('delete', visit)} className="text-[10px] font-bold text-red-500 hover:text-red-400 flex items-center gap-1 transition-colors">
                                             ✕ Cancelar
                                             </button>
                                         )}
+                                        </div>
+                                    )}
                                     </div>
-                                )}
-                                </div>
-                            ))
+                                );
+                                })
                             )}
                         </div>
                         )}
@@ -721,7 +708,7 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                                                         {data.timestamp}
                                                     </span>
                                                 </p>
-                                                <p className="text-sm text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
+                                                <p className="text-xs text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
                                             </div>
                                         </div>
                                     );
@@ -735,77 +722,10 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                         )}
                     </div>
 
-                    {/* 2. TIMELINE */}
-                    <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col max-h-[400px]">
-                        
-                        {/* Cabeçalho Reestruturado e Responsivo */}
-                        <div className="flex flex-col gap-4 mb-5 border-b border-gray-700 pb-4 shrink-0">
-                            {/* Linha 1: Título e Botão Limpar */}
-                            <div className="flex justify-between items-center w-full">
-                                <h3 className="text-base font-bold tracking-wide text-gray-300 uppercase flex items-center gap-2">
-                                    <SquareStack size={20}/>
-                                    Timeline <span className="text-xs bg-gray-700 text-gray-300 px-2.5 py-0.5 rounded-full">{visibleLogs.length}</span>
-                                </h3>
-                                
-                                {/* Botão Limpar Estável e com desativação visual correta */}
-                                <button 
-                                    onClick={() => { 
-                                        setFeedClearedAt(Date.now()); 
-                                        localStorage.setItem('avante_feed_cleared_at', Date.now()); 
-                                        toast.success("Mural limpo!"); 
-                                    }} 
-                                    disabled={visibleLogs.length === 0}
-                                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all border shrink-0 ${
-                                        visibleLogs.length > 0
-                                            ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border-red-500/20 hover:border-red-500/40 cursor-pointer'
-                                            : 'bg-gray-800 text-gray-600 border-gray-700 opacity-50 cursor-not-allowed'
-                                    }`}
-                                    title="Limpar Histórico"
-                                >
-                                    Limpar
-                                </button>
-                            </div>
-
-                            {/* Linha 2: Abas Dinâmicas de Filtro */}
-                            <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-700 w-full">
-                                <button onClick={() => setFeedFilter('all')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'all' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Tudo</button>
-                                <button onClick={() => setFeedFilter('tasks')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'tasks' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Tarefas</button>
-                                <button onClick={() => setFeedFilter('mine')} className={`flex-1 px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors ${feedFilter === 'mine' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Minhas</button>
-                            </div>
-                        </div>
-                        
-                        <div className="flex-1 overflow-y-auto pr-3 custom-scrollbar border-l-2 border-gray-700/50 ml-2 pl-5 pb-2">
-                            {/* Interface de Estado Vazio */}
-                            {visibleLogs.length === 0 && (
-                                <div className="flex flex-col items-center justify-center p-6 mt-2 border border-dashed border-gray-700 rounded-xl bg-gray-900/30">
-                                    <SquareStack size={24} className="text-gray-600 mb-2" />
-                                    <p className="text-xs text-gray-500 font-medium text-center">Nenhum registro encontrado nesta visão.</p>
-                                </div>
-                            )}
-
-                            {visibleLogs.map(log => {
-                                const isTask = log.texto?.includes('✅ Tarefa concluída');
-                                return (
-                                    <div key={log.id} onClick={() => handleOpenStore(log.storeName)} className="relative group cursor-pointer mb-4 last:mb-0">
-                                        <div className={`absolute -left-[27px] top-2 w-3 h-3 rounded-full border-[3px] border-gray-800 ${isTask ? 'bg-emerald-500' : 'bg-indigo-500'}`}></div>
-                                        <div className={`p-4 rounded-xl border flex flex-col gap-1.5 transition-colors hover:brightness-125 ${isTask ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-gray-900/50 border-gray-700'}`}>
-                                            <div className="flex justify-between items-start">
-                                                <div className="text-xs font-black text-indigo-400 uppercase truncate pr-2">{log.clientName} <span className="text-gray-500 mx-1.5">•</span> {log.storeName}</div>
-                                                <span className="text-[10px] text-gray-500 font-medium shrink-0">{log.data}</span>
-                                            </div>
-                                            <p className={`text-sm leading-relaxed ${isTask ? 'text-emerald-100 font-medium' : 'text-gray-300'}`}>{log.texto}</p>
-                                            <p className="text-[10px] text-gray-500 mt-1">Por: <span className="text-gray-400 font-bold">{log.author}</span></p>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-
                     {/* 3. RANKING DE EXECUÇÃO */}
                     <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
                         <div className="mb-4 border-b border-gray-700 pb-4">
-                            <h3 className="text-lg font-bold tracking-wide text-amber-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
+                            <h3 className="text-lg font-bold tracking-wide text-blue-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
                         </div>
                         
                         <div className="space-y-3 pr-2">
@@ -845,7 +765,7 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                                         <div className="bg-black/40 rounded-lg px-3 py-2 flex justify-between items-center mt-1">
                                             <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempos Médios</span>
                                             <div className="flex gap-2 text-[10px] font-bold">
-                                                <span className={rank.projectedGmv > 0 ? 'text-emerald-400' : 'text-gray-600'}>🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}</span>
+                                                <span className={rank.avgBaixa > 0 ? 'text-emerald-400' : 'text-gray-600'}>🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}</span>
                                                 <span className={rank.avgMedia > 0 ? 'text-amber-400' : 'text-gray-600'}>🟡 {rank.avgMedia > 0 ? `${rank.avgMedia}m` : '--'}</span>
                                                 <span className={rank.avgAlta > 0 ? 'text-red-400' : 'text-gray-600'}>🔴 {rank.avgAlta > 0 ? `${rank.avgAlta}m` : '--'}</span>
                                             </div>
@@ -855,11 +775,34 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                             })}
                             {rankingDiario.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada hoje.</div>}
                         </div>
+                    </div>
 
-                        <div className="mt-4 pt-4 border-t border-gray-700/50 text-[10px] text-gray-400 text-center leading-relaxed">
-                            <strong>XP Base:</strong> Baixa (+10) • Média (+20) • Alta (+30) | <strong>Criação:</strong> (+2 XP)<br/>
-                            <strong>Prazos:</strong> No prazo (+5) • Atrasada (-10)<br/>
-                            <strong>Agilidade:</strong> Rápida (+5) • Na média (0) • Lenta (-5) comparado ao histórico geral.
+                    {/* 2. RADAR DE PACING */}
+                    <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg overflow-hidden flex flex-col max-h-[400px]">
+                        <h3 className="text-lg font-bold text-amber-400 uppercase tracking-wide flex items-center gap-2 mb-5 shrink-0">
+                            <AlertTriangle size={18} /> Radar de Pacing
+                        </h3>
+                        
+                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                            {pacingLogs.map((log, i) => (
+                            <div key={i} className={`flex flex-col gap-2 p-3 rounded-xl border backdrop-blur-md transition-all ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
+                                <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-lg shrink-0 ${log.type === 'danger' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                    {log.type === 'danger' ? <AlertTriangle size={14} /> : <Clock size={14} />}
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-white text-xs truncate" title={log.client}>{log.client}</h4>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Operando a <strong className={log.type === 'danger' ? 'text-red-400' : 'text-amber-400'}>{log.percentReached.toFixed(1)}%</strong> da meta.</p>
+                                </div>
+                                </div>
+                            </div>
+                            ))}
+                            {pacingLogs.length === 0 && (
+                            <div className="flex flex-col items-center justify-center gap-3 p-6 text-emerald-400 text-sm font-medium text-center h-full bg-gray-900/30 rounded-xl border border-dashed border-gray-700">
+                                <CheckCircle size={28} className="opacity-50" /> 
+                                <span>Tudo verde! Todas as contas no ritmo da meta.</span>
+                            </div>
+                            )}
                         </div>
                     </div>
                 </div>

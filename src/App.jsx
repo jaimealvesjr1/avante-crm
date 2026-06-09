@@ -43,7 +43,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.8';
+  const CURRENT_VERSION = '2.8.2';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -66,13 +66,7 @@ export default function App() {
   const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
   
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
-  const [activeView, setActiveView] = useState(() => {
-    return localStorage.getItem('avante_tela_atual') || 'dashboard';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('avante_tela_atual', activeView);
-  }, [activeView]);
+  const [activeView, setActiveView] = useState('feed_equipe');
 
   const [globalGrowth, setGlobalGrowth] = useState(10);
   const [clientGrowthMap, setClientGrowthMap] = useState({});
@@ -384,10 +378,18 @@ export default function App() {
     const globalRef = doc(db, "settings", "global");
     
     if (action === 'schedule') {
-      const newVisit = { ...payload, id: Date.now().toString() };
-      await setDoc(globalRef, { scheduledVisits: [...scheduledVisits, newVisit] }, { merge: true });
-      toast.success("Visita agendada com sucesso!");
-    } else if (action === 'delete' || action === 'complete') {
+      if (payload.id) {
+        // Se tem ID, é uma edição
+        const updatedVisits = scheduledVisits.map(v => v.id === payload.id ? payload : v);
+        await setDoc(globalRef, { scheduledVisits: updatedVisits }, { merge: true });
+        toast.success("Visita atualizada com sucesso!");
+      } else {
+        // Se não tem ID, é uma visita nova
+        const newVisit = { ...payload, id: Date.now().toString() };
+        await setDoc(globalRef, { scheduledVisits: [...scheduledVisits, newVisit] }, { merge: true });
+        toast.success("Visita agendada com sucesso!");
+      }
+    } else if (action === 'delete' || action === 'complete') { 
       const updatedVisits = scheduledVisits.filter(v => v.id !== payload.id);
       await setDoc(globalRef, { scheduledVisits: updatedVisits }, { merge: true });
       toast.success(action === 'complete' ? "Visita marcada como realizada!" : "Visita cancelada.");
@@ -743,9 +745,76 @@ export default function App() {
     } 
   };
 
+  const handleOffboardClient = async (clientName) => {
+    if (!window.confirm(`🚨 ENCERRAMENTO DE CONTRATO\n\nTem a certeza que deseja encerrar a operação do cliente ${clientName}?\n\nIsso irá gerar um relatório final em PDF e arquivar todas as lojas (removendo-as dos painéis diários, mas mantendo o histórico).`)) return;
+
+    toast.loading(`Gerando relatório final de ${clientName}...`, { id: 'offboard' });
+
+    try {
+      const clientStores = stores.filter(s => s.client === clientName && !s.arquivada);
+      if (clientStores.length === 0) throw new Error("Nenhuma loja ativa encontrada para este cliente.");
+
+      const docPdf = new jsPDF();
+      let totalAllTimeGmv = 0;
+      let totalAllTimeAds = 0;
+      let totalAllTimeOrders = 0;
+
+      clientStores.forEach(s => {
+        totalAllTimeGmv += Number(s.currentRevenue) || 0;
+        totalAllTimeAds += Number(s.adsInvestment) || 0;
+        totalAllTimeOrders += Number(s.orders) || 0;
+        if (s.monthlyHistory) {
+          s.monthlyHistory.forEach(h => {
+            totalAllTimeGmv += Number(h.gmv) || 0;
+            totalAllTimeAds += Number(h.adsInvestment) || 0;
+            totalAllTimeOrders += Number(h.orders) || 0;
+          });
+        }
+      });
+
+      docPdf.setFillColor(15, 23, 42); 
+      docPdf.rect(0, 0, 210, 46, 'F'); 
+      docPdf.setFontSize(22); docPdf.setTextColor(255, 255, 255); 
+      docPdf.text(clientName.toUpperCase(), 14, 22);
+      docPdf.setFontSize(9); docPdf.setTextColor(148, 163, 184); 
+      docPdf.text('TERMO DE ENCERRAMENTO E RESULTADOS GLOBAIS', 14, 29); 
+      docPdf.setTextColor(16, 185, 129);
+      docPdf.text(`Data de Encerramento: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
+
+      docPdf.setFontSize(12); docPdf.setTextColor(75, 85, 99); 
+      docPdf.text('Resumo de Todo o Período Operado:', 14, 60);
+      
+      docPdf.setFontSize(24); docPdf.setTextColor(59, 130, 246); 
+      docPdf.text(formatCurrency(totalAllTimeGmv), 14, 72);
+      
+      docPdf.setFontSize(10); docPdf.setTextColor(107, 114, 128); 
+      docPdf.text(`Pedidos Entregues: ${formatNumber(totalAllTimeOrders)}`, 14, 80);
+      docPdf.text(`Investimento em Ads: ${formatCurrency(totalAllTimeAds)}`, 14, 86);
+      docPdf.text(`ROAS Histórico: ${totalAllTimeAds > 0 ? (totalAllTimeGmv / totalAllTimeAds).toFixed(2) : 0}x`, 14, 92);
+
+      docPdf.save(`Avante_Encerramento_${clientName.replace(/\s+/g, '_')}.pdf`);
+
+      const batch = writeBatch(db);
+      clientStores.forEach(s => {
+        const storeRef = doc(db, 'stores', s.id.toString());
+        batch.update(storeRef, {
+          arquivada: true,
+          dataEncerramento: new Date().toISOString(),
+          statusAtendimento: 'encerrado'
+        });
+      });
+      await batch.commit();
+
+      toast.success(`Cliente ${clientName} encerrado e arquivado com sucesso!`, { id: 'offboard' });
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro no encerramento: " + error.message, { id: 'offboard' });
+    }
+  };
+
   const closeMonth = () => {
-    setCloseMonthValue(''); // Limpa o campo
-    setIsCloseMonthModalOpen(true); // Abre nossa nova interface
+    setCloseMonthValue('');
+    setIsCloseMonthModalOpen(true);
   };
 
   // === 2. EXECUTA O FECHAMENTO APÓS ESCOLHER A DATA ===
@@ -2058,6 +2127,7 @@ export default function App() {
           addNewStoreToClient={addNewStoreToClient}
           handleSaveIndividualEntry={handleSaveIndividualEntry}
           dashboardData={dashboardData}
+          offboardClient={handleOffboardClient}
           />
       )}
 

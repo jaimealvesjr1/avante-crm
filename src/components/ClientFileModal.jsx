@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Flame, Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, TrendingDown, Edit2, Briefcase } from 'lucide-react';
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { Flame, Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, TrendingDown, Edit2, Briefcase, Plus, LogOut, Activity } from 'lucide-react';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ReferenceLine, ComposedChart, Area, Legend } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
 
@@ -68,14 +68,49 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, formatCurrency }) => 
 };
 
 export default function ClientFileModal({ 
-  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, addNewStoreToClient, handleSaveIndividualEntry, dashboardData 
+  clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, 
+  currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, 
+  addNewStoreToClient, handleSaveIndividualEntry, dashboardData, offboardClient 
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
 
+  // Garantir que as stores estão limpas de arquivamento
   const liveStores = useMemo(() => {
     return stores.filter(s => s.client === clientGroup.client && !s.arquivada);
   }, [stores, clientGroup.client]);
+
+  // === CÁLCULO SEGURO E DESVINCULADO DE FILTROS GLOBAIS ===
+  const clientUnfilteredStats = useMemo(() => {
+    let currentRevenue = 0, adsInvestment = 0, orders = 0, units = 0;
+    
+    liveStores.forEach(s => {
+        currentRevenue += Number(s.currentRevenue) || 0;
+        adsInvestment += Number(s.adsInvestment) || 0;
+        orders += Number(s.orders) || 0;
+        units += Number(s.units) || 0;
+    });
+
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const safeCurrentDay = currentDay || now.getDate();
+    const projectedGmv = safeCurrentDay > 0 ? (currentRevenue / safeCurrentDay) * daysInMonth : 0;
+    
+    // Fallback de Meta real para ignorar filtros cortando lojas
+    let totalTarget = 0;
+    if (clientGroup && clientGroup.stores.length === liveStores.length) {
+        totalTarget = clientGroup.totalGmvTarget;
+    } else {
+        liveStores.forEach(s => {
+            if (s.targetType === 'fixed') totalTarget += Number(s.fixedGmvTarget) || 0;
+            else totalTarget += (Number(s.gmvBase) || 0) * 1.1; // fallback para % se o filtro atrapalhar
+        });
+    }
+
+    const roas = adsInvestment > 0 ? (currentRevenue / adsInvestment).toFixed(2) : 0;
+    
+    return { currentRevenue, adsInvestment, orders, units, projectedGmv, totalTarget, roas };
+  }, [liveStores, currentDay, clientGroup]);
 
   const clientEvents = useMemo(() => {
     const events = {};
@@ -120,26 +155,99 @@ export default function ClientFileModal({
   }, [liveStores, mesPassadoExato]);
 
   const momGrowth = lastMonthTotalGmv > 0 
-    ? ((clientGroup.totalProjectedGmv - lastMonthTotalGmv) / lastMonthTotalGmv) * 100 
+    ? ((clientUnfilteredStats.projectedGmv - lastMonthTotalGmv) / lastMonthTotalGmv) * 100 
     : 0;
 
   const shareEvolucao = useMemo(() => {
-      // 1. Share Atual (Mês em andamento até hoje)
-      const faturamentoGlobalAtual = dashboardData?.totalCurrentRevenue || 1; // Evita divisão por zero
-      const faturamentoClienteAtual = clientGroup.totalCurrentRevenue || 0;
+      const faturamentoGlobalAtual = dashboardData?.totalCurrentRevenue || 1; 
+      const faturamentoClienteAtual = clientUnfilteredStats.currentRevenue || 0;
       const currentShare = (faturamentoClienteAtual / faturamentoGlobalAtual) * 100;
 
-      // 2. Share do Mês Passado (Fechado)
       const pastGlobalData = dashboardData?.historicalChartData?.find(h => h.month === mesPassadoExato);
       const faturamentoGlobalPassado = pastGlobalData ? (pastGlobalData.ReceitaGlobal || 1) : 1;
       const faturamentoClientePassado = lastMonthTotalGmv || 0;
       const pastShare = faturamentoGlobalPassado > 1 ? (faturamentoClientePassado / faturamentoGlobalPassado) * 100 : 0;
       
-      // 3. Evolução (Diferença em pontos percentuais)
       const evolution = currentShare - pastShare;
 
       return { currentShare, pastShare, evolution };
-  }, [dashboardData, clientGroup, lastMonthTotalGmv, mesPassadoExato]);
+  }, [dashboardData, clientUnfilteredStats, lastMonthTotalGmv, mesPassadoExato]);
+
+  const consolidatedHistory = useMemo(() => {
+    const historyMap = {};
+    liveStores.forEach(store => {
+      (store.monthlyHistory || []).forEach(h => {
+        if (!historyMap[h.month]) {
+          historyMap[h.month] = { month: h.month, gmv: 0, ads: 0, orders: 0, units: 0, agencyRevenue: 0 };
+        }
+        historyMap[h.month].gmv += Number(h.gmv) || 0;
+        historyMap[h.month].ads += Number(h.adsInvestment) || 0;
+        historyMap[h.month].orders += Number(h.orders) || 0;
+        historyMap[h.month].units += Number(h.units) || 0;
+        historyMap[h.month].agencyRevenue += Number(h.agencyRevenue) || 0;
+      });
+    });
+
+    const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    
+    return Object.values(historyMap).sort((a, b) => {
+      const [mA, yA] = a.month.split('/');
+      const [mB, yB] = b.month.split('/');
+      return (parseInt(yB, 10) * 100 + monthsOrder.indexOf(mB)) - (parseInt(yA, 10) * 100 + monthsOrder.indexOf(mA));
+    });
+  }, [liveStores]);
+
+  // === DADOS DOS GRÁFICOS (Baseados nas Unfiltered Stats) ===
+  const clientDailyMetrics = useMemo(() => {
+    const days = Array.from({ length: currentDay }, (_, i) => ({ day: i + 1, gmv: 0, isEvent: false }));
+
+    liveStores.forEach(s => {
+      if (s.history) {
+        s.history.forEach(h => {
+          const d = days.find(x => x.day === h.day);
+          if (d) d.gmv += (Number(h.dailyRevenue) || 0);
+        });
+      }
+    });
+
+    const totalGmv = days.reduce((acc, d) => acc + d.gmv, 0);
+    const avgGmv = currentDay > 0 ? totalGmv / currentDay : 0;
+    
+    days.forEach(d => {
+      if (d.gmv > avgGmv * 1.5) d.isEvent = true;
+    });
+
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const dailyTargetAvg = daysInMonth > 0 ? (clientUnfilteredStats.totalTarget || 0) / daysInMonth : 0;
+
+    return { days, avgGmv, dailyTargetAvg };
+  }, [liveStores, currentDay, clientUnfilteredStats.totalTarget]);
+
+  const clientHistoricalChartData = useMemo(() => {
+    if (!consolidatedHistory || consolidatedHistory.length === 0) return [];
+    
+    const pastData = [...consolidatedHistory].reverse().map(h => ({
+        month: h.month,
+        Faturamento: h.gmv,
+        Projecao: null,
+        Meta: null
+    }));
+
+    pastData.push({
+        month: 'Atual',
+        Faturamento: clientUnfilteredStats.currentRevenue,
+        Projecao: clientUnfilteredStats.projectedGmv,
+        Meta: clientUnfilteredStats.totalTarget
+    });
+
+    if (pastData.length > 1) {
+        pastData[pastData.length - 2].Projecao = pastData[pastData.length - 2].Faturamento;
+        pastData[pastData.length - 2].Meta = pastData[pastData.length - 2].Faturamento;
+    }
+
+    return pastData;
+  }, [consolidatedHistory, clientUnfilteredStats]);
 
   const [isEditingContract, setIsEditingContract] = useState(false);
   const [contractForm, setContractForm] = useState({
@@ -168,7 +276,6 @@ export default function ClientFileModal({
     toast.success("Contrato da agência atualizado com sucesso!");
   };
 
-  // 4. RESTANTE DAS CONFIGURAÇÕES (Tarefas, Gráficos, etc)
   const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
   const handleBulkTaskSave = (selectedStoreIds, taskData) => {
@@ -202,9 +309,7 @@ export default function ClientFileModal({
   };
 
   const clientOpenTasks = useMemo(() => {
-    if (!clientGroup || !clientGroup.stores) return [];
     const open = [];
-    
     liveStores.forEach(store => {
       if (store.checklists) {
         store.checklists.forEach(task => {
@@ -219,7 +324,7 @@ export default function ClientFileModal({
       const dateB = new Date(`${b.data || '2099-01-01'}T${b.hora || '00:00'}`);
       return dateA - dateB;
     });
-  }, [clientGroup, liveStores]);
+  }, [liveStores]);
 
   const handleToggleTask = (storeId, taskId) => {
     const store = stores.find(s => s.id === storeId);
@@ -274,12 +379,13 @@ export default function ClientFileModal({
   }, [liveStores]);
 
   const glassTooltipStyle = {
-    backgroundColor: 'rgba(11, 15, 25, 0.9)',
+    backgroundColor: 'rgba(11, 15, 25, 0.95)',
     backdropFilter: 'blur(12px)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
     borderRadius: '12px',
     color: '#fff',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+    fontSize: '12px'
   };
 
   const potentialMarketplaces = useMemo(() => {
@@ -318,47 +424,13 @@ export default function ClientFileModal({
     })).sort((a, b) => b.roas - a.roas)
   , [liveStores]);
 
-  const consolidatedHistory = useMemo(() => {
-    if (!clientGroup || !clientGroup.stores) return [];
-    
-    const historyMap = {};
-    
-    clientGroup.stores.forEach(store => {
-      (store.monthlyHistory || []).forEach(h => {
-        if (!historyMap[h.month]) {
-          historyMap[h.month] = { 
-            month: h.month, 
-            gmv: 0, 
-            ads: 0, 
-            orders: 0, 
-            units: 0, 
-            agencyRevenue: 0 
-          };
-        }
-        historyMap[h.month].gmv += Number(h.gmv) || 0;
-        historyMap[h.month].ads += Number(h.adsInvestment) || 0;
-        historyMap[h.month].orders += Number(h.orders) || 0;
-        historyMap[h.month].units += Number(h.units) || 0;
-        historyMap[h.month].agencyRevenue += Number(h.agencyRevenue) || 0;
-      });
-    });
-
-    const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-    
-    return Object.values(historyMap).sort((a, b) => {
-      const [mA, yA] = a.month.split('/');
-      const [mB, yB] = b.month.split('/');
-      return (parseInt(yB, 10) * 100 + monthsOrder.indexOf(mB)) - (parseInt(yA, 10) * 100 + monthsOrder.indexOf(mA));
-    });
-  }, [clientGroup]);
-
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
       <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col relative">
         
         {/* CABEÇALHO DO MODAL */}
         <div className="p-6 border-b border-white/10 bg-black/20 flex flex-col gap-5 shrink-0">
-          <div className="flex justify-between items-start">           
+          <div className="flex justify-between items-start">          
             <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl shadow-inner shrink-0">
@@ -368,7 +440,7 @@ export default function ClientFileModal({
                     <h2 className="text-2xl font-bold text-white uppercase tracking-wide">{clientGroup.client}</h2>
                     
                     {isEditingContract ? (
-                      <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-lg border border-indigo-500/30 animate-in fade-in">
+                      <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-lg border border-indigo-500/30 animate-in fade-in flex-wrap">
                         <select 
                           value={contractForm.feeType} 
                           onChange={e => setContractForm({...contractForm, feeType: e.target.value})}
@@ -392,6 +464,21 @@ export default function ClientFileModal({
                         </button>
                         <button onClick={() => setIsEditingContract(false)} className="bg-gray-700 hover:bg-gray-600 text-white p-1.5 rounded transition-colors" title="Cancelar">
                           <X size={14} />
+                        </button>
+
+                        <div className="w-px h-5 bg-white/20 mx-1"></div>
+
+                        <button 
+                          onClick={() => addNewStoreToClient(clientGroup.client)} 
+                          className="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 px-3 py-1.5 rounded transition-colors text-[10px] uppercase font-bold flex items-center gap-1.5"
+                        >
+                          <Plus size={14} /> Nova Loja
+                        </button>
+                        <button 
+                          onClick={() => { setIsEditingContract(false); if(offboardClient) { offboardClient(clientGroup.client); onClose(); } }} 
+                          className="bg-red-500/20 hover:bg-red-500/30 text-red-400 px-3 py-1.5 rounded transition-colors text-[10px] uppercase font-bold flex items-center gap-1.5"
+                        >
+                          <LogOut size={14} /> Encerrar Contrato
                         </button>
                       </div>
                     ) : (
@@ -442,6 +529,29 @@ export default function ClientFileModal({
           {/* ABA 1: DASHBOARD E RADAR */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-in fade-in">
+
+              {/* BLOCO DE EVENTOS DA WAR ROOM */}
+              {clientEvents.length > 0 && (
+                  <div className="bg-gradient-to-r from-orange-600/10 to-black/20 rounded-2xl p-5 border border-orange-500/20 shadow-sm">
+                      <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Flame size={14}/> Eventos do Mês Ativos</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                          {clientEvents.map((ev, i) => (
+                              <div key={i} className="bg-white/[0.03] border border-white/5 rounded-xl p-4 shadow-sm hover:border-orange-500/30 transition-colors">
+                                  <h4 className="font-bold text-white mb-2 text-sm">{ev.name}</h4>
+                                  <div className="flex justify-between text-xs mb-1">
+                                      <span className="text-gray-400">GMV Gerado:</span>
+                                      <span className="font-bold text-emerald-400">{formatCurrency(ev.gmv)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                      <span className="text-gray-400">Volume:</span>
+                                      <span className="font-bold text-gray-300">{ev.orders} ped ({ev.units} un)</span>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
+
               <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Target size={14}/> Radar de Expansão (Marketplaces)</h3>
                 <div className="flex flex-wrap gap-2">
@@ -463,27 +573,7 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              {clientEvents.length > 0 && (
-                <div className="bg-gradient-to-r from-orange-600/10 to-black/20 rounded-2xl p-5 border border-orange-500/20 shadow-sm">
-                    <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Flame size={14}/> Eventos do Mês Ativos</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {clientEvents.map((ev, i) => (
-                            <div key={i} className="bg-white/[0.03] border border-white/5 rounded-xl p-4 shadow-sm hover:border-orange-500/30 transition-colors">
-                                <h4 className="font-bold text-white mb-2 text-sm">{ev.name}</h4>
-                                <div className="flex justify-between text-xs mb-1">
-                                    <span className="text-gray-400">GMV Gerado:</span>
-                                    <span className="font-bold text-emerald-400">{formatCurrency(ev.gmv)}</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-gray-400">Volume:</span>
-                                    <span className="font-bold text-gray-300">{ev.orders} ped ({ev.units} un)</span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-              )}
-
+              {/* Grid de Cartões de Resumo */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
                 
                 {/* CARTÃO: FATURAMENTO HISTÓRICO + FATURAMENTO DO GRUPO */}
@@ -501,8 +591,8 @@ export default function ClientFileModal({
                     
                     <div className="flex-1 w-full sm:pl-2">
                       <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Neste mês</span>
-                      <p className="text-2xl font-bold text-blue-400 mt-1">{formatCurrency(clientGroup.totalCurrentRevenue)}</p>
-                      <p className="text-xs text-gray-400 mt-1">Meta Global: {formatCurrency(clientGroup.totalGmvTarget)}</p>
+                      <p className="text-2xl font-bold text-blue-400 mt-1">{formatCurrency(clientUnfilteredStats.currentRevenue)}</p>
+                      <p className="text-xs text-gray-400 mt-1">Meta Global: {formatCurrency(clientUnfilteredStats.totalTarget)}</p>
                     </div>
 
                   </div>
@@ -521,15 +611,15 @@ export default function ClientFileModal({
 
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Investimento Ads & Eficiência</span>
-                  <p className="text-2xl font-bold text-amber-500 mt-1">{formatCurrency(clientGroup.totalAds)}</p>
+                  <p className="text-2xl font-bold text-amber-500 mt-1">{formatCurrency(clientUnfilteredStats.adsInvestment)}</p>
                   
                   <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/10">
                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">
-                        ROAS: <span className="text-white text-xs">{clientGroup.roas} x</span>
+                        ROAS: <span className="text-white text-xs">{clientUnfilteredStats.roas} x</span>
                      </p>
                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">
                         CPA: <span className="text-rose-400 text-xs">
-                          {formatCurrency(clientGroup.totalUnits > 0 ? clientGroup.totalAds / clientGroup.totalUnits : 0)}
+                          {formatCurrency(clientUnfilteredStats.units > 0 ? clientUnfilteredStats.adsInvestment / clientUnfilteredStats.units : 0)}
                         </span>
                      </p>
                   </div>
@@ -560,33 +650,19 @@ export default function ClientFileModal({
                 </div>
 
               </div>
+
+              {/* GRÁFICOS: LINHA 2 (Eficiência Ads, Share por Loja, Faturamento Canal) */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
-                  <h3 className="text-sm font-bold text-white mb-4">Participação por Loja (Share)</h3>
-                  <div className="h-64">
-                    {pieData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={250}>
-                        <PieChart>
-                          <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
-                            {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                          </Pie>
-                          <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} formatter={(value) => formatCurrency(value)} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    ) : <p className="text-gray-500 text-center mt-20 text-sm">Sem faturamento registrado.</p>}
-                  </div>
-                </div>
-
-                <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
-                  <h3 className="text-sm font-bold text-white mb-4">Eficiência de Ads (ROAS por Loja)</h3>
+                  <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Zap size={16} className="text-amber-400" /> Eficiência de Ads (ROAS)</h3>
                   <div className="h-64">
                     {roasData.filter(d => d.roas > 0).length > 0 ? (
-                      <ResponsiveContainer width="100%" height={250}>
+                      <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={roasData} layout="vertical" margin={{ left: 10 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
                           <XAxis type="number" hide />
                           <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={10} width={80} axisLine={false} tickLine={false} />
-                          <Tooltip cursor={{ fill: 'rgba(255,255,255,0.01)' }} contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }} formatter={(value) => `${value}x`} />
+                          <Tooltip cursor={{ fill: 'rgba(255,255,255,0.01)' }} contentStyle={glassTooltipStyle} formatter={(value) => `${value}x`} />
                           <Bar dataKey="roas" fill="#F59E0B" radius={[0, 4, 4, 0]} barSize={16} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -595,14 +671,30 @@ export default function ClientFileModal({
                 </div>
 
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
-                  <h3 className="text-sm font-bold text-white mb-4">Market Share (Canais)</h3>
+                  <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><PieChartIcon size={16} className="text-indigo-400" /> Share por Loja</h3>
                   <div className="h-64">
+                    {pieData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
+                            {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip contentStyle={glassTooltipStyle} formatter={(value) => formatCurrency(value)} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : <p className="text-gray-500 text-center mt-20 text-sm">Sem faturamento registrado.</p>}
+                  </div>
+                </div>
+
+                <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
+                  <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Target size={16} className="text-rose-400"/> Faturamento por Canal</h3>
+                  <div className="h-64 w-full">
                     {clientMktData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={250}>
+                      <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={clientMktData} layout="vertical" margin={{ left: 0, right: 15, top: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} vertical={true} />
                           <XAxis type="number" hide />
-                          <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={10} width={80} axisLine={false} tickLine={false} />
+                          <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={10} width={100} axisLine={false} tickLine={false} />
                           <Tooltip contentStyle={glassTooltipStyle} itemStyle={{ color: '#fff', fontWeight: 'bold' }} formatter={(value) => formatCurrency(value)} />
                           <Bar dataKey="revenue" radius={[0, 4, 4, 0]} barSize={16}>
                             {clientMktData.map((entry, index) => (
@@ -612,11 +704,100 @@ export default function ClientFileModal({
                         </BarChart>
                       </ResponsiveContainer>
                     ) : (
-                      <p className="text-gray-500 text-center mt-20 text-sm">Sem faturamento registrado.</p>
+                      <p className="text-gray-500 text-center mt-10 text-sm">Sem faturamento registrado.</p>
                     )}
                   </div>
                 </div>
               </div>
+
+              {/* GRÁFICOS: LINHA 3 (Tração Diária + Evolução Histórica) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                <div className="bg-white/[0.02] backdrop-blur-xl p-5 rounded-2xl border border-white/5 shadow-sm flex flex-col">
+                  <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
+                    <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+                      <Activity size={16} className="text-blue-400" /> Tração do Faturamento Diário
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-bold text-emerald-400/80 border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 rounded">
+                        Ideal: {formatCurrency(clientDailyMetrics.dailyTargetAvg)}
+                      </span>
+                      <span className="text-[12px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">
+                        Real: {formatCurrency(clientDailyMetrics.avgGmv)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="h-[200px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={clientDailyMetrics.days} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis dataKey="day" stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
+                        <Tooltip 
+                          cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }} 
+                          contentStyle={glassTooltipStyle} 
+                          formatter={(value, name, props) => {
+                            const isAboveAvg = value > clientDailyMetrics.avgGmv;
+                            const label = props.payload.isEvent ? '🔥 Pico Sazonal' : (isAboveAvg ? '📈 Acima da Média' : '📉 Faturamento');
+                            return [formatCurrency(value), label];
+                          }}
+                          labelFormatter={(label) => `Dia ${label}`}
+                        />
+                        <Line type="monotone" dataKey="gmv" stroke="#3B82F6" strokeWidth={3} 
+                          dot={(props) => {
+                            const { cx, cy, payload } = props;
+                            const isAboveAvg = payload.gmv > clientDailyMetrics.avgGmv;
+                            if (payload.isEvent) return <circle cx={cx} cy={cy} r={5} fill="#F97316" stroke="#fff" strokeWidth={1} />;
+                            if (isAboveAvg) return <circle cx={cx} cy={cy} r={3} fill="#10B981" stroke="none" />;
+                            return <circle cx={cx} cy={cy} r={3} fill="#6B7280" stroke="none" />;
+                          }} 
+                          activeDot={{ r: 7, fill: '#60A5FA', stroke: '#fff', strokeWidth: 2 }} 
+                        />
+                        {clientDailyMetrics.avgGmv > 0 && (
+                          <ReferenceLine y={clientDailyMetrics.avgGmv} stroke="#F59E0B" strokeDasharray="3 3" opacity={0.4} label={{ position: 'insideTopLeft', value: 'Real', fill: '#F59E0B', fontSize: 9 }} />
+                        )}
+                        {clientDailyMetrics.dailyTargetAvg > 0 && (
+                          <ReferenceLine y={clientDailyMetrics.dailyTargetAvg} stroke="#10B981" strokeDasharray="3 3" opacity={0.4} label={{ position: 'insideBottomLeft', value: 'Meta', fill: '#10B981', fontSize: 9 }} />
+                        )}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm flex flex-col">
+                  <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-4 shrink-0">
+                    <TrendingUp size={16} className="text-blue-400"/>
+                    <h3 className="text-sm font-bold text-white tracking-wide">Evolução Histórica do Cliente</h3>
+                  </div>
+                  <div className="flex-1 w-full relative h-[300px]">
+                    {clientHistoricalChartData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={clientHistoricalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="colorFaturamento" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <XAxis dataKey="month" stroke="#6B7280" fontSize={10} tickLine={false} axisLine={false} />
+                          <YAxis stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                          <Tooltip 
+                            contentStyle={glassTooltipStyle}
+                            formatter={(value, name) => [formatCurrency(value), name]}
+                          />
+                          <Area type="monotone" dataKey="Faturamento" stroke="#3B82F6" strokeWidth={2} fillOpacity={1} fill="url(#colorFaturamento)" />
+                          <Line type="monotone" dataKey="Projecao" name="Projeção Atual" stroke="#F59E0B" strokeDasharray="4 4" strokeWidth={2} dot={{r:3}} connectNulls />
+                          <Line type="monotone" dataKey="Meta" name="Meta do Mês" stroke="#10B981" strokeDasharray="4 4" strokeWidth={2} dot={{r:3}} connectNulls />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-500 text-xs">Sem dados históricos.</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
             </div>
           )}
 

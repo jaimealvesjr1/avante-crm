@@ -1,7 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { X, Target, Save, TrendingUp, ShoppingBag, Briefcase, Globe, ArrowRight, CalendarDays, Play, Trash2, Flame } from 'lucide-react';
+import { X, Target, Save, TrendingUp, ShoppingBag, Briefcase, Globe, ArrowRight, CalendarDays, Play, Trash2, Flame, Download } from 'lucide-react';
 import { doc, writeBatch, deleteField } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
+import { formatCurrency, formatNumber } from '../utils/financeUtils';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function GoalsSettingsModal({ 
   isOpen, onClose, stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, 
@@ -17,7 +20,7 @@ export default function GoalsSettingsModal({
   const [localMktMap, setLocalMktMap] = useState({ ...(marketplaceGrowthMap || {}) });
   const [localStoreMap, setLocalStoreMap] = useState({});
 
-  const [eventForm, setEventForm] = useState({ name: '', target: '', date: '', channels: [] }); // NOVO
+  const [eventForm, setEventForm] = useState({ name: '', target: '', date: '', channels: [] });
   const getLocalStoreData = (store) => {
     if (localStoreMap[store.id]) return localStoreMap[store.id];
     return {
@@ -85,6 +88,95 @@ export default function GoalsSettingsModal({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const pastEventsStats = useMemo(() => {
+    const events = {};
+    stores.forEach(s => {
+      if (s.eventLogs) {
+        Object.entries(s.eventLogs).forEach(([eName, data]) => {
+          if (activeEvent && activeEvent.name === eName) return; 
+
+          if (!events[eName]) events[eName] = { name: eName, gmv: 0, ads: 0, orders: 0, units: 0 };
+          events[eName].gmv += Number(data.gmv) || 0;
+          events[eName].ads += Number(data.ads) || 0;
+          events[eName].orders += Number(data.orders) || 0;
+          events[eName].units += Number(data.units) || 0;
+        });
+      }
+    });
+    return Object.values(events).sort((a, b) => b.gmv - a.gmv);
+  }, [stores, activeEvent]);
+
+  const exportPastEventReport = async (eventName) => {
+      toast.loading(`Gerando relatório de ${eventName}...`, { id: 'past-event-export' });
+      try {
+          const docPdf = new jsPDF();
+          const clientsGroup = {};
+          
+          stores.forEach(store => {
+              if (store.eventLogs && store.eventLogs[eventName]) {
+                  const cName = store.client || 'Sem Cliente';
+                  if (!clientsGroup[cName]) clientsGroup[cName] = [];
+                  clientsGroup[cName].push(store);
+              }
+          });
+
+          const clientNames = Object.keys(clientsGroup).sort();
+          if (clientNames.length === 0) throw new Error("Nenhum dado encontrado para este evento.");
+
+          clientNames.forEach((clientName, index) => {
+              if (index > 0) docPdf.addPage();
+              
+              const clientStores = clientsGroup[clientName].sort((a, b) => {
+                  return (Number(b.eventLogs[eventName].gmv) || 0) - (Number(a.eventLogs[eventName].gmv) || 0);
+              });
+
+              let totalGmv = 0, totalOrders = 0, totalUnits = 0;
+              const storeRows = [];
+
+              clientStores.forEach((s, idx) => {
+                  const ev = s.eventLogs[eventName];
+                  const gmv = Number(ev.gmv) || 0;
+                  const orders = Number(ev.orders) || 0;
+                  const units = Number(ev.units) || 0;
+
+                  totalGmv += gmv; totalOrders += orders; totalUnits += units;
+
+                  storeRows.push([
+                      `${idx + 1}º`, s.marketplace || '-', s.store || '-', formatCurrency(gmv), `${orders}`, `${units}`
+                  ]);
+              });
+
+              docPdf.setFillColor(15, 23, 42); 
+              docPdf.rect(0, 0, 210, 46, 'F'); 
+              docPdf.setFontSize(22); docPdf.setTextColor(255, 255, 255); 
+              docPdf.text(clientName.toUpperCase(), 14, 22);
+              docPdf.setFontSize(9); docPdf.setTextColor(148, 163, 184); 
+              docPdf.text('RELATÓRIO DE DESEMPENHO - EVENTO ENCERRADO', 14, 29); 
+              docPdf.setTextColor(250, 204, 21);
+              docPdf.text(`Campanha: ${eventName}`, 14, 35);
+
+              docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); 
+              docPdf.text('Faturamento do Evento:', 14, 58);
+              docPdf.setFontSize(22); docPdf.setTextColor(234, 88, 12); 
+              docPdf.text(formatCurrency(totalGmv), 14, 68);
+
+              autoTable(docPdf, {
+                  startY: 78,
+                  head: [['Rk', 'Canal', 'Loja', 'Faturamento', 'Pedidos', 'Unidades']],
+                  body: storeRows, theme: 'grid',
+                  headStyles: { fillColor: [234, 88, 12], textColor: [255, 255, 255], fontStyle: 'bold' },
+                  styles: { fontSize: 8, cellPadding: 4 },
+                  alternateRowStyles: { fillColor: [255, 247, 237] }
+              });
+          });
+          
+          docPdf.save(`B2X_Evento_Fechado_${eventName.replace(/[^a-z0-9]/gi, '_')}.pdf`);
+          toast.success("Relatório Sazonal gerado e baixado!", { id: 'past-event-export' });
+      } catch (error) {
+          toast.error("Erro ao gerar PDF: " + error.message, { id: 'past-event-export' });
+      }
   };
 
   const clients = useMemo(() => [...new Set(stores.map(s => s.client))].filter(Boolean).sort(), [stores]);
@@ -266,7 +358,7 @@ export default function GoalsSettingsModal({
                           )}
                         </div>
 
-                        <div className="flex items-center gap-4 text-sm w-full xl:w-auto xl:justify-end xl:w-[350px]">
+                        <div className="flex items-center gap-4 text-sm w-full xl:w-auto xl:justify-end">
                           <div className="text-right flex-1 xl:flex-none">
                             <p className="text-[9px] text-gray-500 uppercase font-bold">Atual {currentSim.rule === 'Meta Fixa' ? '(Fixo)' : `(${currentSim.rate}%)`}</p>
                             <p className="text-gray-400 font-medium">{formatCurrency(currentSim.target)}</p>
@@ -335,6 +427,51 @@ export default function GoalsSettingsModal({
                   </button>
                 </div>
 
+                <div className="bg-white/[0.02] p-6 rounded-3xl border border-white/5 shadow-sm mt-8">
+                  <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-3">
+                    <div className="p-2.5 bg-orange-500/10 rounded-xl border border-orange-500/20"><Flame size={20} className="text-orange-400"/></div>
+                    Histórico de Sazonalidades (Eventos Encerrados)
+                  </h3>
+                  
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-black/40 text-gray-400 text-[10px] uppercase tracking-wider">
+                        <tr>
+                          <th className="p-4 pl-6">Nome do Evento</th>
+                          <th className="p-4 text-emerald-400">GMV Consolidado</th>
+                          <th className="p-4 text-amber-400">Pedidos Entregues</th>
+                          <th className="p-4 text-purple-400">Volume Físico</th>
+                          <th className="p-4 text-right pr-6">Documentação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {pastEventsStats.map((ev, i) => (
+                          <tr key={i} className="hover:bg-white/[0.02] transition-colors text-sm">
+                            <td className="p-4 pl-6 font-bold text-white">{ev.name}</td>
+                            <td className="p-4 font-black text-emerald-400">{formatCurrency(ev.gmv)}</td>
+                            <td className="p-4 text-gray-300 font-bold">{formatNumber(ev.orders)} <span className="text-[10px] text-gray-500 font-normal">pedidos</span></td>
+                            <td className="p-4 text-gray-300 font-bold">{formatNumber(ev.units)} <span className="text-[10px] text-gray-500 font-normal">unidades</span></td>
+                            <td className="p-4 text-right pr-6">
+                              <button 
+                                onClick={() => exportPastEventReport(ev.name)} 
+                                className="bg-white/5 hover:bg-white/10 text-gray-300 px-4 py-2 rounded-lg text-xs font-bold transition-colors border border-white/10 inline-flex items-center gap-2"
+                              >
+                                <Download size={14} /> Relatório Final
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {pastEventsStats.length === 0 && (
+                          <tr>
+                            <td colSpan="5" className="p-8 text-center text-gray-500 text-sm">
+                              Nenhum evento encerrado encontrado no histórico das lojas.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
                 <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl shadow-sm">
                   <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Eventos Agendados</h4>
                   <div className="space-y-3">
