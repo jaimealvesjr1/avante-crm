@@ -1,40 +1,44 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, DollarSign, Target, Activity, MessageCircle, Search,
-  Download, Upload, Save, Plus, X, Trash2, PieChart as PieChartIcon, Zap, ArchiveRestore, CalendarDays,
-  Eraser, BarChart2, LogOut, Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, Check, Bell, Eye, EyeOff, Flame } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
-  ResponsiveContainer, ReferenceLine, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import React, { useState, useMemo, useEffect, useRef, Suspense, lazy } from 'react';
+import { 
+  Search, Download, ArchiveRestore, CalendarDays, Eraser, LogOut,
+  Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, 
+  Eye, EyeOff, Flame, Activity, PieChart as PieChartIcon, 
+  TrendingUp, DollarSign, Target, MessageCircle, Upload, Save, Plus, X, Trash2, Zap
+} from 'lucide-react';
+
 import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, writeBatch, deleteField } from "firebase/firestore";
 import { Toaster, toast } from 'react-hot-toast';
-import ClientFileModal from './components/ClientFileModal';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
-import ActionModal from './components/ActionModal';
-import ExecutiveDashboard from './components/ExecutiveDashboard';
+import ClientFileModal from './components/ClientFileModal';
 import AuthScreen from './components/AuthScreen';
-import AdminPanel from './components/AdminPanel';
-import OperationalTable from './components/OperationalTable';
+
+const ExecutiveDashboard = lazy(() => import('./components/ExecutiveDashboard'));
+const OperationalTable = lazy(() => import('./components/OperationalTable'));
+const FinanceDashboard = lazy(() => import('./components/FinanceDashboard'));
+const WarRoom = lazy(() => import('./components/WarRoom'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
+
 import BatchEntry from './components/BatchEntry';
 import TaskView from './components/TaskView';
 import TaskModal from './components/TaskModal';
 import CreateStoreModal from './components/CreateStoreModal';
 import BulkTaskModal from './components/BulkTaskModal';
-import { useAvanteData } from './hooks/useAvanteData';
 import TeamFeedView from './components/TeamFeedView';
 import ExportModal from './components/ExportModal';
-import FinanceDashboard from './components/FinanceDashboard';
-import { normalizeMonthYear } from './utils/dateUtils';
-import { formatCurrency, formatNumber } from './utils/financeUtils';
 import GoalsSettingsModal from './components/GoalsSettingsModal';
-import WarRoom from './components/WarRoom';
-import { generateMonthlyReportPDF } from './utils/pdfGenerator';
-import { enrichStoreMetrics } from './utils/calculations';
+import ErrorBoundary from './components/ErrorBoundary';
 import CloseMonthModal from './components/CloseMonthModal';
 import StoreHistoryModal from './components/StoreHistoryModal';
+
+import { useAvanteData } from './hooks/useAvanteData';
+import { normalizeMonthYear } from './utils/dateUtils';
+import { formatCurrency, formatNumber } from './utils/financeUtils';
+import { generateMonthlyReportPDF } from './utils/pdfGenerator';
+import { enrichStoreMetrics } from './utils/calculations';
 
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
@@ -118,6 +122,27 @@ export default function App() {
     };
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setClientFileOpen(false);
+        setCreateModalOpen(false);
+        setTaskModalOpen(false);
+        setBulkTaskModalOpen(false);
+        setHistoryModalOpen(false);
+        setIsCloseMonthModalOpen(false);
+        setIsExportModalOpen(false);
+        setIsGoalsModalOpen(false);
+        setPasswordModalOpen(false);
+        setIsBatchMode(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const [expandedClients, setExpandedClients] = useState([]);
@@ -970,138 +995,71 @@ export default function App() {
   const generateReports = async (targetStores, monthInput, formats = { pdf: true, excel: true }) => {
     const targetMonth = monthInput.toUpperCase();
     
-    const today = new Date();
-    const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-    const systemCurrentMonth = `${meses[today.getMonth()]}/${String(today.getFullYear()).slice(-2)}`;
-
-    const isPastMonth = targetStores.some(s => (s.monthlyHistory || []).some(h => h.month === targetMonth));
-    
-    let periodoApurado = '';
-    if (isPastMonth) {
-        periodoApurado = `Mês Fechado: ${targetMonth}`;
-    } else if (targetMonth !== systemCurrentMonth) {
-        periodoApurado = `Período Consolidado: ${targetMonth}`;
-    } else {
-        periodoApurado = `Parcial: 1 a ${currentDay} de ${targetMonth}`;
-    }
-
-    const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    
-    // Passo 1: Alteração da Logo
-    const loadLogo = () => new Promise((resolve) => {
-        const img = new Image();
-        img.src = '/logo b2x.jpg'; 
-        img.onload = () => resolve(img);
-        img.onerror = () => resolve(null);
+    const dataGeracao = new Date().toLocaleDateString('pt-BR', { 
+      day: '2-digit', month: '2-digit', year: 'numeric', 
+      hour: '2-digit', minute: '2-digit' 
     });
+
+    // Determina o texto do período apurado
+    let periodoApurado = `Período: ${targetMonth}`;
+
+    // Agrupa as lojas para que cada cliente tenha seu próprio relatório
+    const clientsGroup = {};
     
-    const logoImg = await loadLogo();
+    // Função auxiliar para garantir que os números não venham como texto
+    const parseSafeNumber = (val) => typeof val === 'number' ? val : (Number(String(val || 0).trim().replace(/\./g, '').replace(',', '.')) || 0);
 
-    try {
-      const parseSafeNumber = (val) => {
-        if (typeof val === 'number') return val;
-        return Number(String(val || 0).trim().replace(/\./g, '').replace(',', '.')) || 0;
-      };
-      const formatMoney = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
-      const formatPercent = (val) => (val > 0 ? '+' : '') + (val * 100).toFixed(2) + '%';
-      const formatRoas = (val) => val > 0 ? val.toFixed(2) + 'x' : '-';
-
-      const clientsGroup = {};
+    // Varre todas as lojas e organiza dentro do objeto clientsGroup
+    targetStores.forEach(store => {
+      const cName = store.client || 'Sem Cliente';
+      if (!clientsGroup[cName]) clientsGroup[cName] = [];
       
-      // FASE 1: PREPARAÇÃO INTELIGENTE DOS DADOS
-      targetStores.forEach(store => {
-        const cName = store.client || 'Sem Cliente';
-        if (!clientsGroup[cName]) clientsGroup[cName] = [];
-        
-        const pastData = (store.monthlyHistory || []).find(h => h.month === targetMonth);
-        let gmv = 0, ads = 0, orders = 0, units = 0, base = 0, periodEvents = {}; // <-- NOVO
-        
-        if (pastData) {
-            gmv = parseSafeNumber(pastData.gmv);
-            ads = parseSafeNumber(pastData.adsInvestment);
-            orders = parseSafeNumber(pastData.orders);
-            units = parseSafeNumber(pastData.units);
-            const histArray = store.monthlyHistory || [];
-            const currentIndex = histArray.findIndex(h => h.id === pastData.id);
-            base = currentIndex > 0 ? parseSafeNumber(histArray[currentIndex - 1].gmv) : 0;
-            periodEvents = pastData.events || {};
-        } else {
-            gmv = parseSafeNumber(store.currentRevenue);
-            ads = parseSafeNumber(store.adsInvestment);
-            orders = parseSafeNumber(store.orders);
-            units = parseSafeNumber(store.units);
-            base = parseSafeNumber(store.gmvBase);
-            periodEvents = store.eventLogs || {};
-        }
+      const pastData = (store.monthlyHistory || []).find(h => h.month === targetMonth);
+      let gmv = 0, ads = 0, orders = 0, units = 0, base = 0;
+      
+      // Se for um mês passado, pega do histórico. Se for o mês atual, pega os dados atuais.
+      if (pastData) {
+          gmv = parseSafeNumber(pastData.gmv);
+          ads = parseSafeNumber(pastData.adsInvestment);
+          orders = parseSafeNumber(pastData.orders);
+          units = parseSafeNumber(pastData.units);
+          const histArray = store.monthlyHistory || [];
+          const currentIndex = histArray.findIndex(h => h.id === pastData.id);
+          base = currentIndex > 0 ? parseSafeNumber(histArray[currentIndex - 1].gmv) : 0;
+      } else {
+          gmv = parseSafeNumber(store.currentRevenue);
+          ads = parseSafeNumber(store.adsInvestment);
+          orders = parseSafeNumber(store.orders);
+          units = parseSafeNumber(store.units);
+          base = parseSafeNumber(store.gmvBase);
+      }
 
-        clientsGroup[cName].push({
-           ...store, reportGmv: gmv, reportAds: ads, reportOrders: orders, reportUnits: units, reportBase: base, reportEvents: periodEvents // <-- ENVIA PARA O PDF
-        });
+      clientsGroup[cName].push({
+         ...store, reportGmv: gmv, reportAds: ads, reportOrders: orders, reportUnits: units, reportBase: base
       });
+    });
 
-      const clientNames = Object.keys(clientsGroup).sort();
+    const clientNames = Object.keys(clientsGroup).sort();
 
-      // FASE 2: GERAÇÃO DO EXCEL
-      if (formats.excel) {
-        const wb = XLSX.utils.book_new();
-        clientNames.forEach(clientName => {
-          const clientStores = clientsGroup[clientName].sort((a, b) => b.reportGmv - a.reportGmv);
-          let totalGmv = 0, totalUnits = 0;
-          
-          clientStores.forEach(s => {
-            totalGmv += s.reportGmv;
-            totalUnits += s.reportUnits;
-          });
-
-          const wsData = [
-            ['RESUMO FINANCEIRO', clientName], [],
-            ['Canal', 'Loja', 'Faturamento Total', 'Unidades']
-          ];
-
-          clientStores.forEach(s => {
-            wsData.push([
-              s.marketplace || '-',
-              s.store || '-',
-              s.reportGmv,
-              s.reportUnits
-            ]);
-          });
-
-          wsData.push(['-', 'TOTAL GERAL', totalGmv, totalUnits]);
-          
-          const ws = XLSX.utils.aoa_to_sheet(wsData);
-          // Ajusta a largura das colunas
-          ws['!cols'] = [{wch: 20}, {wch: 35}, {wch: 20}, {wch: 15}];
-          XLSX.utils.book_append_sheet(wb, ws, clientName.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31) || 'Cliente');
-        });
-        XLSX.writeFile(wb, `Avante_Relatorio_${monthInput.replace('/', '-')}.xlsx`);
-      }
-
-      // FASE 3: GERAÇÃO DO PDF (Novo Visual Premium com Logo)
-      if (formats.pdf) {
-        const docPdf = new jsPDF();
+    // Se o pedido for de PDF, gera um por cliente
+    if (formats.pdf) {
+      for (const clientName of clientNames) {
+        // Ordena as lojas do cliente da que mais faturou para a que menos faturou
+        const clientStores = clientsGroup[clientName].sort((a, b) => b.reportGmv - a.reportGmv);
         
-        for (let i = 0; i < clientNames.length; i++) {
-          if (i > 0) docPdf.addPage();
-          const clientName = clientNames[i];
-          const clientStores = clientsGroup[clientName];
-          
-          const singleDoc = await generateMonthlyReportPDF(clientName, clientStores, periodoApurado, dataGeracao, formatCurrency, formatNumber);
-          
-          if (i === 0) {
-            docPdf.internal.pages = singleDoc.internal.pages;
-          } else {
-            // Adiciona as páginas seguintes dinamicamente
-            docPdf.addPage();
-            docPdf.internal.pages[docPdf.internal.pages.length - 1] = singleDoc.internal.pages[singleDoc.internal.pages.length - 1];
-          }
-        }
+        // CHAMA A FUNÇÃO CORRETA DO ARQUIVO IMPORTADO!
+        const docPdf = await generateMonthlyReportPDF(
+          clientName, 
+          clientStores, 
+          periodoApurado, 
+          dataGeracao, 
+          formatCurrency, 
+          formatNumber
+        );
         
-        docPdf.save(`B2X Relatorio Mensal ${monthInput.replace('/', '-')}.pdf`);
+        // Faz o download do arquivo com o nome da B2X
+        docPdf.save(`B2X_${clientName}_Relatorio_${monthInput.replace('/', '-')}.pdf`);
       }
-    } catch (error) {
-      console.error(error);
-      throw error; 
     }
   };
 
@@ -1646,192 +1604,193 @@ export default function App() {
       </header>
 
       <main className="flex-1 w-full px-4 md:px-8 2xl:px-12 pt-6 relative mx-auto">
-        {['dashboard', 'operacional', 'rotinas', 'feed_equipe', 'financeiro', 'war_room'].includes(activeView) && (
-          <div className="sticky top-[70px] md:top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-3 xl:p-5 rounded-2xl xl:rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
-            {/* TRAVA ABSOLUTA: flex-nowrap impede quebra. overflow-x-auto gera scroll invisível se a tela for menor que o conteúdo */}
-            <div className="flex items-center gap-3 justify-between w-full flex-nowrap overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-              
-              {/* Busca e Sort */}
-              <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                <div className="relative w-full">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <input 
-                    type="text" 
-                    placeholder="Buscar conta ou loja..." 
-                    value={searchTerm} 
-                    onChange={(e) => setSearchTerm(e.target.value)} 
-                    className="w-full bg-black/20 border border-white/10 text-white rounded-xl py-2 pl-10 pr-4 outline-none focus:border-indigo-500 text-sm shadow-inner transition-all" 
-                  />
-                </div>
-                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="hidden md:block bg-black/20 border border-white/10 text-gray-300 rounded-xl py-2 px-3 text-sm font-medium outline-none cursor-pointer hover:bg-white/5 transition-all shadow-inner shrink-0">
-                  <option value="name" className="bg-gray-900 text-white">Por Nome (A-Z)</option>
-                  <option value="gmv" className="bg-gray-900 text-white">Faturamento</option>
-                  <option value="status" className="bg-gray-900 text-white">Status</option>
-                </select>
-              </div>
-
-              {/* Filtros em Trilho Horizontal Estrito */}
-              <div className="flex flex-nowrap items-center gap-2 bg-black/20 p-1 rounded-xl border border-white/10 shadow-inner shrink-0">
-                <div className="flex flex-nowrap gap-1 border-r border-white/10 pr-2 pl-1">
-                    {['all', 'danger', 'warning', 'success'].map(f => (
-                      <button key={f} onClick={() => setStatusFilter(f)} className={`p-1.5 rounded-lg shrink-0 transition-all ${statusFilter === f ? 'bg-white/10 text-white shadow-md' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
-                        {f === 'all' ? <Filter size={16}/> : f === 'danger' ? <AlertTriangle size={16}/> : f === 'warning' ? <Clock size={16}/> : <CheckCircle size={16}/>}
-                      </button>
-                    ))}
+        <ErrorBoundary>
+          {['dashboard', 'operacional', 'rotinas', 'feed_equipe', 'financeiro', 'war_room'].includes(activeView) && (
+            <div className="sticky top-[70px] md:top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-3 xl:p-5 rounded-2xl xl:rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
+              <div className="flex items-center gap-3 justify-between w-full flex-nowrap overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                
+                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                  <div className="relative w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                    <input 
+                      type="text" 
+                      placeholder="Buscar conta ou loja..." 
+                      value={searchTerm} 
+                      onChange={(e) => setSearchTerm(e.target.value)} 
+                      className="w-full bg-black/20 border border-white/10 text-white rounded-xl py-2 pl-10 pr-4 outline-none focus:border-indigo-500 text-sm shadow-inner transition-all" 
+                    />
+                  </div>
+                  <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="hidden md:block bg-black/20 border border-white/10 text-gray-300 rounded-xl py-2 px-3 text-sm font-medium outline-none cursor-pointer hover:bg-white/5 transition-all shadow-inner shrink-0">
+                    <option value="name" className="bg-gray-900 text-white">Por Nome (A-Z)</option>
+                    <option value="gmv" className="bg-gray-900 text-white">Faturamento</option>
+                    <option value="status" className="bg-gray-900 text-white">Status</option>
+                  </select>
                 </div>
 
-                <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors border-r border-white/10 shrink-0">
-                  <option value="all" className="bg-gray-900 text-white">🛍️ CANAIS</option>
-                  {uniqueMkts.map(m => <option key={m} value={m} className="bg-gray-900 text-white">{m}</option>)}
-                </select>
+                {/* Filtros em Trilho Horizontal Estrito */}
+                <div className="flex flex-nowrap items-center gap-2 bg-black/20 p-1 rounded-xl border border-white/10 shadow-inner shrink-0">
+                  <div className="flex flex-nowrap gap-1 border-r border-white/10 pr-2 pl-1">
+                      {['all', 'danger', 'warning', 'success'].map(f => (
+                        <button key={f} onClick={() => setStatusFilter(f)} className={`p-1.5 rounded-lg shrink-0 transition-all ${statusFilter === f ? 'bg-white/10 text-white shadow-md' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
+                          {f === 'all' ? <Filter size={16}/> : f === 'danger' ? <AlertTriangle size={16}/> : f === 'warning' ? <Clock size={16}/> : <CheckCircle size={16}/>}
+                        </button>
+                      ))}
+                  </div>
 
-              </div>
-              
-              <div className="flex gap-2 items-center shrink-0">
-                <button 
-                  onClick={() => { setSearchTerm(''); setSortBy('name'); setStatusFilter('all'); setMktFilter('all'); setRespFilter('all'); toast.success('Filtros resetados!'); }} 
-                  className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2 rounded-xl transition-colors shrink-0"
-                  title="Limpar todos os filtros"
-                >
-                  <Eraser size={16}/>
-                </button>
+                  <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} className="bg-transparent text-gray-300 rounded-lg px-2 py-1 text-xs font-bold outline-none cursor-pointer hover:bg-white/5 transition-colors border-r border-white/10 shrink-0">
+                    <option value="all" className="bg-gray-900 text-white">🛍️ CANAIS</option>
+                    {uniqueMkts.map(m => <option key={m} value={m} className="bg-gray-900 text-white">{m}</option>)}
+                  </select>
 
-                {currentUserData?.role !== 'Operacional' && !isVisitante && (
-                  <button onClick={addNewStore} className="bg-indigo-600 hover:bg-indigo-500 text-white py-2 px-4 rounded-xl text-sm font-bold flex justify-center items-center gap-2 transition-all shadow-md shrink-0">
-                    <Plus size={16} /> <span className="hidden md:inline">Novo Cliente</span>
+                </div>
+                
+                <div className="flex gap-2 items-center shrink-0">
+                  <button 
+                    onClick={() => { setSearchTerm(''); setSortBy('name'); setStatusFilter('all'); setMktFilter('all'); setRespFilter('all'); toast.success('Filtros resetados!'); }} 
+                    className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2 rounded-xl transition-colors shrink-0"
+                    title="Limpar todos os filtros"
+                  >
+                    <Eraser size={16}/>
                   </button>
-                )}
+
+                  {currentUserData?.role !== 'Operacional' && !isVisitante && (
+                    <button onClick={addNewStore} className="bg-indigo-600 hover:bg-indigo-500 text-white py-2 px-4 rounded-xl text-sm font-bold flex justify-center items-center gap-2 transition-all shadow-md shrink-0">
+                      <Plus size={16} /> <span className="hidden md:inline">Novo Cliente</span>
+                    </button>
+                  )}
+                </div>
+
               </div>
-
             </div>
-          </div>
-        )}
+          )}
 
-        {activeView === 'feed_equipe' && (
-          <TeamFeedView 
-            currentUserData={currentUserData} 
-            user={user} 
-            stores={stores}
-            teamMembers={teamMembers}
-            searchTerm={searchTerm}
-            openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
-            scheduledEvents={scheduledEvents}
-            activeEvent={activeEvent}
-            formatCurrency={safeFormatCurrency}
-            scheduledVisits={scheduledVisits}
-            handleVisitAction={handleVisitAction}
-            canEdit={canEdit}
-          />
-        )}
+          {activeView === 'feed_equipe' && (
+            <TeamFeedView 
+              currentUserData={currentUserData} 
+              user={user} 
+              stores={stores}
+              teamMembers={teamMembers}
+              searchTerm={searchTerm}
+              openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
+              scheduledEvents={scheduledEvents}
+              activeEvent={activeEvent}
+              formatCurrency={safeFormatCurrency}
+              scheduledVisits={scheduledVisits}
+              handleVisitAction={handleVisitAction}
+              canEdit={canEdit}
+            />
+          )}
 
-        {activeView === 'dashboard' && (
-          <ExecutiveDashboard 
-            dashboardData={dashboardData} 
-            formatCurrency={safeFormatCurrency} 
-            formatNumber={safeFormatNumber}
-            pieData={pieData} 
-            roasData={roasData} 
-            COLORS={COLORS} 
-            currentDay={currentDay} 
-            daysInMonth={daysInMonth} 
-            canEdit={canEdit}
-            openGoalsModal={() => setIsGoalsModalOpen(true)}
-          />
-        )}
-        
-        {activeView === 'admin' && canEdit && (
-          <AdminPanel 
-            handleCreateUser={handleCreateUser} 
-            newUserEmail={newUserEmail} setNewUserEmail={setNewUserEmail} 
-            newUserPassword={newUserPassword} setNewUserPassword={setNewUserPassword} 
-            newUserName={newUserName} setNewUserName={setNewUserName}
-            teamMembers={teamMembers}
-            handleUpdateUser={handleUpdateUser}
-            handleToggleRole={handleToggleRole}
-            handleDeleteUser={handleDeleteUser}
-            closeMonth={closeMonth}
-            startSimulation={startSimulation}
-            isSimulating={isSimulating}
-          />
-        )}
+          {activeView === 'dashboard' && (
+            <ExecutiveDashboard 
+              dashboardData={dashboardData} 
+              formatCurrency={safeFormatCurrency} 
+              formatNumber={safeFormatNumber}
+              pieData={pieData}
+              roasData={roasData} 
+              COLORS={COLORS} 
+              currentDay={currentDay} 
+              daysInMonth={daysInMonth} 
+              canEdit={canEdit}
+              openGoalsModal={() => setIsGoalsModalOpen(true)}
+              showValues={showValues}
+            />
+          )}
+          
+          {activeView === 'admin' && canEdit && (
+            <AdminPanel 
+              handleCreateUser={handleCreateUser} 
+              newUserEmail={newUserEmail} setNewUserEmail={setNewUserEmail} 
+              newUserPassword={newUserPassword} setNewUserPassword={setNewUserPassword} 
+              newUserName={newUserName} setNewUserName={setNewUserName}
+              teamMembers={teamMembers}
+              handleUpdateUser={handleUpdateUser}
+              handleToggleRole={handleToggleRole}
+              handleDeleteUser={handleDeleteUser}
+              closeMonth={closeMonth}
+              startSimulation={startSimulation}
+              isSimulating={isSimulating}
+            />
+          )}
 
-        {activeView === 'operacional' && (
-          <OperationalTable 
-            canEdit={canEdit} 
-            dashboardData={dashboardData} 
-            expandedClients={expandedClients} 
-            toggleClientExpansion={toggleClientExpansion}
-            formatCurrency={safeFormatCurrency}
-            formatNumber={safeFormatNumber}
-            showValues={showValues} 
-            currentDay={currentDay} 
-            clientGrowthMap={clientGrowthMap}
-            updateGlobalSettings={updateGlobalSettings}
-            addNewStoreToClient={addNewStoreToClient}
-            deleteStore={deleteStore} 
-            deleteClient={deleteClient}
-            startEditingStore={startEditingStore} 
-            editingStoreId={editingStoreId} 
-            setEditingStoreId={setEditingStoreId} 
-            storeEditData={storeEditData} 
-            setStoreEditData={setStoreEditData} 
-            saveStoreEdit={saveStoreEdit}
-            handleStoreChange={handleStoreChange}
-            openHistoryModal={openHistoryModal}
-            generateStoreWhatsAppLink={generateStoreWhatsAppLink}
-            generateClientWhatsAppLink={generateClientWhatsAppLink}
-            openClientFile={openClientFile}
-          />
-        )}
+          {activeView === 'operacional' && (
+            <OperationalTable 
+              canEdit={canEdit} 
+              dashboardData={dashboardData} 
+              expandedClients={expandedClients} 
+              toggleClientExpansion={toggleClientExpansion}
+              formatCurrency={safeFormatCurrency}
+              formatNumber={safeFormatNumber}
+              showValues={showValues} 
+              currentDay={currentDay} 
+              clientGrowthMap={clientGrowthMap}
+              updateGlobalSettings={updateGlobalSettings}
+              addNewStoreToClient={addNewStoreToClient}
+              deleteStore={deleteStore} 
+              deleteClient={deleteClient}
+              startEditingStore={startEditingStore}
+              editingStoreId={editingStoreId} 
+              setEditingStoreId={setEditingStoreId} 
+              storeEditData={storeEditData} 
+              setStoreEditData={setStoreEditData} 
+              saveStoreEdit={saveStoreEdit}
+              handleStoreChange={handleStoreChange}
+              openHistoryModal={openHistoryModal}
+              generateStoreWhatsAppLink={generateStoreWhatsAppLink}
+              generateClientWhatsAppLink={generateClientWhatsAppLink}
+              openClientFile={openClientFile}
+            />
+          )}
 
-        {activeView === 'financeiro' && (
-          <FinanceDashboard
-            db={db} 
-            dashboardData={dashboardData} 
-            formatCurrency={safeFormatCurrency}
-            canEdit={canEdit}
-            teamMembers={teamMembers}
-          />
-        )}
+          {activeView === 'financeiro' && (
+            <FinanceDashboard
+              db={db} 
+              dashboardData={dashboardData} 
+              formatCurrency={safeFormatCurrency}
+              canEdit={canEdit}
+              teamMembers={teamMembers}
+            />
+          )}
 
-        {activeView === 'war_room' && activeEvent && canAccessWarRoom && (
-          <WarRoom 
-            stores={dashboardData.flatFilteredStores} 
-            setStores={setStores}
-            updateStoreInCloud={updateStoreInCloud}
-            formatCurrency={safeFormatCurrency}
-            formatNumber={safeFormatNumber}
-            canEdit={canEdit}
-            activeEvent={activeEvent}
-            onEndEvent={() => handleEventAction('end')}
-            canAccessWarRoom={canAccessWarRoom}
-            sortBy={sortBy}
-            currentDay={currentDay}
-          />
-        )}
+          {activeView === 'war_room' && activeEvent && canAccessWarRoom && (
+            <WarRoom 
+              stores={dashboardData.flatFilteredStores} 
+              setStores={setStores}
+              updateStoreInCloud={updateStoreInCloud}
+              formatCurrency={safeFormatCurrency}
+              formatNumber={safeFormatNumber}
+              canEdit={canEdit}
+              activeEvent={activeEvent}
+              onEndEvent={() => handleEventAction('end')}
+              canAccessWarRoom={canAccessWarRoom}
+              sortBy={sortBy}
+              currentDay={currentDay}
+            />
+          )}
 
-        {activeView === 'rotinas' && (
-          <TaskView 
-            stores={
-              isVisitante 
-                ? dashboardData.flatFilteredStores.map(store => ({
-                    ...store,
-                    checklists: (store.checklists || []).filter(task => task.responsavel === myName)
-                  })).filter(store => store.checklists?.length > 0)
-                : dashboardData.flatFilteredStores
-            } 
-            openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
-            openBulkTaskModal={() => setBulkTaskModalOpen(true)}
-            currentUserData={currentUserData}
-            user={user}
-            updateStoreInCloud={updateStoreInCloud}
-            setStores={setStores}
-            openClientFile={openClientFile}
-            teamMembers={teamMembers}
-            broadcastTaskFocus={broadcastTaskFocus}
-          />
-        )}
-        <br></br>
+          {activeView === 'rotinas' && (
+            <TaskView 
+              stores={
+                isVisitante 
+                  ? dashboardData.flatFilteredStores.map(store => ({
+                      ...store,
+                      checklists: (store.checklists || []).filter(task => task.responsavel === myName)
+                    })).filter(store => store.checklists?.length > 0)
+                  : dashboardData.flatFilteredStores
+              } 
+              openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
+              openBulkTaskModal={() => setBulkTaskModalOpen(true)}
+              currentUserData={currentUserData}
+              user={user}
+              updateStoreInCloud={updateStoreInCloud}
+              setStores={setStores}
+              openClientFile={openClientFile}
+              teamMembers={teamMembers}
+              broadcastTaskFocus={broadcastTaskFocus}
+            />
+          )}
+          <br></br>
+        </ErrorBoundary>
       </main>
 
       <footer className="w-full border-t border-white/5 bg-black/40 py-6 mt-auto shrink-0 z-20 relative">
@@ -1893,6 +1852,17 @@ export default function App() {
         onClose={() => setIsCloseMonthModalOpen(false)} 
         onConfirm={executeCloseMonth} 
       />
+
+      {historyModalOpen && (
+        <StoreHistoryModal
+          isOpen={historyModalOpen}
+          onClose={() => setHistoryModalOpen(false)}
+          store={activeStore}
+          currentDay={currentDay}
+          formatCurrency={safeFormatCurrency}
+          formatNumber={safeFormatNumber}
+        />
+      )}
 
       {taskModalOpen && (
         <TaskModal 

@@ -27,7 +27,9 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
   const [despesaEmEdicao, setDespesaEmEdicao] = useState(null);
   const [despesaForm, setDespesaForm] = useState({ 
-    descricao: '', valor: '', desconto: '', motivoDesconto: '', categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: []
+    descricao: '', valor: '', desconto: '', motivoDesconto: '', categoria: 'Folha de Pagamento', 
+    contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], 
+    status: 'Pendente', desembolsos: [], chavePix: ''
   });
 
   const [recebimentoEmEdicao, setRecebimentoEmEdicao] = useState(null);
@@ -41,7 +43,10 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     custoOperacional: 0,
     metaAgenciaHistorica: dashboardData.agencyTarget || 0
   });
+  
   const [bonusManuais, setBonusManuais] = useState({});
+  const [chavesPix, setChavesPix] = useState({});
+  
   const [demonstrativoData, setDemonstrativoData] = useState(null);
 
   useEffect(() => {
@@ -121,9 +126,9 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     hoje.setHours(0, 0, 0, 0);
     
     const inicioSemana = new Date(hoje);
-    inicioSemana.setDate(hoje.getDate() - hoje.getDay()); // Domingo atual
+    inicioSemana.setDate(hoje.getDate() - hoje.getDay());
     const fimSemana = new Date(inicioSemana);
-    fimSemana.setDate(inicioSemana.getDate() + 6); // Sábado atual
+    fimSemana.setDate(inicioSemana.getDate() + 6);
     const fimProximaSemana = new Date(fimSemana);
     fimProximaSemana.setDate(fimSemana.getDate() + 7);
 
@@ -135,7 +140,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       'Concluídos': []
     };
 
-    // Função interna que joga o item na semana correta
     const alocarNoGrupo = (itemAlocavel) => {
       if (itemAlocavel.status === 'Pago') {
         grupos['Concluídos'].push(itemAlocavel);
@@ -185,6 +189,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     const hoje = new Date();
     const lancamentos = [];
     
+    const pixDefinitivo = chavesPix[membro.email] !== undefined ? chavesPix[membro.email] : (config.chavePix || '');
     const regraTexto = `${config.percentual}% ${config.gatilho > 0 ? `acima de ${formatCurrency(config.gatilho)}` : `s/ ${config.baseCalculo === 'LL' ? 'Lucro Líq.' : 'Fat. Bruto'}`}`;
 
     const dadosHolerite = {
@@ -216,6 +221,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
           await addDoc(collection(db, "financeiro_despesas"), {
             ...item, categoria: 'Folha de Pagamento', status: 'Pendente', contaBancaria: 'AVANTE PJ',
             holerite: dadosHolerite,
+            chavePix: pixDefinitivo,
             criadoEm: new Date().toISOString()
           });
       }
@@ -448,7 +454,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         await updateDoc(doc(db, "financeiro_despesas", despesaEmEdicao), {
           descricao: despesaForm.descricao.trim(), 
           valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: despesaForm.motivoDesconto.trim(), valor: numValorLiquido, 
-          categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos
+          categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
+          chavePix: despesaForm.chavePix.trim() // 👉 NOVO: Atualiza a chave!
         });
         toast.success("Despesa atualizada!");
         setDespesaEmEdicao(null);
@@ -457,12 +464,16 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
           descricao: despesaForm.descricao.trim(), 
           valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: despesaForm.motivoDesconto.trim(), valor: numValorLiquido, 
           categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
+          chavePix: despesaForm.chavePix.trim(), // 👉 NOVO: Salva a chave nova!
           dataPagamentoRealizado: finalStatus === 'Pago' && parsedDesembolsos.length === 0 ? new Date().toISOString() : null,
           criadoEm: new Date().toISOString()
         });
-        toast.success("Despesa registada!");
+        toast.success("Despesa registrada!");
       }
-      setDespesaForm({ descricao: '', valor: '', desconto: '', motivoDesconto: '', categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', desembolsos: [] });
+      setDespesaForm({ descricao: '', valor: '', desconto: '', motivoDesconto: '', 
+        categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', 
+        dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', 
+        desembolsos: [], chavePix: '' });
     } catch (error) { toast.error("Erro ao salvar despesa."); }
   };
 
@@ -482,18 +493,30 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     });
   };
 
-  const toggleDespesa = async (idDespesa, currentStatus) => {
+  const toggleDespesa = async (item) => {
     if (!canEdit) return toast.error("Sem permissão.");
-    const novoStatus = currentStatus === 'Pago' ? 'Pendente' : 'Pago';
+    const novoStatus = item.status === 'Pago' ? 'Pendente' : 'Pago';
     try {
-      await updateDoc(doc(db, "financeiro_despesas", idDespesa), { 
+      await updateDoc(doc(db, "financeiro_despesas", item.id), { 
         status: novoStatus, 
         dataPagamentoRealizado: novoStatus === 'Pago' ? new Date().toISOString() : null 
       });
-      toast.success(novoStatus === 'Pago' ? "Despesa total paga!" : "Baixa desfeita!");
+
+      if (novoStatus === 'Pago' && item.chavePix) {
+        toast((t) => (
+          <div className="flex flex-col gap-2 p-1">
+            <span className="text-sm font-bold text-white">Chave PIX Disponível:</span>
+            <span className="text-xs text-amber-400 bg-black/50 p-2 rounded select-all break-all">{item.chavePix}</span>
+            <button onClick={() => { navigator.clipboard.writeText(item.chavePix); toast.success('Copiada!'); toast.dismiss(t.id); }} className="mt-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs py-1.5 rounded-lg transition-colors font-bold shadow">Copiar Chave</button>
+          </div>
+        ), { duration: Infinity });
+      } else {
+        toast.success(novoStatus === 'Pago' ? "Despesa total paga!" : "Baixa desfeita!");
+      }
     } catch (error) { toast.error("Erro ao alterar status."); }
   };
 
+  // 👉 NOVO: Função para exibir o PIX em Desembolso de Despesa
   const toggleDesembolsoDespesa = async (idDespesa, idDesembolso) => {
     if (!canEdit) return toast.error("Sem permissão.");
     try {
@@ -517,7 +540,19 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         status: novoStatus,
         dataPagamentoRealizado: todosPagos ? new Date().toISOString() : null
       });
-      toast.success("Status do desembolso alterado!");
+
+      const parcelaAtualizada = novosDesembolsos.find(d => d.id === idDesembolso);
+      if (parcelaAtualizada.status === 'Pago' && despesa.chavePix) {
+        toast((t) => (
+          <div className="flex flex-col gap-2 p-1">
+            <span className="text-sm font-bold text-white">Chave PIX Disponível:</span>
+            <span className="text-xs text-amber-400 bg-black/50 p-2 rounded select-all break-all">{despesa.chavePix}</span>
+            <button onClick={() => { navigator.clipboard.writeText(despesa.chavePix); toast.success('Copiada!'); toast.dismiss(t.id); }} className="mt-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs py-1.5 rounded-lg transition-colors font-bold shadow">Copiar Chave</button>
+          </div>
+        ), { duration: Infinity });
+      } else {
+        toast.success("Status do desembolso alterado!");
+      }
     } catch (error) { toast.error("Erro ao registrar desembolso."); }
   };
 
@@ -601,7 +636,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         </td>
         <td className="p-4 text-sm font-bold text-indigo-300">{isReceita ? (item.mesReferencia || '-') : <span className="bg-gray-800 text-gray-300 text-[10px] px-2 py-1 rounded-md border border-gray-700">{item.categoria}</span>}</td>
         <td className={`p-4 text-sm font-bold ${isAtrasado ? 'text-red-400' : 'text-gray-300'}`}>
-          {new Date(item.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')} <span className="text-[10px] font-normal text-gray-500 ml-1">(Sem. {getSemanaDoMes(item.dataVencimento)})</span>
+          {new Date(item.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')} <span className="text-[10px] font-normal text-gray-500 ml-1">({getSemanaDoMes(item.dataVencimento)})</span>
           {isAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
         </td>
         <td className="p-4 font-bold text-white text-right">
@@ -618,7 +653,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                     if (item.isParcela) {
                         isReceita ? toggleDesembolsoRecebimento(item.idPai, item.id) : toggleDesembolsoDespesa(item.idPai, item.id);
                     } else {
-                        isReceita ? toggleRecebimento(item.id, item.status) : toggleDespesa(item.id, item.status);
+                        isReceita ? toggleRecebimento(item.id, item.status) : toggleDespesa(item);
                     }
                 }} className={`${isReceita ? 'bg-green-600 hover:bg-green-500' : 'bg-rose-600 hover:bg-rose-500'} text-white text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-xl font-bold shadow-md transition-all`}>Dar Baixa</button>
             ) : (
@@ -626,7 +661,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                     if (item.isParcela) {
                         isReceita ? toggleDesembolsoRecebimento(item.idPai, item.id) : toggleDesembolsoDespesa(item.idPai, item.id);
                     } else {
-                        isReceita ? toggleRecebimento(item.id, item.status) : toggleDespesa(item.id, item.status);
+                        isReceita ? toggleRecebimento(item.id, item.status) : toggleDespesa(item);
                     }
                 }} className="text-[10px] text-gray-500 underline hover:text-white mr-2">Desfazer</button>
             )}
@@ -918,6 +953,11 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                     </div>
                   </div>
 
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Chave PIX (Opcional)</label>
+                    <input type="text" placeholder="CPF, Email, Celular ou Aleatória..." value={despesaForm.chavePix} onChange={e => setDespesaForm({...despesaForm, chavePix: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[10px] font-bold text-gray-400 uppercase">Categoria</label>
@@ -1030,9 +1070,16 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                           <span>Fixo: {formatCurrency(membro.calculo.fixo)}</span> |
                           <span>Comissão: {formatCurrency(membro.calculo.comissao)}</span>
                         </div>
-                        <div className="mt-2 flex items-center gap-2">
-                           <span className="text-xs text-gray-500 font-medium">Extra: R$</span>
-                           <input type="number" value={bonusManuais[membro.email] || ''} onChange={e => setBonusManuais({...bonusManuais, [membro.email]: e.target.value})} placeholder="0.00" className="bg-black/40 border border-white/10 text-white rounded-lg px-2 py-1.5 text-xs w-20 outline-none focus:border-indigo-500 shadow-inner" />
+                        
+                        <div className="mt-3 flex flex-col gap-2">
+                           <div className="flex items-center gap-2">
+                             <span className="text-[11px] text-gray-500 font-bold w-12 uppercase">Extra R$:</span>
+                             <input type="number" value={bonusManuais[membro.email] || ''} onChange={e => setBonusManuais({...bonusManuais, [membro.email]: e.target.value})} placeholder="0.00" className="bg-black/40 border border-white/10 text-white rounded-lg px-2 py-1.5 text-xs flex-1 outline-none focus:border-indigo-500 shadow-inner" />
+                           </div>
+                           <div className="flex items-center gap-2">
+                             <span className="text-[11px] text-gray-500 font-bold w-12 uppercase">PIX:</span>
+                             <input type="text" value={chavesPix[membro.email] !== undefined ? chavesPix[membro.email] : (membro.paymentConfig?.chavePix || '')} onChange={e => setChavesPix({...chavesPix, [membro.email]: e.target.value})} placeholder="CPF, Email, Telefone..." className="bg-black/40 border border-white/10 text-white rounded-lg px-2 py-1.5 text-xs flex-1 outline-none focus:border-indigo-500 shadow-inner" />
+                           </div>
                         </div>
                       </div>
                       <div className="flex justify-between items-center border-t border-white/10 pt-3">

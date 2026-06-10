@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { TrendingUp, ShoppingCart, Activity, CreditCard, Clock, Zap, Target, Settings, Crown, Store, Filter } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Area, Line, Legend, Tooltip, Cell, LineChart, ReferenceLine } from 'recharts';
 
-export default function ExecutiveDashboard({ dashboardData, formatCurrency, formatNumber, roasData, COLORS, currentDay, daysInMonth, canEdit, openGoalsModal }) {
+export default function ExecutiveDashboard({ dashboardData, formatCurrency, formatNumber, pieData, roasData, COLORS, currentDay, daysInMonth, canEdit, openGoalsModal, showValues }) {
   
   const predictedOrders = currentDay > 0 ? Math.round((dashboardData.totalOrders / currentDay) * daysInMonth) : 0;
   const avgAdsCostPerOrder = dashboardData.totalOrders > 0 ? dashboardData.totalGlobalAds / dashboardData.totalOrders : 0;
@@ -25,7 +25,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
     fontSize: '13px'
   };
 
-  // === LÓGICA DE TRAÇÃO DIÁRIA (Gráfico de Linhas) ===
   const dailyMetrics = useMemo(() => {
     const days = Array.from({ length: currentDay }, (_, i) => ({ day: i + 1, gmv: 0, isEvent: false }));
 
@@ -48,9 +47,8 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
     return { days, avgGmv };
   }, [dashboardData, currentDay]);
 
-  // === LÓGICA DO RANKING LATERAL (1/4 de Tela) ===
-  const [rankingType, setRankingType] = useState('client'); // 'client' ou 'store'
-  const [storeMetric, setStoreMetric] = useState('gmv'); // 'gmv' ou 'cpa'
+  const [rankingType, setRankingType] = useState('client');
+  const [storeMetric, setStoreMetric] = useState('gmv');
 
   const dataAtual = new Date();
   dataAtual.setMonth(dataAtual.getMonth() - 1);
@@ -85,7 +83,6 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
       }).sort((a, b) => b.value - a.value);
 
     } else {
-      // RANKING POR LOJA (Top Faturamento ou Custo por Conversão)
       let storesList = dashboardData.flatFilteredStores.map(s => {
         const cpa = s.orders > 0 ? (Number(s.adsInvestment) || 0) / s.orders : 0;
         return {
@@ -105,7 +102,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
       }
       return storesList;
     }
-  }, [dashboardData, rankingType, storeMetric, mesPassadoExato]);
+  }, [dashboardData, rankingType, storeMetric, mesPassadoExato, formatCurrency]);
 
   const renderGlobalProgressBar = () => {
     const target = dashboardData.totalTarget || 0;
@@ -303,12 +300,10 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                       activeDot={{ r: 7, fill: '#60A5FA', stroke: '#fff', strokeWidth: 2 }} 
                     />
                     
-                    {/* Linha da Média Realizada (Laranja/Âmbar) */}
                     {dailyMetrics.avgGmv > 0 && (
                       <ReferenceLine y={dailyMetrics.avgGmv} stroke="#F59E0B" strokeDasharray="3 3" opacity={0.4} label={{ position: 'insideTopRight', value: 'Real', fill: '#F59E0B', fontSize: 12 }} />
                     )}
 
-                    {/* NOVA: Linha da Média Necessária/Ideal (Verde) */}
                     {dailyTargetAvg > 0 && (
                       <ReferenceLine y={dailyTargetAvg} stroke="#10B981" strokeDasharray="3 3" opacity={0.4} label={{ position: 'insideBottomRight', value: 'Meta', fill: '#10B981', fontSize: 12 }} />
                     )}
@@ -317,28 +312,41 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
               </div>
             </div>
 
-            <div className="lg:col-span-1 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
-              <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
-                <h3 className="text-lg font-bold text-white tracking-wide flex items-center gap-2"><Zap size={16} className="text-amber-400"/> ROAS</h3>
-                <span className="text-[12px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">Média: {avgRoas.toFixed(1)}x</span>
+            <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20"><Zap size={20} className="text-amber-400"/></div>
+                  <h3 className="text-lg font-bold text-white tracking-wide">Ranking de ROAS</h3>
+                </div>
+                <span className="bg-black/20 border border-white/10 px-3 py-1.5 rounded-lg text-sm font-bold text-gray-300">
+                  Média: <span className="text-amber-400">{avgRoas.toFixed(1)}x</span>
+                </span>
               </div>
-              <div className="h-60 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={roasData} layout="vertical" margin={{ left: 10, right: 10, top: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={10} width={70} axisLine={false} tickLine={false} />
-                    <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} contentStyle={glassTooltipStyle} formatter={(value) => `${value}x`} />
-                    <Bar dataKey="roas" radius={[0, 4, 4, 0]} barSize={12}>
-                      {roasData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.roas >= avgRoas ? '#10B981' : '#F43F5E'} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+              
+              <div className="h-[300px] w-full">
+                {roasData && roasData.length > 0 ? (
+                  <ResponsiveContainer width="99%" height={250} minWidth={0}>
+                    <BarChart data={roasData} layout="vertical" margin={{ left: 10, right: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
+                      <XAxis type="number" hide />
+                      <YAxis dataKey="name" type="category" stroke="#9CA3AF" fontSize={12} width={90} axisLine={false} tickLine={false} />
+                      <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} contentStyle={glassTooltipStyle} itemStyle={{ color: '#fff', fontWeight: 'bold' }} formatter={(value) => `${value}x`} />
+                      <Bar dataKey="roas" radius={[0, 6, 6, 0]} barSize={20}>
+                        {roasData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.roas >= avgRoas ? '#10B981' : '#F43F5E'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-500 text-xs">
+                    Sem dados de Ads registrados.
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* LINHA 3: Evolução Histórica (3/5) + Faturamento Canais (2/5) */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
             <div className="lg:col-span-3 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm flex flex-col h-[350px]">
               <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-4 shrink-0">

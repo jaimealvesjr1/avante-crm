@@ -41,18 +41,16 @@ export default function BatchEntry({ stores, onClose, onSaveBatch, currentDay })
     }
 
     const dayVal = Number(batchDay);
-    const updates = []; // Agora é um array vazio que só vai receber as lojas editadas!
+    const updates = []; 
 
     const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
       if (!val) return 0;
       let str = String(val).trim();
       
-      // Se o usuário digitou com vírgula (ex: 1.500,50 ou 1500,50)
       if (str.includes(',')) {
         str = str.replace(/\./g, '').replace(',', '.');
       }
-      // Se não tem vírgula (ex: 645.02 vindo do banco), ele apenas converte direto
       
       return Number(str) || 0;
     };
@@ -61,7 +59,6 @@ export default function BatchEntry({ stores, onClose, onSaveBatch, currentDay })
       const data = formData[s.id];
       if (!data) return;
 
-      // TRAVA DE SEGURANÇA: Se o usuário deixou tudo em branco nesta loja, nós a ignoramos!
       if (!data.currentRevenue && !data.adsInvestment && !data.orders && !data.units) return;
 
       const cumRev = parseSafeNumber(data.currentRevenue);
@@ -122,11 +119,10 @@ export default function BatchEntry({ stores, onClose, onSaveBatch, currentDay })
             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
               <Zap className="text-amber-400" /> Lançamento em Massa
             </h2>
-            <p className="text-gray-400 text-sm mt-1">Cole os valores direto da Shopee. Pontos e vírgulas são limpos automaticamente.</p>
+            <p className="text-gray-400 text-sm mt-1">Cole os valores direto da plataforma. Pontos e vírgulas são limpos automaticamente.</p>
           </div>
           
           <div className="flex items-center gap-4">
-            {/* NOVO: CAMPO DE DATA DE APURAÇÃO */}
             <div className="flex items-center gap-2 bg-gray-800 p-2 rounded-lg border border-gray-700">
               <CalendarDays size={18} className="text-gray-400" />
               <div className="flex flex-col">
@@ -148,7 +144,8 @@ export default function BatchEntry({ stores, onClose, onSaveBatch, currentDay })
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-gray-900 text-gray-400 text-xs uppercase z-10 shadow-sm">
               <tr>
-                <th className="p-3 border-b border-gray-800">Cliente / Loja</th>
+                {/* 👉 CORREÇÃO: Largura mínima aplicada aqui */}
+                <th className="p-3 border-b border-gray-800 min-w-[200px]">Cliente / Loja</th>
                 <th className="p-3 border-b border-gray-800 w-40 text-blue-400">Faturamento (R$)</th>
                 <th className="p-3 border-b border-gray-800 w-32 text-amber-400">Ads (R$)</th>
                 <th className="p-3 border-b border-gray-800 w-28 text-green-400">Pedidos</th>
@@ -158,7 +155,8 @@ export default function BatchEntry({ stores, onClose, onSaveBatch, currentDay })
             <tbody className="divide-y divide-gray-800">
               {activeStores.map(store => (
                 <tr key={store.id} className="hover:bg-gray-800/30 transition-colors">
-                  <td className="p-3">
+                  {/* 👉 CORREÇÃO: whitespace-nowrap aplicado aqui para não quebrar o texto */}
+                  <td className="p-3 whitespace-nowrap">
                     <div className="font-bold text-gray-200">{store.client}</div>
                     <div className="text-xs text-gray-500">{store.store}</div>
                   </td>

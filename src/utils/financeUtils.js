@@ -1,13 +1,7 @@
-/**
- * src/utils/financeUtils.js
- * Utilitários gerais para lidar com moedas, números e cálculos financeiros da agência.
- */
-
-// Formata valores para a moeda Real Brasileira (R$)
 export const formatCurrency = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
 
 // Formata números gerais com padrão brasileiro
-export const formatNumber = (value) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value || 0);
+export const formatNumber = (value) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value || 0);
 
 // Motor de cálculo inteligente da folha de pagamento da equipe
 export const calcularFolhaMembro = (membro, faturamentoBruto, custoOperacional, bonusManual = 0) => {
