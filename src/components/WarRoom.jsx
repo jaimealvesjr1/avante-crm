@@ -3,6 +3,7 @@ import { Flame, Search, Target, CheckCircle, XCircle, Download } from 'lucide-re
 import { toast } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { generateEventReportPDF } from '../utils/pdfGenerator';
 
 const EventEntryRow = ({ store, activeEvent, onSaveDelta, canAccessWarRoom }) => {
     const pastEventData = (store.eventLogs && store.eventLogs[activeEvent.name]) || { gmv: '', orders: '', units: '' };
@@ -161,132 +162,9 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
     }, [stores, search, activeEvent, sortBy]);
 
     const exportEventReport = async () => {
-        toast.loading("Compilando dados do evento...", { id: 'event-export' });
-        try {
-            const docPdf = new jsPDF();
-            
-            const clientsGroup = {};
-            filteredStores.forEach(store => {
-                const cName = store.client || 'Sem Cliente';
-                if (!clientsGroup[cName]) clientsGroup[cName] = [];
-                clientsGroup[cName].push(store);
-            });
-
-            const clientNames = Object.keys(clientsGroup).sort();
-            if (clientNames.length === 0) throw new Error("Nenhuma loja ativa no evento para exportar.");
-
-            const loadLogo = () => new Promise((resolve) => {
-                const img = new Image();
-                img.src = '/logo b2x.jpg'; 
-                img.onload = () => resolve(img);
-                img.onerror = () => resolve(null);
-            });
-            const logoImg = await loadLogo();
-            const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-            clientNames.forEach((clientName, index) => {
-                if (index > 0) docPdf.addPage();
-                
-                const clientStores = clientsGroup[clientName].sort((a, b) => {
-                    const gmvA = (a.eventLogs && a.eventLogs[activeEvent.name]?.gmv) ? Number(a.eventLogs[activeEvent.name].gmv) : 0;
-                    const gmvB = (b.eventLogs && b.eventLogs[activeEvent.name]?.gmv) ? Number(b.eventLogs[activeEvent.name].gmv) : 0;
-                    return gmvB - gmvA;
-                });
-
-                let totalGmv = 0, totalOrders = 0, totalUnits = 0;
-                const canaisAtendidos = new Set();
-                const storeRows = [];
-
-                const eventDate = activeEvent.date ? new Date(activeEvent.date + 'T12:00:00') : new Date();
-                const eventDay = eventDate.getDate();
-                const daysBefore = Math.max(1, eventDay - 1);
-
-                clientStores.forEach((s, idx) => {
-                    const ev = (s.eventLogs && s.eventLogs[activeEvent.name]) || { gmv: 0, orders: 0, units: 0 };
-                    const gmv = Number(ev.gmv) || 0;
-                    const orders = Number(ev.orders) || 0;
-                    const units = Number(ev.units) || 0;
-
-                    const totalAccumulatedNow = Number(s.currentRevenue) || 0;
-                    const revenueBefore = Math.max(0, totalAccumulatedNow - gmv);
-                    const dailyAvgBefore = eventDay > 1 ? revenueBefore / daysBefore : 0;
-                    const vsMedia = dailyAvgBefore > 0 ? ((gmv - dailyAvgBefore) / dailyAvgBefore) * 100 : 0;
-
-                    totalGmv += gmv; totalOrders += orders; totalUnits += units;
-                    if(s.marketplace) canaisAtendidos.add(s.marketplace);
-
-                    storeRows.push([
-                        `${idx + 1}º`, s.marketplace || '-', s.store || '-', formatCurrency(gmv),
-                        vsMedia > 0 ? `+${vsMedia.toFixed(1)}%` : (vsMedia < 0 ? `${vsMedia.toFixed(1)}%` : '-'),
-                        `${orders}`, `${units}`
-                    ]);
-                });
-
-                // CABEÇALHO DO PDF
-                docPdf.setFillColor(15, 23, 42); 
-                docPdf.rect(0, 0, 210, 46, 'F'); 
-                
-                docPdf.setFontSize(22); docPdf.setTextColor(255, 255, 255); 
-                docPdf.text(clientName.toUpperCase(), 14, 22);
-                
-                docPdf.setFontSize(9); docPdf.setTextColor(255, 77, 0); 
-                docPdf.text('RELATÓRIO DE DESEMPENHO - EVENTO SAZONAL', 14, 29); 
-                
-                docPdf.setFontSize(9); docPdf.setTextColor(250, 204, 21);
-                docPdf.text(`Campanha ${activeEvent.name}`, 14, 35);
-
-                if (logoImg) docPdf.addImage(logoImg, 'JPEG', 178, 12, 18, 18);
-                else { docPdf.setFontSize(14); docPdf.setTextColor(255, 255, 255); docPdf.text('B2X', 196, 22, { align: 'right' }); }
-
-                docPdf.setFontSize(8); docPdf.setTextColor(107, 114, 128); 
-                docPdf.text(`Gerado em: ${dataGeracao}`, 196, 40, { align: 'right' });
-
-                // BLOCO DE MÉTRICAS
-                docPdf.setFontSize(11); docPdf.setTextColor(75, 85, 99); 
-                docPdf.text('Faturamento Exclusivo do Evento:', 14, 58);
-                docPdf.setFontSize(22); docPdf.setTextColor(234, 88, 12); 
-                docPdf.text(formatCurrency(totalGmv), 14, 68);
-
-                // TABELA (Sem colunas de Ads e ROAS)
-                autoTable(docPdf, {
-                    startY: 78,
-                    head: [['Ranking', 'Canal', 'Loja', 'Faturamento', 'Vs Média/Dia', 'Pedidos', 'Unidades']],
-                    body: storeRows, theme: 'grid',
-                    headStyles: { fillColor: [234, 88, 12], textColor: [255, 255, 255], fontStyle: 'bold' },
-                    styles: { fontSize: 8, cellPadding: 4 },
-                    columnStyles: { 0: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'center' }, 6: { halign: 'center' } },
-                    alternateRowStyles: { fillColor: [255, 247, 237] }
-                });
-
-                // RODAPÉ
-                let finalY = docPdf.lastAutoTable.finalY + 12;
-                if (finalY + 40 > docPdf.internal.pageSize.height) { docPdf.addPage(); finalY = 20; }
-                
-                docPdf.setFillColor(255, 247, 237); 
-                docPdf.setDrawColor(253, 186, 116);
-                docPdf.roundedRect(14, finalY, 182, 45, 3, 3, 'FD');
-
-                docPdf.setFontSize(11); docPdf.setTextColor(154, 52, 18); 
-                docPdf.setFont('helvetica', 'bold');
-                docPdf.text('Resumo Executivo do Evento', 20, finalY + 8);
-
-                const ticketMedio = totalOrders > 0 ? totalGmv / totalOrders : 0;
-                const upt = totalOrders > 0 ? totalUnits / totalOrders : 0;
-
-                docPdf.setFontSize(9); docPdf.setTextColor(194, 65, 12); docPdf.setFont('helvetica', 'normal');
-
-                docPdf.text(`Ticket Médio: ${formatCurrency(ticketMedio)}`, 20, finalY + 18);
-                docPdf.text(`Total de Unidades Vendidas: ${totalUnits} unidades`, 20, finalY + 26);
-                docPdf.text(`Unidades p/ Pedido: ${upt.toFixed(2)}`, 20, finalY + 34);
-                
-            });
-            
-            docPdf.save(`B2X Evento ${activeEvent.name.replace(/[^a-z0-9]/gi, '_')}.pdf`);
-            toast.success("Relatório Sazonal gerado e baixado!", { id: 'event-export' });
-        } catch (error) {
-            console.error(error);
-            toast.error("Erro ao gerar PDF: " + error.message, { id: 'event-export' });
-        }
+        const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const docPdf = await generateEventReportPDF(activeEvent.name, 'Todos os Clientes', filteredStores, dataGeracao, formatCurrency, formatNumber, currentDay);
+        docPdf.save(`B2X_WarRoom_${activeEvent.name}.pdf`);
     };
 
     // NOVA LÓGICA DE FECHAMENTO: Baixa relatório automaticamente

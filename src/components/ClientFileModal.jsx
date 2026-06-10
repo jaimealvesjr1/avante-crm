@@ -3,6 +3,8 @@ import { Flame, Clock, X, CheckSquare, ClipboardList, History, PieChart as PieCh
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ReferenceLine, ComposedChart, Area, Legend } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
+// Importação do motor de cálculo unificado
+import { enrichStoreMetrics } from '../utils/calculations';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
@@ -70,47 +72,39 @@ const StoreEntryRow = ({ store, handleSaveIndividualEntry, formatCurrency }) => 
 export default function ClientFileModal({ 
   clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, 
   currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, 
-  addNewStoreToClient, handleSaveIndividualEntry, dashboardData, offboardClient 
+  addNewStoreToClient, handleSaveIndividualEntry, dashboardData, offboardClient,
+  // Novas propriedades conectadas para imunização de filtros
+  daysInMonth, globalGrowth, clientGrowthMap, marketplaceGrowthMap
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
 
-  // Garantir que as stores estão limpas de arquivamento
+  // Filtra as lojas apenas por cliente (Bruto da nuvem, imune a filtros da tabela)
   const liveStores = useMemo(() => {
-    return stores.filter(s => s.client === clientGroup.client && !s.arquivada);
-  }, [stores, clientGroup.client]);
+    const rawClientStores = stores.filter(s => s.client === clientGroup.client && !s.arquivada);
+    // Enriquece cada loja usando o motor utilitário centralizado
+    return rawClientStores.map(s => 
+      enrichStoreMetrics(s, currentDay, daysInMonth || 30, globalGrowth || 10, clientGrowthMap, marketplaceGrowthMap)
+    );
+  }, [stores, clientGroup.client, currentDay, daysInMonth, globalGrowth, clientGrowthMap, marketplaceGrowthMap]);
 
-  // === CÁLCULO SEGURO E DESVINCULADO DE FILTROS GLOBAIS ===
+  // Estatísticas consolidadas baseadas nas lojas limpas e enriquecidas
   const clientUnfilteredStats = useMemo(() => {
-    let currentRevenue = 0, adsInvestment = 0, orders = 0, units = 0;
+    let currentRevenue = 0, adsInvestment = 0, orders = 0, units = 0, totalTarget = 0, projectedGmv = 0;
     
     liveStores.forEach(s => {
         currentRevenue += Number(s.currentRevenue) || 0;
         adsInvestment += Number(s.adsInvestment) || 0;
         orders += Number(s.orders) || 0;
         units += Number(s.units) || 0;
+        totalTarget += s.gmvTarget || 0;
+        projectedGmv += s.projectedGmv || 0;
     });
-
-    const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const safeCurrentDay = currentDay || now.getDate();
-    const projectedGmv = safeCurrentDay > 0 ? (currentRevenue / safeCurrentDay) * daysInMonth : 0;
-    
-    // Fallback de Meta real para ignorar filtros cortando lojas
-    let totalTarget = 0;
-    if (clientGroup && clientGroup.stores.length === liveStores.length) {
-        totalTarget = clientGroup.totalGmvTarget;
-    } else {
-        liveStores.forEach(s => {
-            if (s.targetType === 'fixed') totalTarget += Number(s.fixedGmvTarget) || 0;
-            else totalTarget += (Number(s.gmvBase) || 0) * 1.1; // fallback para % se o filtro atrapalhar
-        });
-    }
 
     const roas = adsInvestment > 0 ? (currentRevenue / adsInvestment).toFixed(2) : 0;
     
     return { currentRevenue, adsInvestment, orders, units, projectedGmv, totalTarget, roas };
-  }, [liveStores, currentDay, clientGroup]);
+  }, [liveStores]);
 
   const clientEvents = useMemo(() => {
     const events = {};
@@ -197,7 +191,6 @@ export default function ClientFileModal({
     });
   }, [liveStores]);
 
-  // === DADOS DOS GRÁFICOS (Baseados nas Unfiltered Stats) ===
   const clientDailyMetrics = useMemo(() => {
     const days = Array.from({ length: currentDay }, (_, i) => ({ day: i + 1, gmv: 0, isEvent: false }));
 
@@ -217,12 +210,11 @@ export default function ClientFileModal({
       if (d.gmv > avgGmv * 1.5) d.isEvent = true;
     });
 
-    const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const dailyTargetAvg = daysInMonth > 0 ? (clientUnfilteredStats.totalTarget || 0) / daysInMonth : 0;
+    const daysInMonthActual = daysInMonth || 30;
+    const dailyTargetAvg = daysInMonthActual > 0 ? (clientUnfilteredStats.totalTarget || 0) / daysInMonthActual : 0;
 
     return { days, avgGmv, dailyTargetAvg };
-  }, [liveStores, currentDay, clientUnfilteredStats.totalTarget]);
+  }, [liveStores, currentDay, daysInMonth, clientUnfilteredStats.totalTarget]);
 
   const clientHistoricalChartData = useMemo(() => {
     if (!consolidatedHistory || consolidatedHistory.length === 0) return [];
@@ -354,6 +346,27 @@ export default function ClientFileModal({
     return active;
   }, [liveStores]);
 
+  const pieData = useMemo(() => 
+    liveStores.map(s => ({ name: s.store, value: s.currentRevenue || 0 })).filter(s => s.value > 0)
+  , [liveStores]);
+
+  const roasData = useMemo(() => 
+    liveStores.map(s => ({ 
+      name: s.store, 
+      roas: s.adsInvestment > 0 ? Number((s.currentRevenue / s.adsInvestment).toFixed(1)) : 0 
+    })).sort((a, b) => b.roas - a.roas)
+  , [liveStores]);
+
+  const glassTooltipStyle = {
+    backgroundColor: 'rgba(11, 15, 25, 0.95)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '12px',
+    color: '#fff',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+    fontSize: '12px'
+  };
+
   const clientMktData = useMemo(() => {
     if (!liveStores) return [];
     const mktMap = {};
@@ -378,31 +391,26 @@ export default function ClientFileModal({
     return allLogs.sort((a, b) => b.id - a.id);
   }, [liveStores]);
 
-  const glassTooltipStyle = {
-    backgroundColor: 'rgba(11, 15, 25, 0.95)',
-    backdropFilter: 'blur(12px)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '12px',
-    color: '#fff',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-    fontSize: '12px'
-  };
-
   const potentialMarketplaces = useMemo(() => {
     return liveStores[0]?.potentialMarketplaces || [];
   }, [liveStores]);
 
+  // 2. Função para alternar o status do marketplace (Potencial <-> Inativo)
   const togglePotentialMarketplace = (mkt) => {
-    if (!canUseBatchEntry) return; 
-    if (activeMarketplaces.has(mkt)) return; 
+    if (!canUseBatchEntry) return; // Trava de segurança por nível de cargo
+    if (activeMarketplaces.has(mkt)) return; // Se já estiver ativo, não faz nada
 
     let newPotentials = [...potentialMarketplaces];
+    
     if (newPotentials.includes(mkt)) {
+      // Se já era potencial, remove
       newPotentials = newPotentials.filter(p => p !== mkt); 
     } else {
+      // Se não era, adiciona à lista de expansão
       newPotentials.push(mkt); 
     }
 
+    // Atualiza em lote (batch) todas as lojas deste cliente na nuvem
     let updatedStoresGlobal = [...stores];
     liveStores.forEach(store => {
       const updatedStore = { ...store, potentialMarketplaces: newPotentials };
@@ -411,18 +419,8 @@ export default function ClientFileModal({
     });
 
     setStores(updatedStoresGlobal);
+    toast.success(`Radar de expansão atualizado para ${clientGroup.client}!`);
   };
-
-  const pieData = useMemo(() => 
-    liveStores.map(s => ({ name: s.store, value: s.currentRevenue || 0 })).filter(s => s.value > 0)
-  , [liveStores]);
-
-  const roasData = useMemo(() => 
-    liveStores.map(s => ({ 
-      name: s.store, 
-      roas: s.adsInvestment > 0 ? Number((s.currentRevenue / s.adsInvestment).toFixed(1)) : 0 
-    })).sort((a, b) => b.roas - a.roas)
-  , [liveStores]);
 
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
@@ -576,7 +574,6 @@ export default function ClientFileModal({
               {/* Grid de Cartões de Resumo */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
                 
-                {/* CARTÃO: FATURAMENTO HISTÓRICO + FATURAMENTO DO GRUPO */}
                 <div className="sm:col-span-2 bg-gradient-to-r from-indigo-900/20 to-black/20 p-5 rounded-2xl border border-indigo-500/20 shadow-sm flex flex-col justify-center">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 w-full">
                     
@@ -719,7 +716,7 @@ export default function ClientFileModal({
                       <Activity size={16} className="text-blue-400" /> Tração do Faturamento Diário
                     </h3>
                     <div className="flex items-center gap-2">
-                      <span className="text-[12px] font-bold text-emerald-400/80 border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 rounded">
+                      <span className="text-[10px] font-bold text-emerald-400/80 uppercase border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 rounded">
                         Ideal: {formatCurrency(clientDailyMetrics.dailyTargetAvg)}
                       </span>
                       <span className="text-[12px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">
@@ -727,7 +724,7 @@ export default function ClientFileModal({
                       </span>
                     </div>
                   </div>
-                  <div className="h-[200px] w-full">
+                  <div className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={clientDailyMetrics.days} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
@@ -786,7 +783,8 @@ export default function ClientFileModal({
                             contentStyle={glassTooltipStyle}
                             formatter={(value, name) => [formatCurrency(value), name]}
                           />
-                          <Area type="monotone" dataKey="Faturamento" stroke="#3B82F6" strokeWidth={2} fillOpacity={1} fill="url(#colorFaturamento)" />
+                          <Legend verticalAlign="top" height={30} iconSize={8} wrapperStyle={{fontSize: '11px'}}/>
+                          <Area type="monotone" dataKey="Faturamento" name="Consolidado" stroke="#3B82F6" strokeWidth={2} fillOpacity={1} fill="url(#colorFaturamento)" />
                           <Line type="monotone" dataKey="Projecao" name="Projeção Atual" stroke="#F59E0B" strokeDasharray="4 4" strokeWidth={2} dot={{r:3}} connectNulls />
                           <Line type="monotone" dataKey="Meta" name="Meta do Mês" stroke="#10B981" strokeDasharray="4 4" strokeWidth={2} dot={{r:3}} connectNulls />
                         </ComposedChart>
@@ -804,7 +802,6 @@ export default function ClientFileModal({
           {/* === ABA 2: LANÇAMENTOS INTELIGENTES === */}
           {activeTab === 'apuracao' && (
             <div className="space-y-6 animate-in fade-in">
-
               <div className="bg-black/20 rounded-2xl border border-white/5 overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[700px]">
                   <thead className="bg-black/40 text-gray-400 text-[10px] uppercase tracking-wider border-b border-white/5">
@@ -835,11 +832,7 @@ export default function ClientFileModal({
 
           {activeTab === 'historico' && (
             <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mt-4 animate-in fade-in">
-              
-              {/* COLUNA ESQUERDA: Fechamentos + Timeline (Ocupa 3 colunas) */}
               <div className="xl:col-span-3 flex flex-col gap-6">
-                
-                {/* Tabela de Fechamentos */}
                 <div className="bg-black/20 border border-white/10 rounded-2xl overflow-hidden shadow-sm">
                   <div className="p-4 border-b border-white/5 bg-black/40 font-bold text-xs text-gray-400 uppercase tracking-widest">
                     Fechamentos Mensais Consolidado
@@ -876,7 +869,6 @@ export default function ClientFileModal({
                   </div>
                 </div>
 
-                {/* Timeline de Ocorrências (Logo abaixo da tabela) */}
                 <div className="bg-white/[0.02] p-5 rounded-3xl border border-white/5 flex flex-col shadow-sm flex-1">
                   <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
                     <h4 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
@@ -897,7 +889,6 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              {/* COLUNA DIREITA: Tarefas Pendentes (Ocupa 2 colunas) */}
               <div className="xl:col-span-2 bg-white/[0.02] p-5 rounded-3xl border border-white/5 flex flex-col shadow-sm max-h-[900px]">
                 <div className="flex flex-col gap-4 mb-4 border-b border-white/5 pb-4">
                   <div className="flex items-center justify-between">

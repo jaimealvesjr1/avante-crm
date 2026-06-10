@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Flame, CalendarDays, Activity, Clock, CheckCircle, AlertCircle, Search, CalendarClock, X, Briefcase, AlertTriangle } from 'lucide-react';
+import { Flame, CalendarDays, Activity, Clock, CheckCircle, AlertCircle, Search, CalendarClock, X, Briefcase, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
@@ -24,6 +24,9 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
 
     const [showVisitForm, setShowVisitForm] = useState(false);
     const [visitForm, setVisitForm] = useState({ id: null, client: '', date: '', time: '', responsavel: '' });
+    
+    // NOVO ESTADO: Controla qual utilizador tem o histórico de XP expandido
+    const [expandedUserXP, setExpandedUserXP] = useState(null);
 
     const uniqueClients = useMemo(() => {
         return [...new Set(stores.map(s => s.client))].filter(Boolean).sort();
@@ -116,6 +119,7 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
     const now = new Date();
     const localTodayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     
+    // === NOVA CONTAGEM DE XP: COM HISTÓRICO E AUDITORIA ===
     const rankingDiario = useMemo(() => {
         const stats = {};
 
@@ -151,6 +155,7 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
 
         stores.forEach(store => {
             (store.checklists || []).forEach(task => {
+                // 1. XP POR CRIAÇÃO
                 if (task.id && task.criadoPor && task.recorrencia !== 'ghost') {
                     const timestamp = Math.floor(task.id);
                     if (timestamp > 1600000000000) { 
@@ -158,32 +163,43 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                         if (creationDate === localTodayStr) {
                             const creator = task.criadoPor;
                             if (!stats[creator]) {
-                                stats[creator] = { name: creator, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } } };
+                                stats[creator] = { name: creator, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } }, history: [] };
                             }
-                            stats[creator].points += 2; 
+                            stats[creator].points += 2;
+                            stats[creator].history.push({
+                                id: `crt-${task.id}`,
+                                points: 2,
+                                desc: `Proatividade: Criou tarefa para ${store.store}`
+                            });
                         }
                     }
                 }
 
+                // 2. XP POR CONCLUSÃO
                 if (task.feita && task.completedAt === localTodayStr) {
                     const author = task.completedBy || 'Sistema';
                     if (!stats[author]) {
-                        stats[author] = { name: author, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } } };
+                        stats[author] = { name: author, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } }, history: [] };
                     }
                     
                     stats[author].tasks += 1;
                     const weight = task.peso || 'media';
                     
-                    let earnedPoints = 10;
-                    if (weight === 'baixa') earnedPoints = 10;
-                    else if (weight === 'media') earnedPoints = 20;
-                    else if (weight === 'alta') earnedPoints = 30;
+                    let earnedPoints = 0;
+                    let detailsArr = [];
 
+                    // Base por dificuldade
+                    if (weight === 'baixa') { earnedPoints += 10; detailsArr.push('Baixa (+10)'); }
+                    else if (weight === 'media') { earnedPoints += 20; detailsArr.push('Média (+20)'); }
+                    else if (weight === 'alta') { earnedPoints += 30; detailsArr.push('Alta (+30)'); }
+
+                    // Prazos
                     if (task.data) {
-                        if (task.data >= localTodayStr) earnedPoints += 5;
-                        else earnedPoints = Math.max(5, earnedPoints - 10);
+                        if (task.data >= localTodayStr) { earnedPoints += 5; detailsArr.push('No Prazo (+5)'); }
+                        else { earnedPoints -= 10; detailsArr.push('Atrasada (-10)'); }
                     }
 
+                    // Velocidade vs Média
                     let taskDuration = 0;
                     if (task.accumulatedTimeMs) {
                         taskDuration = task.accumulatedTimeMs;
@@ -196,15 +212,22 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                         const tolerance = 60000; 
 
                         if (taskDuration < (expectedTimeMs - tolerance)) {
-                            earnedPoints += 5; 
+                            earnedPoints += 5; detailsArr.push('Rápida (+5)');
                         } else if (taskDuration > (expectedTimeMs + tolerance)) {
-                            earnedPoints = Math.max(0, earnedPoints - 5); 
+                            earnedPoints -= 5; detailsArr.push('Lenta (-5)');
                         } 
 
                         stats[author].times[weight].t += taskDuration;
                         stats[author].times[weight].c += 1;
                     }
+                    
                     stats[author].points += earnedPoints;
+                    stats[author].history.push({
+                        id: `cmp-${task.id}`,
+                        points: earnedPoints,
+                        desc: `Concluiu "${task.texto}" em ${store.store}`,
+                        details: detailsArr.join(' | ')
+                    });
                 }
             });
         });
@@ -213,6 +236,9 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
             const avgBaixa = r.times.baixa.c > 0 ? Math.round(r.times.baixa.t / r.times.baixa.c / 60000) : 0;
             const avgMedia = r.times.media.c > 0 ? Math.round(r.times.media.t / r.times.media.c / 60000) : 0;
             const avgAlta = r.times.alta.c > 0 ? Math.round(r.times.alta.t / r.times.alta.c / 60000) : 0;
+            
+            // Ordenar o histórico (do mais alto XP para o menor)
+            r.history.sort((a, b) => b.points - a.points);
             
             return { ...r, avgBaixa, avgMedia, avgAlta };
         }).sort((a, b) => b.points - a.points);
@@ -515,7 +541,184 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                         </div>
                     ) : null}                    
 
-                    {/* Bloco Exclusivo de CRM: Próximas Visitas (Movido para baixo na coluna lateral) */}
+
+                    {/* 1. RADAR DA EQUIPE (Trabalhando Agora) */}
+                    <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg">
+                        <h3 className="text-lg font-bold tracking-wide text-emerald-400 uppercase flex items-center gap-2 mb-5">
+                            <Activity size={18} /> trabalhando agora
+                        </h3>
+                        
+                        {Object.keys(liveStatus).length > 0 ? (
+                            <div className="grid grid-cols-1 gap-3.5">
+                                {Object.entries(liveStatus).map(([userName, data]) => {
+                                    const isPaused = data.texto?.includes('⏸️');
+                                    
+                                    const memberData = teamMembers?.find(m => m.nomeCompleto === userName || m.nome === userName);
+                                    const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
+                                    const userPhoto = memberData?.avatarUrl || null;
+
+                                    return (
+                                        <div key={userName} 
+                                            onClick={() => {
+                                                if (data.storeId) {
+                                                    const targetStore = stores.find(s => s.id === data.storeId);
+                                                    if (targetStore && openTaskModal) openTaskModal(targetStore);
+                                                }
+                                            }}
+                                            className={`bg-gray-900/80 p-4 rounded-xl border flex items-center gap-4 relative overflow-hidden cursor-pointer transition-colors ${
+                                                isPaused ? 'border-amber-500/30 hover:border-amber-500' : 'border-gray-700 hover:border-emerald-500'
+                                            }`}>
+                                            <div className={`absolute top-0 left-0 h-full w-1.5 transition-all ${
+                                                isPaused ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
+                                            }`}></div>
+                                            
+                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
+                                                {userPhoto ? (
+                                                    <img src={userPhoto} alt={userName} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    userName.charAt(0).toUpperCase()
+                                                )}
+                                            </div>
+
+                                            <div className="flex-1">
+                                                <p className="text-sm font-bold text-white flex items-center justify-between mb-1">
+                                                    <span className="uppercase tracking-wider flex items-center gap-2">
+                                                        {userName}
+                                                    </span>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                                                        isPaused ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-500/70 bg-emerald-500/10'
+                                                    }`}>
+                                                        {data.timestamp}
+                                                    </span>
+                                                </p>
+                                                <p className="text-xs text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-700 rounded-xl bg-gray-900/30">
+                                <Activity size={32} className="text-gray-600 mb-3" />
+                                <p className="text-sm text-gray-500 font-medium italic text-center">Ninguém está executando tarefas rastreadas no momento.</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 2. RADAR DE PACING */}
+                    <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg overflow-hidden flex flex-col max-h-[400px]">
+                        <h3 className="text-lg font-bold text-amber-400 uppercase tracking-wide flex items-center gap-2 mb-5 shrink-0">
+                            <AlertTriangle size={18} /> Radar de Pacing
+                        </h3>
+                        
+                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                            {pacingLogs.map((log, i) => (
+                            <div key={i} className={`flex flex-col gap-2 p-3 rounded-xl border backdrop-blur-md transition-all ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
+                                <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-lg shrink-0 ${log.type === 'danger' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                    {log.type === 'danger' ? <AlertTriangle size={14} /> : <Clock size={14} />}
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-white text-xs truncate" title={log.client}>{log.client}</h4>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Operando a <strong className={log.type === 'danger' ? 'text-red-400' : 'text-amber-400'}>{log.percentReached.toFixed(1)}%</strong> da meta.</p>
+                                </div>
+                                </div>
+                            </div>
+                            ))}
+                            {pacingLogs.length === 0 && (
+                            <div className="flex flex-col items-center justify-center gap-3 p-6 text-emerald-400 text-sm font-medium text-center h-full bg-gray-900/30 rounded-xl border border-dashed border-gray-700">
+                                <CheckCircle size={28} className="opacity-50" /> 
+                                <span>Tudo verde! Todas as contas no ritmo da meta.</span>
+                            </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* 3. RANKING DE EXECUÇÃO COM HISTÓRICO EXPANSÍVEL */}
+                    <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
+                        <div className="mb-4 border-b border-gray-700 pb-4">
+                            <h3 className="text-lg font-bold tracking-wide text-blue-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
+                        </div>
+                        
+                        <div className="space-y-3 pr-2">
+                            {rankingDiario.map((rank, i) => {
+                                const memberData = teamMembers?.find(m => m.nomeCompleto === rank.name || m.nome === rank.name);
+                                const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
+                                const userPhoto = memberData?.avatarUrl || null;
+                                const isExpanded = expandedUserXP === rank.name;
+
+                                return (
+                                    <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2 hover:border-gray-500 transition-colors cursor-pointer" onClick={() => setExpandedUserXP(isExpanded ? null : rank.name)}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <span className={`w-6 h-6 rounded-full text-[10px] font-black flex items-center justify-center shadow-inner shrink-0 ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
+                                                    {i + 1}
+                                                </span>
+                                                
+                                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
+                                                    {userPhoto ? (
+                                                        <img src={userPhoto} alt={rank.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        rank.name.charAt(0).toUpperCase()
+                                                    )}
+                                                </div>
+
+                                                <div>
+                                                    <p className="text-sm font-bold text-gray-200 leading-none flex items-center gap-1.5">
+                                                        {rank.name} {isExpanded ? <ChevronUp size={14} className="text-gray-500"/> : <ChevronDown size={14} className="text-gray-500"/>}
+                                                    </p>
+                                                    <p className="text-xs text-amber-500 font-bold mt-1">{rank.points} XP</p>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="text-xs text-gray-300 font-bold bg-white/5 px-2.5 py-1 rounded-lg border border-white/5 flex items-center gap-1">
+                                                    {rank.tasks} <CheckCircle size={14} className="text-emerald-500"/>
+                                                </span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-black/40 rounded-lg px-3 py-2 flex justify-between items-center mt-1">
+                                            <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempos Médios</span>
+                                            <div className="flex gap-2 text-[10px] font-bold">
+                                                <span className={rank.avgBaixa > 0 ? 'text-emerald-400' : 'text-gray-600'}>🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}</span>
+                                                <span className={rank.avgMedia > 0 ? 'text-amber-400' : 'text-gray-600'}>🟡 {rank.avgMedia > 0 ? `${rank.avgMedia}m` : '--'}</span>
+                                                <span className={rank.avgAlta > 0 ? 'text-red-400' : 'text-gray-600'}>🔴 {rank.avgAlta > 0 ? `${rank.avgAlta}m` : '--'}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* CAIXA DE AUDITORIA DE XP EXPANSÍVEL */}
+                                        {isExpanded && (
+                                            <div className="mt-2 pt-2 border-t border-gray-700/50 flex flex-col gap-2 cursor-default" onClick={(e) => e.stopPropagation()}>
+                                                <h5 className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Extrato de XP (Hoje)</h5>
+                                                {rank.history.length > 0 ? rank.history.map((hItem) => (
+                                                    <div key={hItem.id} className="bg-black/30 p-2 rounded flex justify-between items-start gap-2">
+                                                        <div className="flex-1">
+                                                            <p className="text-[11px] text-gray-300 font-medium leading-tight">{hItem.desc}</p>
+                                                            {hItem.details && <p className="text-[9px] text-gray-500 mt-0.5">{hItem.details}</p>}
+                                                        </div>
+                                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${hItem.points > 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                                                            {hItem.points > 0 ? '+' : ''}{hItem.points}
+                                                        </span>
+                                                    </div>
+                                                )) : (
+                                                    <p className="text-[10px] text-gray-500 italic text-center py-2">Nenhum evento registrado.</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div> 
+                                );
+                            })}
+                            {rankingDiario.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada hoje.</div>}
+                        </div>
+
+                        <div className="mt-4 pt-4 border-t border-gray-700/50 text-[10px] text-gray-400 text-center leading-relaxed">
+                            <strong>XP Base:</strong> Baixa (+10) • Média (+20) • Alta (+30) | <strong>Criação:</strong> (+2 XP)<br/>
+                            <strong>Prazos:</strong> No prazo (+5) • Atrasada (-10)<br/>
+                            <strong>Agilidade:</strong> Rápida (+5) • Na média (0) • Lenta (-5)
+                        </div>
+                    </div>
+
+                    {/* Bloco Exclusivo de CRM: Próximas Visitas */}
                     {(upcomingVisits.length > 0 || canScheduleVisits) && (
                     <div className="mb-6 bg-blue-900/10 border border-blue-500/20 p-5 rounded-2xl w-full">
                         
@@ -658,153 +861,6 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                         )}
                     </div>
                     )}
-
-                    {/* 1. RADAR DA EQUIPE (Trabalhando Agora) */}
-                    <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg">
-                        <h3 className="text-lg font-bold tracking-wide text-emerald-400 uppercase flex items-center gap-2 mb-5">
-                            <Activity size={18} /> trabalhando agora
-                        </h3>
-                        
-                        {Object.keys(liveStatus).length > 0 ? (
-                            <div className="grid grid-cols-1 gap-3.5">
-                                {Object.entries(liveStatus).map(([userName, data]) => {
-                                    const isPaused = data.texto?.includes('⏸️');
-                                    
-                                    const memberData = teamMembers?.find(m => m.nomeCompleto === userName || m.nome === userName);
-                                    const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
-                                    const userPhoto = memberData?.avatarUrl || null;
-
-                                    return (
-                                        <div key={userName} 
-                                            onClick={() => {
-                                                if (data.storeId) {
-                                                    const targetStore = stores.find(s => s.id === data.storeId);
-                                                    if (targetStore && openTaskModal) openTaskModal(targetStore);
-                                                }
-                                            }}
-                                            className={`bg-gray-900/80 p-4 rounded-xl border flex items-center gap-4 relative overflow-hidden cursor-pointer transition-colors ${
-                                                isPaused ? 'border-amber-500/30 hover:border-amber-500' : 'border-gray-700 hover:border-emerald-500'
-                                            }`}>
-                                            <div className={`absolute top-0 left-0 h-full w-1.5 transition-all ${
-                                                isPaused ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
-                                            }`}></div>
-                                            
-                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
-                                                {userPhoto ? (
-                                                    <img src={userPhoto} alt={userName} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    userName.charAt(0).toUpperCase()
-                                                )}
-                                            </div>
-
-                                            <div className="flex-1">
-                                                <p className="text-sm font-bold text-white flex items-center justify-between mb-1">
-                                                    <span className="uppercase tracking-wider flex items-center gap-2">
-                                                        {userName}
-                                                    </span>
-                                                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-                                                        isPaused ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-500/70 bg-emerald-500/10'
-                                                    }`}>
-                                                        {data.timestamp}
-                                                    </span>
-                                                </p>
-                                                <p className="text-xs text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        ) : (
-                            <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-700 rounded-xl bg-gray-900/30">
-                                <Activity size={32} className="text-gray-600 mb-3" />
-                                <p className="text-sm text-gray-500 font-medium italic text-center">Ninguém está executando tarefas rastreadas no momento.</p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* 3. RANKING DE EXECUÇÃO */}
-                    <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
-                        <div className="mb-4 border-b border-gray-700 pb-4">
-                            <h3 className="text-lg font-bold tracking-wide text-blue-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
-                        </div>
-                        
-                        <div className="space-y-3 pr-2">
-                            {rankingDiario.map((rank, i) => {
-                                const memberData = teamMembers?.find(m => m.nomeCompleto === rank.name || m.nome === rank.name);
-                                const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
-                                const userPhoto = memberData?.avatarUrl || null;
-
-                                return (
-                                    <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2 hover:border-gray-500 transition-colors">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <span className={`w-6 h-6 rounded-full text-[10px] font-black flex items-center justify-center shadow-inner shrink-0 ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
-                                                    {i + 1}
-                                                </span>
-                                                
-                                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
-                                                    {userPhoto ? (
-                                                        <img src={userPhoto} alt={rank.name} className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        rank.name.charAt(0).toUpperCase()
-                                                    )}
-                                                </div>
-
-                                                <div>
-                                                    <p className="text-sm font-bold text-gray-200 leading-none">{rank.name}</p>
-                                                    <p className="text-xs text-amber-500 font-bold mt-1">{rank.points} XP</p>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <span className="text-xs text-gray-300 font-bold bg-white/5 px-2.5 py-1 rounded-lg border border-white/5 flex items-center gap-1">
-                                                    {rank.tasks} <CheckCircle size={14} className="text-emerald-500"/>
-                                                </span>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="bg-black/40 rounded-lg px-3 py-2 flex justify-between items-center mt-1">
-                                            <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempos Médios</span>
-                                            <div className="flex gap-2 text-[10px] font-bold">
-                                                <span className={rank.avgBaixa > 0 ? 'text-emerald-400' : 'text-gray-600'}>🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}</span>
-                                                <span className={rank.avgMedia > 0 ? 'text-amber-400' : 'text-gray-600'}>🟡 {rank.avgMedia > 0 ? `${rank.avgMedia}m` : '--'}</span>
-                                                <span className={rank.avgAlta > 0 ? 'text-red-400' : 'text-gray-600'}>🔴 {rank.avgAlta > 0 ? `${rank.avgAlta}m` : '--'}</span>
-                                            </div>
-                                        </div>
-                                    </div> 
-                                );
-                            })}
-                            {rankingDiario.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada hoje.</div>}
-                        </div>
-                    </div>
-
-                    {/* 2. RADAR DE PACING */}
-                    <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg overflow-hidden flex flex-col max-h-[400px]">
-                        <h3 className="text-lg font-bold text-amber-400 uppercase tracking-wide flex items-center gap-2 mb-5 shrink-0">
-                            <AlertTriangle size={18} /> Radar de Pacing
-                        </h3>
-                        
-                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
-                            {pacingLogs.map((log, i) => (
-                            <div key={i} className={`flex flex-col gap-2 p-3 rounded-xl border backdrop-blur-md transition-all ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
-                                <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-lg shrink-0 ${log.type === 'danger' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                                    {log.type === 'danger' ? <AlertTriangle size={14} /> : <Clock size={14} />}
-                                </div>
-                                <div className="flex-1">
-                                    <h4 className="font-bold text-white text-xs truncate" title={log.client}>{log.client}</h4>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">Operando a <strong className={log.type === 'danger' ? 'text-red-400' : 'text-amber-400'}>{log.percentReached.toFixed(1)}%</strong> da meta.</p>
-                                </div>
-                                </div>
-                            </div>
-                            ))}
-                            {pacingLogs.length === 0 && (
-                            <div className="flex flex-col items-center justify-center gap-3 p-6 text-emerald-400 text-sm font-medium text-center h-full bg-gray-900/30 rounded-xl border border-dashed border-gray-700">
-                                <CheckCircle size={28} className="opacity-50" /> 
-                                <span>Tudo verde! Todas as contas no ritmo da meta.</span>
-                            </div>
-                            )}
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>

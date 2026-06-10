@@ -31,6 +31,10 @@ import { normalizeMonthYear } from './utils/dateUtils';
 import { formatCurrency, formatNumber } from './utils/financeUtils';
 import GoalsSettingsModal from './components/GoalsSettingsModal';
 import WarRoom from './components/WarRoom';
+import { generateMonthlyReportPDF } from './utils/pdfGenerator';
+import { enrichStoreMetrics } from './utils/calculations';
+import CloseMonthModal from './components/CloseMonthModal';
+import StoreHistoryModal from './components/StoreHistoryModal';
 
 const initialStores = []; 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
@@ -43,7 +47,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.8.2';
+  const CURRENT_VERSION = '2.9';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -144,7 +148,6 @@ export default function App() {
   
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [isCloseMonthModalOpen, setIsCloseMonthModalOpen] = useState(false);
-  const [closeMonthValue, setCloseMonthValue] = useState('');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -817,25 +820,31 @@ export default function App() {
     setIsCloseMonthModalOpen(true);
   };
 
-  // === 2. EXECUTA O FECHAMENTO APÓS ESCOLHER A DATA ===
-  const executeCloseMonth = async () => {
-    if (!closeMonthValue) return toast.error("Selecione a competência para fechar o mês.");
+  const executeCloseMonth = async (selectedMonthValue) => {
+    const padronizado = normalizeMonthYear(selectedMonthValue);
 
-    const padronizado = normalizeMonthYear(closeMonthValue);
-
+    // 1. Confirmação de segurança com o usuário
     if (!window.confirm(`ATENÇÃO! Tem certeza que deseja FECHAR O MÊS de ${padronizado}?\n\n1. Os relatórios em PDF e Excel serão baixados.\n2. O histórico financeiro será salvo.\n3. O faturamento será zerado.\n4. As faturas de cobrança da agência serão geradas.`)) return;
 
-    setIsCloseMonthModalOpen(false); // Fecha o modal
+    setIsCloseMonthModalOpen(false); // Fecha o modal de seleção
     toast.loading("Processando fechamento do mês, gravando histórico e gerando faturas...", { id: 'close-month' });
 
     try {
+      // 2. Dispara a geração de relatórios consolidados
       await generateReports(stores, padronizado, { pdf: true, excel: true });
       
       const batch = writeBatch(db);
-      
-      // Objeto temporário para agrupar o valor a receber por cliente
       const faturasPorCliente = {};
 
+      // ⚡ OTIMIZAÇÃO: Pré-calcula o número de lojas ativas por cliente para evitar loops aninhados
+      const lojasAtivasPorCliente = {};
+      stores.forEach(s => {
+        if (!s.arquivada) {
+          lojasAtivasPorCliente[s.client] = (lojasAtivasPorCliente[s.client] || 0) + 1;
+        }
+      });
+      
+      // 3. Processamento individual de cada loja cadastrada
       stores.forEach(store => {
         const storeRef = doc(db, 'stores', store.id.toString());
         
@@ -844,15 +853,19 @@ export default function App() {
         const fixedFee = Number(store.fixedFee) || 0;
         const isFixed = store.feeType === 'fixed' || fixedFee > 0;
         
-        const clientStoresCount = stores.filter(s => s.client === store.client && !s.arquivada).length || 1;
+        // Busca o valor pré-calculado no nosso mapa de otimização
+        const clientStoresCount = lojasAtivasPorCliente[store.client] || 1;
+        
+        // Calcula a receita gerada para a agência por esta loja específica
         const agencyRevenue = isFixed ? (fixedFee / clientStoresCount) : gmv * (feePercent / 100);
 
-        // Agrupando os valores para a Fatura do Cliente
+        // Agrupa os valores para gerar uma única Fatura consolidada por Cliente
         if (!faturasPorCliente[store.client]) {
             faturasPorCliente[store.client] = { valorTotalAgencia: 0 };
         }
         faturasPorCliente[store.client].valorTotalAgencia += agencyRevenue;
 
+        // Cria o snapshot histórico que será guardado para sempre na linha do tempo da loja
         const snapshot = {
           id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
           month: padronizado, 
@@ -868,6 +881,7 @@ export default function App() {
         const currentHistory = store.monthlyHistory || [];
         const newMonthlyHistory = [...currentHistory, snapshot];
 
+        // Atualiza a loja zerando os acumulados mensais para iniciar o próximo ciclo
         batch.update(storeRef, {
           monthlyHistory: newMonthlyHistory, 
           gmvBase: gmv, 
@@ -876,19 +890,23 @@ export default function App() {
           units: 0,
           adsInvestment: 0,
           history: [], 
-          eventLogs: deleteField(),
+          eventLogs: deleteField(), // Limpa os logs de eventos sazonais do War Room
           updatedAt: new Date().toISOString()
         });
       });
 
+      // 4. Configuração de cobrança e vencimento das faturas (Padrão: 10 dias de prazo)
       const vencimentoPadrao = new Date();
-      vencimentoPadrao.setDate(vencimentoPadrao.getDate() + 10); // Vence em 10 dias após o fechamento
+      vencimentoPadrao.setDate(vencimentoPadrao.getDate() + 10); 
 
+      // 5. Criação das faturas na coleção de recebimentos financeiros
       Object.keys(faturasPorCliente).forEach(clienteNome => {
           const valorFatura = faturasPorCliente[clienteNome].valorTotalAgencia;
           
           if (valorFatura > 0) {
+              // Certifique-se de que 'collection' foi importado do firestore no topo do arquivo
               const faturaRef = doc(collection(db, 'financeiro_recebimentos'));
+              
               batch.set(faturaRef, {
                   id: faturaRef.id,
                   cliente: clienteNome,
@@ -901,8 +919,10 @@ export default function App() {
           }
       });
 
+      // 6. Envia o pacote de atualizações de forma atômica para o Firebase Firestore
       await batch.commit();
       toast.success("Mês fechado com sucesso! Relatórios baixados, histórico atualizado e Faturas geradas.", { id: 'close-month' });
+      
     } catch (error) {
       console.error(error);
       toast.error("Erro fatal ao fechar o mês: " + error.message, { id: 'close-month' });
@@ -1060,151 +1080,24 @@ export default function App() {
       // FASE 3: GERAÇÃO DO PDF (Novo Visual Premium com Logo)
       if (formats.pdf) {
         const docPdf = new jsPDF();
-        clientNames.forEach((clientName, index) => {
-          if (index > 0) docPdf.addPage();
-          const clientStores = clientsGroup[clientName].sort((a, b) => b.reportGmv - a.reportGmv);
-          let totalGmv = 0, totalBase = 0, totalOrders = 0, totalUnits = 0, totalAds = 0;
-          const canaisAtendidos = new Set();
-
-          clientStores.forEach(s => {
-            totalGmv += s.reportGmv; totalBase += s.reportBase;
-            totalOrders += s.reportOrders; totalUnits += s.reportUnits; totalAds += s.reportAds;
-
-            if (s.marketplace) canaisAtendidos.add(s.marketplace);
-          });
-
-          const totalEvolucao = totalBase > 0 ? (totalGmv - totalBase) / totalBase : 0;
-          const totalRoas = totalAds > 0 ? totalGmv / totalAds : 0;
-
-          // ================= CABEÇALHO DO PDF =================
-          // Fundo Azul Escuro Moderno
-          docPdf.setFillColor(15, 23, 42); 
-          docPdf.rect(0, 0, 210, 46, 'F'); 
-          
-          // Nome do Cliente
-          docPdf.setFontSize(22); 
-          docPdf.setTextColor(255, 255, 255); 
-          docPdf.text(clientName.toUpperCase(), 14, 22);
-          
-          // Subtítulo
-          docPdf.setFontSize(9); 
-          docPdf.setTextColor(148, 163, 184); 
-          docPdf.text('RELATÓRIO EXECUTIVO DE PERFORMANCE', 14, 29); 
-          
-          // Data Destacada em Amarelo
-          docPdf.setFontSize(9); 
-          docPdf.setTextColor(250, 204, 21);
-          docPdf.text(periodoApurado, 14, 35);
-
-          // Renderizando a Logo no Canto Superior Direito (se existir)
-          if (logoImg) {
-              docPdf.addImage(logoImg, 'JPEG', 178, 12, 18, 18);
-          } else {
-              docPdf.setFontSize(14); 
-              docPdf.setTextColor(255, 255, 255); 
-              // Passo 1 (Bônus): Texto de fallback alterado para B2X
-              docPdf.text('B2X', 196, 22, { align: 'right' });
-          }
-
-          docPdf.setFontSize(8); 
-          docPdf.setTextColor(107, 114, 128); 
-          docPdf.text(`Gerado em: ${dataGeracao}`, 196, 40, { align: 'right' });
-
-          // ================= BLOCO DE MÉTRICAS PRINCIPAIS =================
-          docPdf.setFontSize(11); 
-          docPdf.setTextColor(75, 85, 99); 
-          docPdf.text('Faturamento na Competência:', 14, 58);
-          docPdf.setFontSize(22); 
-          docPdf.setTextColor(16, 185, 129); // Verde
-          docPdf.text(formatMoney(totalGmv), 14, 68);
-
-
-          // ================= TABELA DE LOJAS =================
-          const storeRows = [];
-          clientStores.forEach((store, idx) => {
-            storeRows.push([ 
-              `${idx + 1}º`, 
-              store.marketplace || '-', 
-              store.store || '-', 
-              formatMoney(store.reportGmv), 
-              formatPercent(store.reportBase > 0 ? (store.reportGmv - store.reportBase) / store.reportBase : 0), 
-              `${store.reportOrders} ped.`, 
-              formatMoney(store.reportAds), 
-              formatRoas(store.reportAds > 0 ? store.reportGmv / store.reportAds : 0), 
-              formatMoney(store.reportUnits > 0 ? store.reportAds / store.reportUnits : 0) 
-            ]);
-          });
-
-          // Passo 2 e 3: Títulos das colunas atualizados
-          autoTable(docPdf, {
-            startY: 78,
-            head: [['Rk', 'Canal', 'Loja', 'Faturamento', 'Evolução', 'Volume', 'ADS', 'ROAS', 'Custo por Conversão']],
-            body: storeRows, theme: 'grid',
-            headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255], fontStyle: 'bold' },
-            styles: { fontSize: 7, cellPadding: 4 },
-            columnStyles: { 0: { halign: 'center' }, 4: { halign: 'center' }, 7: { halign: 'center' } },
-            alternateRowStyles: { fillColor: [249, 250, 251] }
-          });
-
-          // ================= RESUMO FINAL (RODAPÉ) =================
-          let finalY = docPdf.lastAutoTable.finalY + 12;
-          if (finalY + 50 > docPdf.internal.pageSize.height) { docPdf.addPage(); finalY = 20; }
-          
-          docPdf.setFillColor(248, 250, 252); 
-          docPdf.setDrawColor(226, 232, 240);
-          docPdf.roundedRect(14, finalY, 182, 45, 3, 3, 'FD');
-
-          docPdf.setFontSize(11); docPdf.setTextColor(30, 41, 59); 
-          docPdf.setFont('helvetica', 'bold');
-          docPdf.text('Resumo Global do Período', 20, finalY + 8);
-
-          docPdf.setFontSize(9); docPdf.setTextColor(71, 85, 105); docPdf.setFont('helvetica', 'normal');
-          docPdf.text(`Crescimento do Faturamento (MoM): ${formatPercent(totalEvolucao)}`, 20, finalY + 18);
-          docPdf.text(`Investimento Total em ADS: ${formatMoney(totalAds)}`, 20, finalY + 26);
-          docPdf.text(`Total de Unidades Vendidas: ${totalUnits} unidades`, 20, finalY + 34);
-
-          docPdf.text(`Custo por Conversão: ${formatMoney(totalUnits > 0 ? totalAds / totalUnits : 0)}`, 110, finalY + 18);
-          docPdf.text(`ROAS Médio Consolidado: ${formatRoas(totalRoas)}`, 110, finalY + 26);
-
-          // ================= DESTAQUE DE EVENTOS =================
-          let clientEventGmv = 0;
-          const eventsParticipated = new Set();
-          clientStores.forEach(s => {
-              if (s.reportEvents && Object.keys(s.reportEvents).length > 0) {
-                  Object.entries(s.reportEvents).forEach(([eName, eData]) => {
-                      clientEventGmv += Number(eData.gmv) || 0;
-                      eventsParticipated.add(eName);
-                  });
-              }
-          });
-
-          if (clientEventGmv > 0) {
-              let eventY = finalY + 50;
-              if (eventY + 30 > docPdf.internal.pageSize.height) { docPdf.addPage(); eventY = 20; }
-              
-              docPdf.setFillColor(255, 247, 237);
-              docPdf.setDrawColor(253, 186, 116);
-              docPdf.roundedRect(14, eventY, 182, 28, 3, 3, 'FD');
-              
-              docPdf.setFontSize(10); docPdf.setTextColor(194, 65, 12); docPdf.setFont('helvetica', 'bold');
-              docPdf.text(`DESTAQUES SAZONAIS: ${Array.from(eventsParticipated).join(', ')}`, 20, eventY + 7);
-              
-              docPdf.setFontSize(9); docPdf.setTextColor(154, 52, 18); docPdf.setFont('helvetica', 'normal');
-              
-              const daysWithoutEvents = Math.max(1, currentDay - eventsParticipated.size);
-              const avgDailyNormal = Math.max(0, totalGmv - clientEventGmv) / daysWithoutEvents;
-              const avgEventGmv = clientEventGmv / eventsParticipated.size;
-              const eventBoost = avgDailyNormal > 0 ? ((avgEventGmv - avgDailyNormal) / avgDailyNormal) * 100 : 0;
-              
-              docPdf.text(`Faturamento gerado em eventos: ${formatMoney(clientEventGmv)}`, 20, eventY + 15);
-              docPdf.text(`Média Diária Normal: ${formatMoney(avgDailyNormal)}/dia`, 20, eventY + 22);
-              
-              docPdf.setFont('helvetica', 'bold');
-              docPdf.text(`Performance vs Média Diária: +${eventBoost.toFixed(1)}%`, 110, eventY + 15);
-          }
-        });
         
-        docPdf.save(`B2X Relatorio ${monthInput.replace('/', '-')}.pdf`);
+        for (let i = 0; i < clientNames.length; i++) {
+          if (i > 0) docPdf.addPage();
+          const clientName = clientNames[i];
+          const clientStores = clientsGroup[clientName];
+          
+          const singleDoc = await generateMonthlyReportPDF(clientName, clientStores, periodoApurado, dataGeracao, formatCurrency, formatNumber);
+          
+          if (i === 0) {
+            docPdf.internal.pages = singleDoc.internal.pages;
+          } else {
+            // Adiciona as páginas seguintes dinamicamente
+            docPdf.addPage();
+            docPdf.internal.pages[docPdf.internal.pages.length - 1] = singleDoc.internal.pages[singleDoc.internal.pages.length - 1];
+          }
+        }
+        
+        docPdf.save(`B2X Relatorio Mensal ${monthInput.replace('/', '-')}.pdf`);
       }
     } catch (error) {
       console.error(error);
@@ -1258,36 +1151,18 @@ export default function App() {
       try {
         const imported = JSON.parse(ev.target.result);
         
-        let storesToImport = [];
-        let teamToImport = [];
-        let settingsToImport = {};
-        let internalTasksToImport = [];
-
-        // LÓGICA DE IDENTIFICAÇÃO DE VERSÃO
-        if (imported.metadata && imported.metadata.version === "4.0") {
-          // É o NOVO PADRÃO (V4.0)
-          storesToImport = imported.data.stores || [];
-          teamToImport = imported.data.teamMembers || [];
-          settingsToImport = imported.data.settings || {};
-          internalTasksToImport = imported.data.internalTasks || [];
-          
-        } else if (imported.stores) {
-          // PADRÃO ANTIGO (V3.0) - Tinha 'stores' na raiz
-          storesToImport = imported.stores;
-          teamToImport = imported.teamMembers || [];
-          settingsToImport = imported.settings || {};
-          
-        } else if (Array.isArray(imported)) {
-          // PADRÃO ARCAICO (Array direto) - Como o arquivo que você me enviou
-          storesToImport = imported;
-          toast.success("Formato antigo de backup detectado e adaptado.");
-          
-        } else {
-          toast.error("O arquivo JSON não possui um formato reconhecido pelo Avante HUB.");
-          return; // Aborta a operação se o formato for inválido
+        // Validação Estrita: Rejeita qualquer coisa que não seja o padrão atual
+        if (!imported.metadata || imported.metadata.version !== "4.0") {
+          toast.error("O arquivo JSON não é um backup válido da versão atual (V4.0) do Avante HUB.");
+          return;
         }
 
-        // Confirmação de segurança caso o usuário vá substituir o banco inteiro
+        const storesToImport = imported.data.stores || [];
+        const teamToImport = imported.data.teamMembers || [];
+        const settingsToImport = imported.data.settings || {};
+        const internalTasksToImport = imported.data.internalTasks || [];
+
+        // Confirmação de segurança
         if (storesToImport.length > 0) {
             if (!window.confirm(`ATENÇÃO: Você está prestes a restaurar ${storesToImport.length} lojas. Isso reescreverá o banco de dados atual. Deseja continuar?`)) {
                 return e.target.value = null;
@@ -1296,7 +1171,7 @@ export default function App() {
 
         const batch = writeBatch(db);
         
-        // 1. Grava as lojas (passando pela limpeza por garantia)
+        // 1. Grava as lojas
         storesToImport.forEach(s => {
           const pureStore = cleanStoreData(s);
           batch.set(doc(db, "stores", pureStore.id.toString()), pureStore);
@@ -1319,12 +1194,11 @@ export default function App() {
            batch.set(doc(db, "settings", "internal_tasks"), { tasks: internalTasksToImport }, { merge: true });
         }
 
-        // Executa todas as gravações no Firebase de uma só vez (Batch)
+        // Executa todas as gravações no Firebase
         await batch.commit();
-        
         toast.success("✅ Banco de dados restaurado e atualizado com sucesso!");
         
-        // Atualiza a tela imediatamente para o usuário
+        // Atualiza a tela imediatamente
         if (storesToImport.length > 0) setStores(storesToImport);
         if (teamToImport.length > 0) setTeamMembers(teamToImport);
         if (internalTasksToImport.length > 0) setInternalTasks(internalTasksToImport);
@@ -1437,34 +1311,7 @@ export default function App() {
     const mesPassadoExato = `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`;
 
     const processedStores = stores.map(store => {
-      const customG = store.customGrowth;
-      const clientG = clientGrowthMap[store.client];
-      const mktG = store.marketplace ? marketplaceGrowthMap[store.marketplace.toUpperCase()] : undefined;
-      
-      let growthRate = Number(globalGrowth) || 0;
-      let appliedGrowthType = 'Global';
-      let gmvTarget = 0;
-
-      if (store.targetType === 'fixed') {
-        gmvTarget = Number(store.fixedGmvTarget) || 0;
-        appliedGrowthType = 'Meta Fixa';
-        growthRate = 0;
-      } else {
-        if (mktG !== undefined && mktG !== null && mktG !== '') {
-          growthRate += Number(mktG); appliedGrowthType += ' + Canal';
-        }
-        if (clientG !== undefined && clientG !== null && clientG !== '') {
-          growthRate += Number(clientG); appliedGrowthType += ' + Cliente';
-        }
-        if (customG !== undefined && customG !== null && customG !== '') {
-          growthRate += Number(customG); appliedGrowthType += ' + Loja';
-        }
-        gmvTarget = (Number(store.gmvBase) || 0) * (1 + (growthRate / 100));
-      }
-
-      const projectedGmv = currentDay > 0 ? ((Number(store.currentRevenue) || 0) / currentDay) * daysInMonth : 0;
-      const percentReached = gmvTarget > 0 ? (projectedGmv / gmvTarget) * 100 : 0;
-      return { ...store, gmvTarget, projectedGmv, percentReached, growthRate, appliedGrowthType, targetType: store.targetType || 'percent', status: percentReached >= 95 ? 'success' : percentReached >= 80 ? 'warning' : 'danger' };
+      return enrichStoreMetrics(store, currentDay, daysInMonth, globalGrowth, clientGrowthMap, marketplaceGrowthMap);
     });
 
     const filteredStores = processedStores.filter(store => {
@@ -2041,34 +1888,11 @@ export default function App() {
         <BatchEntry stores={stores} currentDay={currentDay} onSaveBatch={handleSaveBatch} onClose={() => setIsBatchMode(false)} />
       )}
 
-      {/* MODAL DE FECHAMENTO DE MÊS */}
-      {isCloseMonthModalOpen && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
-          <div className="bg-gray-900 p-6 rounded-3xl border border-gray-700 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-              <CalendarDays size={20} className="text-red-400" /> Fechamento de Mês
-            </h3>
-            <p className="text-xs text-gray-400 mb-6 leading-relaxed">
-              Selecione a competência (mês/ano) que você deseja encerrar. Os painéis serão zerados e o histórico será salvo.
-            </p>
-            
-            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Competência</label>
-            <input 
-              type="month" 
-              value={closeMonthValue} 
-              onChange={e => setCloseMonthValue(e.target.value)} 
-              className="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-sm text-white outline-none focus:border-red-500 mb-8 transition-colors cursor-pointer shadow-inner" 
-            />
-            
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setIsCloseMonthModalOpen(false)} className="text-gray-400 hover:text-white px-4 py-2 text-sm font-medium transition-colors">Cancelar</button>
-              <button onClick={executeCloseMonth} className="bg-red-600 hover:bg-red-500 text-white px-5 py-2 rounded-xl font-bold shadow-md transition-colors text-sm">
-                Continuar Fechamento
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CloseMonthModal 
+        isOpen={isCloseMonthModalOpen} 
+        onClose={() => setIsCloseMonthModalOpen(false)} 
+        onConfirm={executeCloseMonth} 
+      />
 
       {taskModalOpen && (
         <TaskModal 
@@ -2128,7 +1952,11 @@ export default function App() {
           handleSaveIndividualEntry={handleSaveIndividualEntry}
           dashboardData={dashboardData}
           offboardClient={handleOffboardClient}
-          />
+          daysInMonth={daysInMonth}
+          globalGrowth={globalGrowth}
+          clientGrowthMap={clientGrowthMap}
+          marketplaceGrowthMap={marketplaceGrowthMap}
+        />
       )}
 
       <ExportModal 
