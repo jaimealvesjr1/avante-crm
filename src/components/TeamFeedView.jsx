@@ -5,6 +5,7 @@ import { Flame, CalendarDays, Activity, Clock, CheckCircle, AlertCircle,
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
+import { processTaskCompletion } from '../utils/taskEngine';
 
 export default function TeamFeedView({ 
   currentUserData, user, stores, teamMembers, searchTerm, openTaskModal, openBulkTaskModal, 
@@ -120,20 +121,48 @@ export default function TeamFeedView({
             newStartedAt = now.toISOString();
         }
 
-        const updatedChecklists = store.checklists.map(c => 
+        let updatedChecklists = store.checklists.map(c => 
             c.id === task.id ? { 
                 ...c, 
-                executingStatus: newStatus,
-                accumulatedTimeMs: newAccumulated,
-                startedAt: newStartedAt,
-                startedBy: c.startedBy || myName
+                feita: true,
+                completedAt: localTodayStr,
+                completedAtFull: now.toISOString(),
+                completedBy: myName,
+                executingStatus: 'completed',
+                accumulatedTimeMs: newAccumulated
             } : c
         );
+
+        if (task.recorrencia && task.recorrencia !== 'none' && task.recorrencia !== 'ghost' && task.data) {
+            const nextDate = new Date(`${task.data}T12:00:00`);
+            
+            if (task.recorrencia === 'daily') {
+                nextDate.setDate(nextDate.getDate() + 1);
+            } else if (task.recorrencia === 'weekly') {
+                nextDate.setDate(nextDate.getDate() + 7);
+            } else if (task.recorrencia === 'monthly') {
+                nextDate.setMonth(nextDate.getMonth() + 1);
+            }
+
+            updatedChecklists.push({
+                ...task,
+                id: Date.now() + Math.random(),
+                data: nextDate.toISOString().split('T')[0],
+                feita: false,
+                executingStatus: 'none',
+                accumulatedTimeMs: 0,
+                startedAt: null,
+                startedBy: null,
+                completedAt: null,
+                completedAtFull: null,
+                completedBy: null
+            });
+        }
 
         const newLog = {
             id: Date.now() + Math.random(),
             data: now.toLocaleString('pt-BR'),
-            texto: logMsg,
+            texto: `✅ Tarefa concluída via Radar: "${task.texto}"`,
             author: myName
         };
 
@@ -149,6 +178,41 @@ export default function TeamFeedView({
         }
         
         toast.success(isPlaying ? "Tarefa pausada." : "Tarefa iniciada!");
+    };
+
+    const handleCompleteFromRadar = (e, storeId, userName) => {
+        e.stopPropagation();
+        if (!updateStoreInCloud) return;
+        
+        const store = stores.find(s => s.id === storeId);
+        if (!store) return;
+        
+        const task = store.checklists?.find(t => 
+            !t.feita && 
+            (t.executingStatus === 'playing' || t.executingStatus === 'paused') && 
+            (t.responsavel === userName || t.startedBy === userName)
+        );
+        
+        if (!task) {
+            toast.error("Nenhuma tarefa ativa encontrada para concluir.");
+            return;
+        }
+
+        if (!window.confirm(`Deseja concluir a tarefa: "${task.texto}"?`)) return;
+
+        const { updatedChecklists, newLog } = processTaskCompletion(store, task, myName);
+
+        updateStoreInCloud({ 
+            ...store, 
+            checklists: updatedChecklists,
+            taskLogs: [...(store.taskLogs || []), newLog]
+        });
+
+        if (broadcastTaskFocus && userName === myName) {
+            broadcastTaskFocus('', 'clear');
+        }
+        
+        toast.success("Tarefa finalizada e XP computado!");
     };
 
     const handleDeleteSpecificTask = async (e, storeId, taskId, isRoutine) => {
@@ -922,11 +986,23 @@ export default function TeamFeedView({
                                                     <span className="uppercase tracking-wider flex items-center gap-2">
                                                         {userName}
                                                     </span>
-                                                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-                                                        isPaused ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-500/70 bg-emerald-500/10'
-                                                    }`}>
-                                                        {data.timestamp}
-                                                    </span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                                                            isPaused ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-500/70 bg-emerald-500/10'
+                                                        }`}>
+                                                            {data.timestamp}
+                                                        </span>
+                                                        
+                                                        {userName === myName && (
+                                                            <button 
+                                                                onClick={(e) => handleCompleteFromRadar(e, data.storeId, userName)}
+                                                                className="p-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/40 transition-colors shadow-sm"
+                                                                title="Concluir Tarefa"
+                                                            >
+                                                                <CheckCircle size={14} />
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </p>
                                                 <p className="text-xs text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
                                             </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { processTaskCompletion } from '../utils/taskEngine';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus, onCopyTaskToBulk }) {
   const [newLog, setNewLog] = useState('');
@@ -336,60 +337,23 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
        broadcastTaskFocus('', 'clear');
     }
     
-    const nowTime = new Date().getTime();
     let updatedChecklists = [...store.checklists];
+    let updatedLogs = store.taskLogs || [];
 
-    if (isCompleting && task.recorrencia && task.recorrencia !== 'none') {
-      const currentIndex = updatedChecklists.findIndex(t => t.id === id);
-      
-      const [year, month, day] = task.data.split('-').map(Number);
-      let nextDateObj = new Date(year, month - 1, day);
-      if (task.recorrencia === 'daily') nextDateObj.setDate(nextDateObj.getDate() + 1);
-      if (task.recorrencia === 'weekly') nextDateObj.setDate(nextDateObj.getDate() + 7);
-      if (task.recorrencia === 'monthly') nextDateObj.setMonth(nextDateObj.getMonth() + 1);
-
-      const nextDateStr = `${nextDateObj.getFullYear()}-${String(nextDateObj.getMonth() + 1).padStart(2, '0')}-${String(nextDateObj.getDate()).padStart(2, '0')}`;
-      
-      const sessionTime = task.startedAt && task.executingStatus === 'playing' ? nowTime - new Date(task.startedAt).getTime() : 0;
-
-      updatedChecklists[currentIndex] = { 
-        ...task, feita: false, data: nextDateStr, startedAt: null, completedAt: null, completedAtFull: null, completedBy: null, accumulatedTimeMs: 0, executingStatus: 'none'
-      };
-
-      const deadCopy = {
-          ...task, id: Date.now() + Math.random(), feita: true, recorrencia: 'ghost', completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username, accumulatedTimeMs: (task.accumulatedTimeMs || 0) + sessionTime
-      };
-      updatedChecklists.push(deadCopy);
-      toast.success('Tarefa renovada para o próximo ciclo!');
-      
+    if (isCompleting) {
+      const result = processTaskCompletion(store, task, username);
+      updatedChecklists = result.updatedChecklists;
+      updatedLogs = [...updatedLogs, result.newLog];
+      toast.success('✅ Tarefa concluída!');
     } else {
       updatedChecklists = updatedChecklists.map(c => {
         if (c.id === id) {
-          if (isCompleting) {
-            const sessionTime = c.startedAt && c.executingStatus === 'playing' ? nowTime - new Date(c.startedAt).getTime() : 0;
-            return { 
-              ...c, feita: true, completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username, accumulatedTimeMs: (c.accumulatedTimeMs || 0) + sessionTime, executingStatus: 'completed'
-            };
-          } else {
-            const { completedAt, completedAtFull, completedBy, startedAt, accumulatedTimeMs, executingStatus, ...rest } = c;
-            return { ...rest, feita: false };
-          }
+          const { completedAt, completedAtFull, completedBy, startedAt, accumulatedTimeMs, executingStatus, ...rest } = c;
+          return { ...rest, feita: false };
         }
         return c;
       });
-      toast.success(isCompleting ? '✅ Tarefa concluída!' : 'Tarefa reaberta!');
-    }
-
-    let updatedLogs = store.taskLogs || [];
-    if (isCompleting) {
-        let logTexto = `✅ Tarefa concluída: "${task.texto}"`;
-        
-        // Se a tarefa foi criada por outra pessoa, avisa quem criou
-        if (task.criadoPor && task.criadoPor !== username) {
-             logTexto = `✅ @${task.criadoPor}, a tarefa "${task.texto}" foi concluída!`;
-        }
-        
-        updatedLogs = [...updatedLogs, { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: logTexto, author: username }];
+      toast.success('Tarefa reaberta!');
     }
 
     const newNextAccess = autoScheduleStore(updatedChecklists);
