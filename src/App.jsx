@@ -51,7 +51,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.9';
+  const CURRENT_VERSION = '2.9.1';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';
@@ -1668,10 +1668,13 @@ export default function App() {
             <TeamFeedView 
               currentUserData={currentUserData} 
               user={user} 
-              stores={stores}
+              stores={stores.filter(store => !store.arquivada)}
               teamMembers={teamMembers}
               searchTerm={searchTerm}
               openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
+              openBulkTaskModal={() => setBulkTaskModalOpen(true)}
+              updateStoreInCloud={updateStoreInCloud}
+              broadcastTaskFocus={broadcastTaskFocus}
               scheduledEvents={scheduledEvents}
               activeEvent={activeEvent}
               formatCurrency={safeFormatCurrency}

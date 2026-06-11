@@ -1,10 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Flame, CalendarDays, Activity, Clock, CheckCircle, AlertCircle, Search, CalendarClock, X, Briefcase, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Flame, CalendarDays, Activity, Clock, CheckCircle, AlertCircle, 
+    Search, CalendarClock, X, Briefcase, AlertTriangle, 
+    ChevronDown, ChevronUp, Play, Pause } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
 
-export default function TeamFeedView({ currentUserData, user, stores, teamMembers, searchTerm, openTaskModal, scheduledEvents, activeEvent, formatCurrency, scheduledVisits, handleVisitAction, canEdit }) {
+export default function TeamFeedView({ 
+  currentUserData, user, stores, teamMembers, searchTerm, openTaskModal, openBulkTaskModal, 
+  updateStoreInCloud, broadcastTaskFocus, scheduledEvents, activeEvent, formatCurrency, 
+  scheduledVisits, handleVisitAction, canEdit 
+}) {
     const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
     const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
     
@@ -25,8 +31,23 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
     const [showVisitForm, setShowVisitForm] = useState(false);
     const [visitForm, setVisitForm] = useState({ id: null, client: '', date: '', time: '', responsavel: '' });
     
-    // NOVO ESTADO: Controla qual utilizador tem o histórico de XP expandido
     const [expandedUserXP, setExpandedUserXP] = useState(null);
+
+    const [showPausedTasks, setShowPausedTasks] = useState(false);
+
+    const minhasTarefasPausadas = useMemo(() => {
+        const pausadas = [];
+        stores.forEach(store => {
+            if (store.checklists) {
+                store.checklists.forEach(task => {
+                    if (!task.feita && task.executingStatus === 'paused' && (task.responsavel === myName || task.startedBy === myName)) {
+                        pausadas.push({ storeId: store.id, storeName: store.store, ...task });
+                    }
+                });
+            }
+        });
+        return pausadas;
+    }, [stores, myName]);
 
     const uniqueClients = useMemo(() => {
         return [...new Set(stores.map(s => s.client))].filter(Boolean).sort();
@@ -46,6 +67,88 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
     const editVisit = (visit) => {
         setVisitForm(visit);
         setShowVisitForm(true);
+    };
+
+    const handlePostponeTask = (store, task, hoursToAdd) => {
+        if (!updateStoreInCloud) return;
+
+        let taskDate = new Date();
+        
+        taskDate.setHours(taskDate.getHours() + hoursToAdd);
+        
+        const newDate = new Date(taskDate.getTime() - (taskDate.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+        
+        // 4. Formata a hora para o padrão do banco de dados (HH:MM)
+        const newTime = taskDate.toTimeString().substring(0, 5);
+
+        const updatedChecklists = store.checklists.map(c => 
+            c.id === task.id ? { ...c, data: newDate, hora: newTime } : c
+        );
+
+        updateStoreInCloud({ ...store, checklists: updatedChecklists });
+        toast.success(`Tarefa adiada para ${newDate.split('-').reverse().join('/')} às ${newTime}`);
+    };
+
+    const handleToggleTimer = (e, storeId, taskId) => {
+        e.stopPropagation();
+        if (!updateStoreInCloud) return;
+
+        const store = stores.find(s => s.id === storeId);
+        if (!store) return;
+        
+        const task = store.checklists?.find(t => t.id === taskId);
+        if (!task) return;
+
+        const isPlaying = task.executingStatus === 'playing';
+        const now = new Date();
+        let newStatus = isPlaying ? 'paused' : 'playing';
+        let newAccumulated = task.accumulatedTimeMs || 0;
+        let newStartedAt = task.startedAt || null;
+
+        const logMsg = isPlaying 
+            ? `⏸️ Pausou a tarefa: "${task.texto}"` 
+            : `▶️ Iniciou a tarefa: "${task.texto}"`;
+
+        if (isPlaying) {
+            if (task.startedAt) {
+                const start = new Date(task.startedAt);
+                newAccumulated += (now.getTime() - start.getTime());
+            }
+            newStartedAt = null;
+        } else {
+            // Se deu Play, marca o momento exato
+            newStartedAt = now.toISOString();
+        }
+
+        const updatedChecklists = store.checklists.map(c => 
+            c.id === task.id ? { 
+                ...c, 
+                executingStatus: newStatus,
+                accumulatedTimeMs: newAccumulated,
+                startedAt: newStartedAt,
+                startedBy: c.startedBy || myName
+            } : c
+        );
+
+        const newLog = {
+            id: Date.now() + Math.random(),
+            data: now.toLocaleString('pt-BR'),
+            texto: logMsg,
+            author: myName
+        };
+
+        updateStoreInCloud({ 
+            ...store, 
+            checklists: updatedChecklists,
+            taskLogs: [...(store.taskLogs || []), newLog]
+        });
+        
+        if (broadcastTaskFocus) {
+            const statusMsg = isPlaying ? `⏸️ Pausada: ${task.texto}` : `▶️ Executando: ${task.texto}`;
+            broadcastTaskFocus(statusMsg, 'set', store.id);
+        }
+        
+        toast.success(isPlaying ? "Tarefa pausada." : "Tarefa iniciada!");
     };
 
     const handleDeleteSpecificTask = async (e, storeId, taskId, isRoutine) => {
@@ -296,7 +399,8 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                         statusColor,
                         timeLabel,
                         timeDiff: timeDiff !== null ? timeDiff : Infinity,
-                        isBeingWorkedOn
+                        isBeingWorkedOn,
+                        executingStatus: task.executingStatus || 'none'
                     });
                 });
             }
@@ -393,7 +497,16 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                                 <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">{deadlinesData.length}</span>
                             </h3>
                             
-                            <div className="flex w-full sm:w-auto">
+                            <div className="flex w-full sm:w-auto items-center gap-3">
+                                {canEdit && (
+                                <button 
+                                    onClick={openBulkTaskModal} 
+                                    className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 transition-all font-bold shrink-0"
+                                >
+                                    + Tarefa em Massa
+                                </button>
+                                )}         
+
                                 <select
                                     value={radarFilter}
                                     onChange={(e) => setRadarFilter(e.target.value)}
@@ -430,15 +543,60 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                                                 'bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40'
                                             }`}
                                         >
+                                            <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 z-10 transition-opacity">
+                                                {!isRoutine && (
+                                                    <div className="flex items-center bg-black/60 rounded-md border border-white/10 overflow-hidden shadow-sm mr-1">
+                                                        <button 
+                                                            onClick={(e) => { 
+                                                                e.stopPropagation(); 
+                                                                const s = stores.find(x => x.id === item.storeId);
+                                                                const t = s?.checklists?.find(x => x.id === item.originalTaskId);
+                                                                if (s && t) handlePostponeTask(s, t, 3); 
+                                                            }} 
+                                                            className="text-[9px] font-bold text-gray-300 hover:text-amber-400 hover:bg-white/10 px-1.5 py-1 border-r border-white/10 transition-colors" title="Adiar 3 horas">+3h</button>
+                                                        <button 
+                                                            onClick={(e) => { 
+                                                                e.stopPropagation(); 
+                                                                const s = stores.find(x => x.id === item.storeId);
+                                                                const t = s?.checklists?.find(x => x.id === item.originalTaskId);
+                                                                if (s && t) handlePostponeTask(s, t, 6); 
+                                                            }} 
+                                                            className="text-[9px] font-bold text-gray-300 hover:text-amber-400 hover:bg-white/10 px-1.5 py-1 border-r border-white/10 transition-colors" title="Adiar 6 horas">+6h</button>
+                                                        <button 
+                                                            onClick={(e) => { 
+                                                                e.stopPropagation(); 
+                                                                const s = stores.find(x => x.id === item.storeId);
+                                                                const t = s?.checklists?.find(x => x.id === item.originalTaskId);
+                                                                if (s && t) handlePostponeTask(s, t, 24); 
+                                                            }} 
+                                                            className="text-[9px] font-bold text-gray-300 hover:text-indigo-400 hover:bg-white/10 px-1.5 py-1 transition-colors" title="Adiar para amanhã">+24h</button>
+                                                    </div>
+                                                )}
+                                                
+                                                {!isRoutine && (
+                                                <button
+                                                    onClick={(e) => handleToggleTimer(e, item.storeId, item.originalTaskId)}
+                                                    className={`p-1 mr-1 rounded-md border shadow-sm transition-colors ${
+                                                        item.executingStatus === 'playing' 
+                                                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30' 
+                                                        : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
+                                                    }`}
+                                                    title={item.executingStatus === 'playing' ? "Pausar Tarefa" : "Iniciar Tarefa"}
+                                                >
+                                                    {item.executingStatus === 'playing' ? <Pause size={14} /> : <Play size={14} />}
+                                                </button>
+                                            )}
+
                                             {isAdmin && (
                                                 <button 
-                                                    onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, item.type === 'routine')}
-                                                    className="absolute top-2 right-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 p-1 rounded transition-colors opacity-0 group-hover:opacity-100 z-10"
+                                                    onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, isRoutine)}
+                                                    className="text-gray-400 hover:text-red-400 bg-black/60 hover:bg-red-500/20 p-1 rounded-md border border-white/10 hover:border-red-500/30 transition-colors"
                                                     title="Forçar exclusão desta tarefa"
                                                 >
                                                     <X size={14} />
                                                 </button>
                                             )}
+                                        </div>
 
                                             {item.isBeingWorkedOn && (
                                                 <div className="absolute top-3 right-2 flex h-3 w-3">
@@ -686,10 +844,46 @@ export default function TeamFeedView({ currentUserData, user, stores, teamMember
                     )}
 
                     {/* RADAR DA EQUIPE */}
-                    <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg">
-                        <h3 className="text-lg font-bold tracking-wide text-emerald-400 uppercase flex items-center gap-2 mb-5">
-                            <Activity size={18} /> trabalhando agora
-                        </h3>
+                    <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col">
+                        
+                        <div className="flex items-center justify-between mb-5 border-b border-gray-700 pb-3">
+                            <h3 className="text-lg font-bold tracking-wide text-emerald-400 uppercase flex items-center gap-2">
+                                <Activity size={18} /> trabalhando agora
+                            </h3>
+                            
+                            {minhasTarefasPausadas.length > 0 && (
+                                <button 
+                                    onClick={() => setShowPausedTasks(!showPausedTasks)}
+                                    className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors flex items-center gap-1 ${showPausedTasks ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-gray-800 text-gray-400 border-gray-600 hover:bg-gray-700'}`}
+                                    title="Ver minhas tarefas pausadas"
+                                >
+                                    ⏸️ Pausadas ({minhasTarefasPausadas.length}) {showPausedTasks ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
+                                </button>
+                            )}
+                        </div>
+
+                        {showPausedTasks && minhasTarefasPausadas.length > 0 && (
+                            <div className="mb-5 bg-black/40 border border-amber-500/20 rounded-xl p-3 shadow-inner max-h-[220px] overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2">
+                                <h4 className="text-[10px] text-amber-500 font-bold uppercase tracking-wider mb-2">Suas Tarefas em Pausa</h4>
+                                <div className="flex flex-col gap-2">
+                                    {minhasTarefasPausadas.map(task => (
+                                        <div key={task.id} className="flex items-center justify-between bg-white/5 border border-white/10 p-2.5 rounded-lg">
+                                            <div className="flex flex-col overflow-hidden mr-2">
+                                                <span className="text-[10px] text-gray-400 font-bold truncate">{task.storeName}</span>
+                                                <span className="text-xs text-gray-200 truncate" title={task.texto}>{task.texto}</span>
+                                            </div>
+                                            <button 
+                                                onClick={(e) => handleToggleTimer(e, task.storeId, task.id)}
+                                                className="p-1.5 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/40 rounded border border-emerald-500/30 transition-colors shrink-0 shadow-sm"
+                                                title="Retomar Tarefa"
+                                            >
+                                                <Play size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         
                         {Object.keys(liveStatus).length > 0 ? (
                             <div className="grid grid-cols-1 gap-3.5">
