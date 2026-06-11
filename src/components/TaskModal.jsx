@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { processTaskCompletion } from '../utils/taskEngine';
+import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../utils/taskEngine';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus, onCopyTaskToBulk }) {
   const [newLog, setNewLog] = useState('');
@@ -79,20 +79,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     setStoreResp(newResp);
     saveChanges({ ...store, responsavel: newResp });
     toast.success('Responsável updated com sucesso!');
-  };
-
-  const autoScheduleStore = (currentChecklists) => {
-    const pendingWithDate = currentChecklists.filter(t => !t.feita && t.data);
-    let nextAccessStr = '';
-    if (pendingWithDate.length > 0) {
-      pendingWithDate.sort((a, b) => {
-        const dateA = new Date(`${a.data}T${a.hora || '00:00'}:00`);
-        const dateB = new Date(`${b.data}T${b.hora || '00:00'}:00`);
-        return dateA - dateB;
-      });
-      nextAccessStr = `${pendingWithDate[0].data}T${pendingWithDate[0].hora || '00:00'}`;
-    }
-    return nextAccessStr; 
   };
 
   const addLog = () => {
@@ -174,7 +160,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     setIsAddingTask(true);
     const item = { id: Date.now(), texto: newChecklist, feita: false, responsavel: newChecklistResp.trim(), criadoPor: username, data: newTaskDate, hora: newTaskTime, recorrencia: newTaskRecurrence };
     const updatedChecklists = [...(store.checklists || []), item];
-    const newNextAccess = autoScheduleStore(updatedChecklists);
+    const newNextAccess = calculateNextAccess(updatedChecklists);
 
     let updatedLogs = store.taskLogs || [];
     const resp = newChecklistResp.trim();
@@ -204,7 +190,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     }
 
     const updatedChecklists = store.checklists.filter(c => c.id !== id);
-    const newNextAccess = autoScheduleStore(updatedChecklists);
+    const newNextAccess = calculateNextAccess(updatedChecklists);
     let finalNextAccess = newNextAccess;
     if (!newNextAccess && task?.data) finalNextAccess = '';
     else if (!newNextAccess) finalNextAccess = store.dataProximoAcesso || '';
@@ -228,7 +214,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     if (!editTaskData.texto.trim()) return toast.error("O texto da tarefa não pode estar vazio.");
     const updatedChecklists = store.checklists.map(t => t.id === taskId ? { ...t, ...editTaskData } : t );
     const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `✏️ Tarefa atualizada: "${editTaskData.texto}"`, author: username };
-    const newNextAccess = autoScheduleStore(updatedChecklists);
+    const newNextAccess = calculateNextAccess(updatedChecklists);
     let finalNextAccess = newNextAccess;
     const oldTask = store.checklists.find(t => t.id === taskId);
     
@@ -297,35 +283,29 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   };
 
   const executeStart = (taskId, taskText) => {
+    const task = store.checklists?.find(t => t.id === taskId);
+    if(!task) return;
+
+    const { updatedChecklists, newLog } = processTaskStart(store, task, username);
+
+    saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), newLog], dataUltimoAcesso: new Date().toISOString() });
+    
     if (broadcastTaskFocus) {
       broadcastTaskFocus(`▶️ Executando: ${taskText} | ${store.store}`, 'set', store.id);
     }
-    const updatedChecklists = store.checklists.map(c => 
-      c.id === taskId ? { ...c, startedAt: new Date().toISOString(), executingStatus: 'playing', startedBy: username } : c
-    );
-    const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `▶️ Iniciou a tarefa: "${taskText}"`, author: username };
-    saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() });
   };
 
   const handlePauseTask = (taskId, taskText) => {
+    const task = store.checklists?.find(t => t.id === taskId);
+    if(!task) return;
+
+    const { updatedChecklists, newLog } = processTaskPause(store, task, username);
+
+    saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), newLog], dataUltimoAcesso: new Date().toISOString() });
+    
     if (broadcastTaskFocus) {
       broadcastTaskFocus(`⏸️ Pausada: ${taskText} | ${store.store}`, 'set', store.id);
     }
-    const nowTime = new Date().getTime();
-    const updatedChecklists = store.checklists.map(c => {
-      if (c.id === taskId) {
-        const sessionTime = c.startedAt ? nowTime - new Date(c.startedAt).getTime() : 0;
-        return { 
-            ...c, 
-            executingStatus: 'paused', 
-            accumulatedTimeMs: (c.accumulatedTimeMs || 0) + sessionTime, 
-            startedAt: null 
-        };
-      }
-      return c;
-    });
-    const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `⏸️ Pausou a tarefa: "${taskText}"`, author: username };
-    saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() });
     toast.success("Tarefa pausada.");
   };
 
@@ -356,7 +336,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       toast.success('Tarefa reaberta!');
     }
 
-    const newNextAccess = autoScheduleStore(updatedChecklists);
+    const newNextAccess = calculateNextAccess(updatedChecklists);
     let finalNextAccess = newNextAccess;
     if (!newNextAccess && isCompleting && task.data) finalNextAccess = '';
     else if (!newNextAccess) finalNextAccess = store.dataProximoAcesso || '';
@@ -367,54 +347,57 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const resolveConflictAndStart = async (action) => {
     if (!pendingStartInfo) return;
     const { currentTaskId, currentTaskText, runningTask } = pendingStartInfo;
-    const nowTime = new Date().getTime();
 
     if (store.id !== runningTask.storeObject.id) {
       const oldStore = stores.find(s => s.id === runningTask.storeObject.id);
       if (oldStore) {
-        const updatedOldChecklists = oldStore.checklists.map(t => {
-          if (t.id === runningTask.id) {
-            const sessionTime = t.startedAt ? nowTime - new Date(t.startedAt).getTime() : 0;
-            const totalTime = (t.accumulatedTimeMs || 0) + sessionTime;
-            
-            return action === 'complete' 
-              ? { ...t, feita: true, executingStatus: 'completed', accumulatedTimeMs: totalTime, completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username }
-              : { ...t, executingStatus: 'paused', accumulatedTimeMs: totalTime, startedAt: null };
-          }
-          return t;
-        });
-
-        const logText = action === 'complete' ? `✅ Tarefa concluída via alternância: "${runningTask.texto}"` : `⏸️ Tarefa pausada via alternância: "${runningTask.texto}"`;
-        const updatedOldLogs = [...(oldStore.taskLogs || []), { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: logText, author: username }];
+        const oldTask = oldStore.checklists.find(t => t.id === runningTask.id);
         
-        const finalOldStore = { ...oldStore, checklists: updatedOldChecklists, taskLogs: updatedOldLogs, dataUltimoAcesso: new Date().toISOString() };
+        const result = action === 'complete' 
+          ? processTaskCompletion(oldStore, oldTask, username)
+          : processTaskPause(oldStore, oldTask, username);
+
+        const newNextAccess = calculateNextAccess(result.updatedChecklists);
+
+        const finalOldStore = { 
+          ...oldStore, 
+          checklists: result.updatedChecklists, 
+          taskLogs: [...(oldStore.taskLogs || []), result.newLog], 
+          dataUltimoAcesso: new Date().toISOString(),
+          dataProximoAcesso: newNextAccess || oldStore.dataProximoAcesso || ''
+        };
         updateStoreInCloud(finalOldStore);
         setStores(prev => prev.map(s => s.id === oldStore.id ? finalOldStore : s));
       }
       executeStart(currentTaskId, currentTaskText);
     } else {
-      const finalChecklists = store.checklists.map(c => {
-        if (c.id === runningTask.id) {
-          const sessionTime = c.startedAt ? nowTime - new Date(c.startedAt).getTime() : 0;
-          const totalTime = (c.accumulatedTimeMs || 0) + sessionTime;
-          return action === 'complete'
-            ? { ...c, feita: true, executingStatus: 'completed', accumulatedTimeMs: totalTime, completedAt: new Date().toISOString().split('T')[0], completedAtFull: new Date().toISOString(), completedBy: username }
-            : { ...c, executingStatus: 'paused', accumulatedTimeMs: totalTime, startedAt: null };
-        }
-        if (c.id === currentTaskId) {
-          return { ...c, startedAt: new Date().toISOString(), executingStatus: 'playing', startedBy: username };
-        }
-        return c;
-      });
+      const oldTask = store.checklists.find(t => t.id === runningTask.id);
+      
+      const resultOld = action === 'complete'
+        ? processTaskCompletion(store, oldTask, username)
+        : processTaskPause(store, oldTask, username);
+      
+      const tempStore = { ...store, checklists: resultOld.updatedChecklists };
+      const currentTask = tempStore.checklists.find(t => t.id === currentTaskId);
+      
+      const resultNew = processTaskStart(tempStore, currentTask, username);
 
-      const logTextOld = action === 'complete' ? `✅ Tarefa concluída via alternância: "${runningTask.texto}"` : `⏸️ Tarefa pausada via alternância: "${runningTask.texto}"`;
       const finalLogs = [
         ...(store.taskLogs || []),
-        { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: logTextOld, author: username },
-        { id: Date.now() + 1, data: new Date().toLocaleString('pt-BR'), texto: `▶️ Iniciou a tarefa: "${currentTaskText}"`, author: username }
+        resultOld.newLog,
+        resultNew.newLog
       ];
 
-      const finalStoreObj = { ...store, checklists: finalChecklists, taskLogs: finalLogs, dataUltimoAcesso: new Date().toISOString() };
+      const newNextAccess = calculateNextAccess(resultNew.updatedChecklists);
+
+      const finalStoreObj = { 
+        ...store, 
+        checklists: resultNew.updatedChecklists, 
+        taskLogs: finalLogs, 
+        dataUltimoAcesso: new Date().toISOString(),
+        dataProximoAcesso: newNextAccess || store.dataProximoAcesso || ''
+      };
+      
       updateStoreInCloud(finalStoreObj);
       setStores(prev => prev.map(s => s.id === store.id ? finalStoreObj : s));
 

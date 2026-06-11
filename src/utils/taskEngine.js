@@ -9,7 +9,6 @@ export const processTaskCompletion = (store, task, myName) => {
     }
     const totalAccumulated = (task.accumulatedTimeMs || 0) + sessionTime;
 
-    // 2. Marca a tarefa original como concluída
     let updatedChecklists = store.checklists.map(c => 
         c.id === task.id ? { 
             ...c, 
@@ -22,7 +21,6 @@ export const processTaskCompletion = (store, task, myName) => {
         } : c
     );
 
-    // 3. Motor de Recorrência (Gera a próxima do ciclo)
     if (task.recorrencia && task.recorrencia !== 'none' && task.recorrencia !== 'ghost' && task.data) {
         const [year, month, day] = task.data.split('-').map(Number);
         let nextDateObj = new Date(year, month - 1, day);
@@ -48,7 +46,6 @@ export const processTaskCompletion = (store, task, myName) => {
         });
     }
 
-    // 4. Geração Automática do Log
     let logTexto = `✅ Tarefa concluída: "${task.texto}"`;
     if (task.criadoPor && task.criadoPor !== myName) {
         logTexto = `✅ @${task.criadoPor}, a tarefa "${task.texto}" foi concluída!`;
@@ -62,4 +59,69 @@ export const processTaskCompletion = (store, task, myName) => {
     };
 
     return { updatedChecklists, newLog };
+};
+
+export const processTaskStart = (store, task, myName) => {
+    const now = new Date();
+    
+    const updatedChecklists = store.checklists.map(c => 
+        c.id === task.id ? { 
+            ...c, 
+            startedAt: now.toISOString(), 
+            executingStatus: 'playing', 
+            startedBy: myName 
+        } : c
+    );
+
+    const newLog = { 
+        id: Date.now() + Math.random(), 
+        data: now.toLocaleString('pt-BR'), 
+        texto: `▶️ Iniciou a tarefa: "${task.texto}"`, 
+        author: myName 
+    };
+
+    return { updatedChecklists, newLog };
+};
+
+export const processTaskPause = (store, task, myName) => {
+    const nowTime = new Date().getTime();
+    
+    const updatedChecklists = store.checklists.map(c => {
+        if (c.id === task.id) {
+            const sessionTime = c.startedAt ? nowTime - new Date(c.startedAt).getTime() : 0;
+            return { 
+                ...c, 
+                executingStatus: 'paused', 
+                accumulatedTimeMs: (c.accumulatedTimeMs || 0) + sessionTime, 
+                startedAt: null 
+            };
+        }
+        return c;
+    });
+
+    const newLog = { 
+        id: Date.now() + Math.random(), 
+        data: new Date().toLocaleString('pt-BR'), 
+        texto: `⏸️ Pausou a tarefa: "${task.texto}"`, 
+        author: myName 
+    };
+
+    return { updatedChecklists, newLog };
+};
+
+export const calculateNextAccess = (checklists) => {
+    if (!checklists || checklists.length === 0) return '';
+    
+    const pendingWithDate = checklists.filter(t => !t.feita && t.data);
+    
+    if (pendingWithDate.length > 0) {
+        pendingWithDate.sort((a, b) => {
+            const dateA = new Date(`${a.data}T${a.hora || '00:00'}:00`);
+            const dateB = new Date(`${b.data}T${b.hora || '00:00'}:00`);
+            return dateA - dateB;
+        });
+        return `${pendingWithDate[0].data}T${pendingWithDate[0].hora || '00:00'}`;
+    }
+    
+    return ''; 
 };

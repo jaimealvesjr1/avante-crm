@@ -5,7 +5,7 @@ import { Flame, CalendarDays, Activity, Clock, CheckCircle, AlertCircle,
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
-import { processTaskCompletion } from '../utils/taskEngine';
+import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../utils/taskEngine';
 
 export default function TeamFeedView({ 
   currentUserData, user, stores, teamMembers, searchTerm, openTaskModal, openBulkTaskModal, 
@@ -86,7 +86,13 @@ export default function TeamFeedView({
             c.id === task.id ? { ...c, data: newDate, hora: newTime } : c
         );
 
-        updateStoreInCloud({ ...store, checklists: updatedChecklists });
+        const nextAccess = calculateNextAccess(updatedChecklists);
+
+        updateStoreInCloud({ 
+            ...store, 
+            checklists: updatedChecklists,
+            dataProximoAcesso: nextAccess || store.dataProximoAcesso || ''
+        });
         toast.success(`Tarefa adiada para ${newDate.split('-').reverse().join('/')} às ${newTime}`);
     };
 
@@ -101,79 +107,20 @@ export default function TeamFeedView({
         if (!task) return;
 
         const isPlaying = task.executingStatus === 'playing';
-        const now = new Date();
-        let newStatus = isPlaying ? 'paused' : 'playing';
-        let newAccumulated = task.accumulatedTimeMs || 0;
-        let newStartedAt = task.startedAt || null;
-
-        const logMsg = isPlaying 
-            ? `⏸️ Pausou a tarefa: "${task.texto}"` 
-            : `▶️ Iniciou a tarefa: "${task.texto}"`;
-
-        if (isPlaying) {
-            if (task.startedAt) {
-                const start = new Date(task.startedAt);
-                newAccumulated += (now.getTime() - start.getTime());
-            }
-            newStartedAt = null;
-        } else {
-            // Se deu Play, marca o momento exato
-            newStartedAt = now.toISOString();
-        }
-
-        let updatedChecklists = store.checklists.map(c => 
-            c.id === task.id ? { 
-                ...c, 
-                feita: true,
-                completedAt: localTodayStr,
-                completedAtFull: now.toISOString(),
-                completedBy: myName,
-                executingStatus: 'completed',
-                accumulatedTimeMs: newAccumulated
-            } : c
-        );
-
-        if (task.recorrencia && task.recorrencia !== 'none' && task.recorrencia !== 'ghost' && task.data) {
-            const nextDate = new Date(`${task.data}T12:00:00`);
-            
-            if (task.recorrencia === 'daily') {
-                nextDate.setDate(nextDate.getDate() + 1);
-            } else if (task.recorrencia === 'weekly') {
-                nextDate.setDate(nextDate.getDate() + 7);
-            } else if (task.recorrencia === 'monthly') {
-                nextDate.setMonth(nextDate.getMonth() + 1);
-            }
-
-            updatedChecklists.push({
-                ...task,
-                id: Date.now() + Math.random(),
-                data: nextDate.toISOString().split('T')[0],
-                feita: false,
-                executingStatus: 'none',
-                accumulatedTimeMs: 0,
-                startedAt: null,
-                startedBy: null,
-                completedAt: null,
-                completedAtFull: null,
-                completedBy: null
-            });
-        }
-
-        const newLog = {
-            id: Date.now() + Math.random(),
-            data: now.toLocaleString('pt-BR'),
-            texto: `✅ Tarefa concluída via Radar: "${task.texto}"`,
-            author: myName
-        };
+        
+        const result = isPlaying 
+            ? processTaskPause(store, task, myName)
+            : processTaskStart(store, task, myName);
 
         updateStoreInCloud({ 
             ...store, 
-            checklists: updatedChecklists,
-            taskLogs: [...(store.taskLogs || []), newLog]
+            checklists: result.updatedChecklists,
+            taskLogs: [...(store.taskLogs || []), result.newLog],
+            dataUltimoAcesso: new Date().toISOString()
         });
         
         if (broadcastTaskFocus) {
-            const statusMsg = isPlaying ? `⏸️ Pausada: ${task.texto}` : `▶️ Executando: ${task.texto}`;
+            const statusMsg = isPlaying ? `⏸️ Pausada: ${task.texto} | ${store.store}` : `▶️ Executando: ${task.texto} | ${store.store}`;
             broadcastTaskFocus(statusMsg, 'set', store.id);
         }
         
@@ -200,12 +147,13 @@ export default function TeamFeedView({
 
         if (!window.confirm(`Deseja concluir a tarefa: "${task.texto}"?`)) return;
 
-        const { updatedChecklists, newLog } = processTaskCompletion(store, task, myName);
+        const nextAccess = calculateNextAccess(updatedChecklists);
 
         updateStoreInCloud({ 
             ...store, 
             checklists: updatedChecklists,
-            taskLogs: [...(store.taskLogs || []), newLog]
+            taskLogs: [...(store.taskLogs || []), newLog],
+            dataProximoAcesso: nextAccess || '' 
         });
 
         if (broadcastTaskFocus && userName === myName) {
