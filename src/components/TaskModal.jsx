@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../utils/taskEngine';
 
@@ -30,6 +30,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editTaskData, setEditTaskData] = useState({});
+  const [selectedProduct, setSelectedProduct] = useState(null); // <-- Novo estado aqui
 
   const [dailyGMV, setDailyGMV] = useState('');
   const [dailyAds, setDailyAds] = useState('');
@@ -407,9 +408,11 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     toast.success(action === 'complete' ? "Anterior concluída e nova iniciada!" : "Anterior pausada e nova iniciada!");
   };
 
+  const clientProducts = store.produtos || stores.find(s => s.client === store.client)?.produtos || [];
+
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
-      <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl overflow-hidden flex flex-col lg:flex-row h-[90vh]">
+      <div className="relative bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl overflow-hidden flex flex-col lg:flex-row h-[90vh]">
         
         {/* LADO ESQUERDO */}
         <div className="flex-1 flex flex-col md:border-r border-white/10 relative">
@@ -741,6 +744,47 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
           </div>
           
           <div className="p-5 flex-1 flex flex-col gap-5 overflow-y-auto custom-scrollbar">
+            
+            {/* CATÁLOGO DE PRODUTOS (CARROSSEL COMPACTO) */}
+            {clientProducts.length > 0 && (
+              <div className="bg-white/[0.03] p-4 rounded-2xl border border-white/10 shadow-sm shrink-0">
+                <h4 className="text-xs font-bold text-indigo-400 uppercase flex items-center gap-2 mb-3">
+                  <Package size={14} /> Catálogo
+                </h4>
+                <div className="flex overflow-x-auto gap-3 pb-2 custom-scrollbar">
+                  {clientProducts.map(prod => {
+                    // Tenta exibir especificamente o preço mapeado para o marketplace desta aba
+                    const canalAtivo = (prod.canais || []).find(c => c.canal?.toLowerCase() === store.marketplace?.toLowerCase());
+                    const precoExibicao = canalAtivo?.precoPor || prod.precoDe || '---';
+
+                    return (
+                      <div 
+                        key={prod.id} 
+                        onClick={() => setSelectedProduct(prod)}
+                        className="w-24 shrink-0 bg-black/40 border border-white/5 rounded-xl overflow-hidden flex flex-col group hover:border-indigo-500/30 transition-colors cursor-pointer"
+                      >
+                        <div className="h-20 w-full bg-gray-900 flex items-center justify-center relative border-b border-white/5">
+                          {prod.fotoUrl ? (
+                            <img src={prod.fotoUrl} alt={prod.descricao} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                          ) : (
+                            <Package size={16} className="text-gray-600" />
+                          )}
+                        </div>
+                        <div className="p-2 flex flex-col flex-1 justify-between bg-black/20">
+                          <p className="text-[9px] font-bold text-gray-300 truncate w-full mb-1" title={prod.descricao}>
+                            {prod.descricao}
+                          </p>
+                          <p className="text-[10px] font-black text-emerald-400 truncate" title={`R$ ${precoExibicao}`}>
+                            R$ {precoExibicao}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* NOTAS FIXAS */}
             <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/10 flex-1 flex flex-col min-h-[220px] shadow-sm">
               <div className="flex justify-between items-center mb-3">
@@ -780,28 +824,135 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 </div>
               )}
             </div>
-
-            {/* PRÓXIMO ACESSO */}
-            {!isVisitante && (
-              <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/10 shrink-0 shadow-sm">
-                <h4 className="text-xs font-bold text-amber-400 uppercase flex items-center gap-2 mb-4">
-                  <CalendarDays size={14} /> Próximo Acesso
-                </h4>
-                <input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-amber-500/50 font-bold transition-colors cursor-pointer" />
-                
-                <div className="flex gap-2 mt-3">
-                  <button onClick={saveNextDate} disabled={isScheduling} className="flex-1 bg-amber-500/20 border border-amber-500/30 hover:bg-amber-500/30 text-amber-400 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-sm">
-                    {isScheduling ? <Loader2 size={14} className="animate-spin" /> : 'Agendar'}
-                  </button>
-                  <button onClick={clearNextDate} className="px-4 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 font-bold rounded-xl transition-all flex items-center justify-center shadow-sm" title="Limpar">
-                    <Eraser size={14} />
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
+
+      {/* GAVETA LATERAL: DETALHES DO PRODUTO */}
+      {selectedProduct && (
+          <>
+            {/* Overlay para foco */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-[3px] z-[90]" onClick={() => setSelectedProduct(null)}></div>
+            
+            {/* Painel lateral largo (450px) com Glassmorphism */}
+            <div className="absolute top-4 right-4 bottom-4 w-[450px] bg-gradient-to-b from-gray-900/98 to-[#0B0F19] backdrop-blur-3xl border border-white/15 rounded-2xl shadow-[0_30px_60px_rgba(0,0,0,0.8)] flex flex-col z-[100] overflow-hidden animate-in slide-in-from-right-10 duration-300">
+              
+              {/* Header com Imagem em Destaque */}
+              <div className="relative h-48 shrink-0 flex items-end p-6 overflow-hidden">
+                 <div className="absolute inset-0 bg-gray-900">
+                    {selectedProduct.fotoUrl && <img src={selectedProduct.fotoUrl} alt="bg" className="w-full h-full object-cover opacity-25 blur-sm scale-110" />}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0B0F19] via-[#0B0F19]/40 to-transparent"></div>
+                 </div>
+                 
+                 <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white p-2 rounded-xl backdrop-blur-xl transition-all border border-white/10 hover:scale-110 active:scale-95">
+                   <X size={20}/>
+                 </button>
+
+                 <div className="relative z-10 flex gap-5 items-center w-full">
+                    <div className="w-24 h-24 shrink-0 bg-black/80 rounded-2xl border border-white/20 flex items-center justify-center overflow-hidden shadow-2xl">
+                      {selectedProduct.fotoUrl ? (
+                        <img src={selectedProduct.fotoUrl} alt={selectedProduct.descricao} className="w-full h-full object-cover" />
+                      ) : (
+                        <Package size={32} className="text-gray-600" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-lg font-black text-white leading-tight drop-shadow-lg">{selectedProduct.descricao}</h4>
+                      <div className="flex gap-2 mt-2">
+                        {selectedProduct.precoDe && (
+                          <span className="text-xs font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
+                            Tabela: R$ {selectedProduct.precoDe}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                 </div>
+              </div>
+              
+              {/* Listagem de Canais e Preços */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pt-2 space-y-5">
+                <div className="flex items-center justify-between mb-2">
+                   <div className="flex items-center gap-2">
+                     <TrendingUp size={16} className="text-indigo-400" />
+                     <h5 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Oportunidades de Canal</h5>
+                   </div>
+                   <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/20 font-bold">
+                     {selectedProduct.canais?.length || 0} Ativos
+                   </span>
+                </div>
+                
+                <div className="space-y-4">
+                  {(selectedProduct.canais || []).map((c, i) => (
+                    <div key={c.id || i} className="bg-white/[0.04] border border-white/10 rounded-2xl p-5 flex flex-col gap-4 relative group transition-all hover:bg-white/[0.06] hover:border-indigo-500/40">
+                      
+                      {/* Badge do Marketplace */}
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div>
+                          <span className="text-sm font-black text-white uppercase tracking-wider">{c.canal}</span>
+                        </div>
+                        
+                        {/* Container de Preço Principal - Otimizado para leitura */}
+                        <div className="flex items-center gap-4 bg-black/40 px-4 py-2 rounded-xl border border-white/5">
+                          {c.precoDe && (
+                            <div className="flex flex-col items-end">
+                              <span className="text-[10px] text-gray-500 uppercase font-bold leading-none mb-1">De</span>
+                              <span className="text-xs text-gray-400 line-through font-medium">R$ {c.precoDe}</span>
+                            </div>
+                          )}
+                          <div className="flex flex-col items-end">
+                            <span className="text-[10px] text-emerald-500 uppercase font-bold leading-none mb-1">Por</span>
+                            <span className="text-xl font-black text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.4)]">R$ {c.precoPor || c.preco || '0.00'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Kits Relacionados */}
+                      {c.kits && c.kits.length > 0 && (
+                        <div className="space-y-2 mt-2">
+                          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1">Kits Disponíveis</p>
+                          {(c.kits || []).map((kit, kIdx) => (
+                            <div key={kit.id || kIdx} className="flex justify-between items-center bg-black/30 hover:bg-black/50 p-3 rounded-xl border border-white/5 transition-colors">
+                              <div className="flex items-center gap-3">
+                                <div className="p-1.5 bg-indigo-500/10 rounded-lg">
+                                  <Package size={14} className="text-indigo-400"/>
+                                </div>
+                                <span className="text-xs font-bold text-indigo-100 uppercase tracking-wide truncate max-w-[180px]">
+                                  {kit.descricao || 'Kit'}
+                                </span>
+                              </div>
+                              
+                              <div className="flex items-center gap-3">
+                                {kit.precoDe && (
+                                  <span className="text-[11px] text-gray-600 line-through font-bold">R$ {kit.precoDe}</span>
+                                )}
+                                <div className="bg-indigo-500/10 px-3 py-1 rounded-lg border border-indigo-500/20">
+                                  <span className="text-sm font-black text-indigo-300">R$ {kit.precoPor || '0.00'}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {(!selectedProduct.canais || selectedProduct.canais.length === 0) && (
+                    <div className="flex flex-col items-center justify-center p-12 bg-white/[0.01] border border-dashed border-white/10 rounded-3xl text-center gap-3">
+                      <AlertCircle size={32} className="text-gray-700" />
+                      <p className="text-sm text-gray-500 font-medium">Este produto ainda não possui<br/>canais precificados.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Rodapé informativo */}
+              <div className="p-4 bg-black/40 border-t border-white/5 text-center">
+                 <p className="text-[9px] text-gray-600 font-bold uppercase tracking-[0.3em]">Avante CRM • Inteligência Comercial</p>
+              </div>
+            </div>
+          </>
+        )}
 
       {/* Interface de Resolução de Conflitos */}
       {pendingStartInfo && (

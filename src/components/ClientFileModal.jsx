@@ -1,9 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Flame, Clock, X, CheckSquare, ClipboardList, History, PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, TrendingDown, Edit2, Briefcase, Plus, LogOut, Activity } from 'lucide-react';
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ReferenceLine, ComposedChart, Area, Legend } from 'recharts';
+import { Flame, Clock, X, CheckSquare, ClipboardList, History, 
+  PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, 
+  TrendingDown, Edit2, Briefcase, Plus, LogOut, Activity, Package, 
+  Image, MoreVertical, Trash2, Upload } from 'lucide-react';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, 
+  YAxis, CartesianGrid, LineChart, Line, ReferenceLine, ComposedChart, Area, Legend } from 'recharts';
 import { toast } from 'react-hot-toast';
 import BulkTaskModal from './BulkTaskModal';
-// Importação do motor de cálculo unificado
 import { enrichStoreMetrics } from '../utils/calculations';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
@@ -73,11 +76,154 @@ export default function ClientFileModal({
   clientGroup, onClose, openTaskModal, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, 
   currentUserData, user, canUseBatchEntry, canEdit, teamMembers, allNotes, clientStores, onUpdateStore, 
   addNewStoreToClient, handleSaveIndividualEntry, dashboardData, offboardClient,
-  // Novas propriedades conectadas para imunização de filtros
   daysInMonth, globalGrowth, clientGrowthMap, marketplaceGrowthMap
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
+
+
+  // === ESTADOS PARA PRODUTOS ===
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [showProductHistoryId, setShowProductHistoryId] = useState(null);
+  
+  const [productForm, setProductForm] = useState({
+    fotoUrl: '', descricao: '', 
+    canais: [{ id: Date.now(), canal: 'Shopee', precoDe: '', precoPor: '', kits: [] }]
+  });
+
+  const username = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
+
+  // Usamos a primeira loja do cliente como "hospedeira" do catálogo de produtos
+  const masterStore = useMemo(() => {
+    return stores.find(s => s.client === clientGroup.client);
+  }, [stores, clientGroup.client]);
+
+  const clientProducts = useMemo(() => {
+    return masterStore?.produtos || [];
+  }, [masterStore]);
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 300; // Tamanho máximo para thumbnail
+        const scaleSize = MAX_WIDTH / img.width;
+        
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+        
+        setProductForm({...productForm, fotoUrl: compressedBase64});
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveProduct = () => {
+    if (!productForm.descricao.trim()) return toast.error("A descrição do produto é obrigatória.");
+    if (!canEdit) return toast.error("Você não tem permissão para editar produtos.");
+
+    const now = new Date().toLocaleString('pt-BR');
+    let updatedProducts = [...clientProducts];
+    const historyLog = { data: now, author: username, mudancas: [] };
+
+    if (editingProductId) {
+      updatedProducts = updatedProducts.map(p => {
+        if (p.id === editingProductId) {
+          // --- AUDITORIA ---
+          productForm.canais.forEach(novoCanal => {
+            const canalAntigo = (p.canais || []).find(c => c.id === novoCanal.id);
+            if (!canalAntigo) {
+              historyLog.mudancas.push(`Novo canal ativado: ${novoCanal.canal} por R$${novoCanal.precoPor}`);
+            } else if (canalAntigo.precoPor !== novoCanal.precoPor) {
+              historyLog.mudancas.push(`Preço (${novoCanal.canal}): de R$${canalAntigo.precoPor} para R$${novoCanal.precoPor}`);
+            }
+          });
+
+          return { ...productForm, id: p.id, historico: historyLog.mudancas.length > 0 ? [historyLog, ...(p.historico || [])] : p.historico };
+        }
+        return p;
+      });
+      toast.success("Catálogo atualizado!");
+    } else {
+      const novoProduto = { ...productForm, id: Date.now() + Math.random(), historico: [historyLog] };
+      updatedProducts.push(novoProduto);
+      toast.success("Produto adicionado!");
+    }
+
+    const updatedMaster = { ...masterStore, produtos: updatedProducts };
+    updateStoreInCloud(updatedMaster);
+    
+    const updatedStoresGlobal = stores.map(s => s.client === clientGroup.client ? { ...s, produtos: updatedProducts } : s);
+    setStores(updatedStoresGlobal);
+
+    setProductModalOpen(false);
+    setEditingProductId(null);
+  };
+
+  const handleDeleteProduct = (productId) => {
+    if (!window.confirm("Deseja realmente excluir este produto do catálogo?")) return;
+    const updatedProducts = clientProducts.filter(p => p.id !== productId);
+    const updatedMaster = { ...masterStore, produtos: updatedProducts };
+    
+    updateStoreInCloud(updatedMaster);
+    setStores(stores.map(s => s.client === clientGroup.client ? { ...s, produtos: updatedProducts } : s));
+    toast.success("Produto removido.");
+  };
+
+  const abrirEdicaoProduto = (prod) => {
+    // 1. Tenta pegar os canais novos, se não achar, tenta os antigos, se não achar, usa array vazio
+    let canaisAtuais = prod.canais || prod.precosCanais || [];
+    
+    // 2. Transforma (adapta) formato antigo para o novo formato de canais
+    let canaisAdaptados = canaisAtuais.map(c => {
+      // Garante retrocompatibilidade: converte o formato antigo em um item do novo array
+      let kitsAdaptados = c.kits || [];
+      if (!c.kits && (c.temKit || prod.temKit)) {
+        kitsAdaptados = [{
+          id: Date.now() + Math.random(),
+          descricao: prod.kitDescricao || c.kitDescricao || `Kit ${prod.qtdParesKit || 'X'} Itens`,
+          precoDe: c.precoDeKit || '',
+          precoPor: c.precoPorKit || prod.precoKit || ''
+        }];
+      }
+
+      return {
+        id: c.id || Date.now() + Math.random(),
+        canal: c.canal || 'Shopee',
+        precoDe: prod.precoDe || '', 
+        precoPor: c.precoPor || c.preco || '', 
+        kits: kitsAdaptados
+      };
+    });
+
+    // 3. Se for um produto novo ou sem canais, cria um canal padrão para não dar erro no map
+    if (canaisAdaptados.length === 0) {
+      canaisAdaptados.push({ 
+          id: Date.now(), canal: 'Shopee', precoDe: '', precoPor: '', kits: [] 
+      });
+    }
+
+    setProductForm({
+      fotoUrl: prod.fotoUrl || '', 
+      descricao: prod.descricao || '', 
+      canais: canaisAdaptados // <--- Agora sempre existe e é um array
+    });
+    
+    setEditingProductId(prod.id);
+    setProductModalOpen(true);
+  };
 
   // Filtra as lojas apenas por cliente (Bruto da nuvem, imune a filtros da tabela)
   const liveStores = useMemo(() => {
@@ -395,6 +541,12 @@ export default function ClientFileModal({
     return liveStores[0]?.potentialMarketplaces || [];
   }, [liveStores]);
 
+  // Cria uma lista única (sem duplicatas) unindo o que já está ativo com o que está no radar
+  const clientAvailableMarketplaces = useMemo(() => {
+    const combined = new Set([...Array.from(activeMarketplaces), ...potentialMarketplaces]);
+    return Array.from(combined).sort();
+  }, [activeMarketplaces, potentialMarketplaces]);
+
   // 2. Função para alternar o status do marketplace (Potencial <-> Inativo)
   const togglePotentialMarketplace = (mkt) => {
     if (!canUseBatchEntry) return; // Trava de segurança por nível de cargo
@@ -513,6 +665,9 @@ export default function ClientFileModal({
             <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
               <PieChartIcon size={16} /> Visão Geral
             </button>
+            <button onClick={() => setActiveTab('produtos')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'produtos' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
+              <Package size={16} /> Catálogo de Produtos
+            </button>
             <button onClick={() => setActiveTab('historico')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'historico' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
               <History size={16} /> Histórico & Tarefas
             </button>
@@ -551,7 +706,7 @@ export default function ClientFileModal({
               )}
 
               <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Target size={14}/> Radar de Expansão (Marketplaces)</h3>
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Target size={14}/> Radar de Expansão</h3>
                 <div className="flex flex-wrap gap-2">
                   {ALL_MARKETPLACES.map(mkt => {
                     const isActive = activeMarketplaces.has(mkt);
@@ -669,8 +824,8 @@ export default function ClientFileModal({
 
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
                   <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><PieChartIcon size={16} className="text-indigo-400" /> Share por Loja</h3>
-                  <div className="h-64">
-                    {pieData.length > 0 ? (
+                  <div className="h-64 w-full" style={{ minHeight: '250px' }}>
+                    {pieData.length > 0 && (
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
@@ -679,7 +834,7 @@ export default function ClientFileModal({
                           <Tooltip contentStyle={glassTooltipStyle} formatter={(value) => formatCurrency(value)} />
                         </PieChart>
                       </ResponsiveContainer>
-                    ) : <p className="text-gray-500 text-center mt-20 text-sm">Sem faturamento registrado.</p>}
+                    )}
                   </div>
                 </div>
 
@@ -948,6 +1103,320 @@ export default function ClientFileModal({
               </div>
             </div>
           )}
+
+          {activeTab === 'produtos' && (
+            <div className="space-y-6 animate-in fade-in">
+              <div className="flex justify-between items-center bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2"><Package size={20} className="text-indigo-400"/> Catálogo Oficial</h3>
+                  <p className="text-xs text-gray-400 mt-1">Gerencie produtos e monitore a tabela de preços individual por marketplace.</p>
+                </div>
+                {canEdit && (
+                  <button 
+                    onClick={() => {
+                      setProductForm({ 
+                        fotoUrl: '', descricao: '', 
+                        canais: [{ id: Date.now(), canal: 'Shopee', precoDe: '', precoPor: '', temKit: false, kitDescricao: 'Kit 2 Pares', precoDeKit: '', precoPorKit: '' }] 
+                      });
+                      setEditingProductId(null);
+                      setProductModalOpen(true);
+                    }}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all shadow-md flex items-center gap-2"
+                  >
+                    <Plus size={16}/> Adicionar Produto
+                  </button>
+                )}
+              </div>
+
+              {clientProducts.length === 0 ? (
+                <div className="text-center py-16 bg-white/[0.01] border border-dashed border-white/10 rounded-2xl">
+                  <Package size={40} className="mx-auto text-gray-600 mb-3" />
+                  <p className="text-gray-400 font-bold">Nenhum produto cadastrado.</p>
+                  <p className="text-gray-500 text-xs mt-1">Cadastre os produtos focos da curva A deste cliente.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {clientProducts.map(prod => (
+                    <div key={prod.id} className="bg-black/30 border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col group relative">
+                      
+                      <button 
+                        onClick={() => setShowProductHistoryId(showProductHistoryId === prod.id ? null : prod.id)}
+                        className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 rounded-lg text-gray-400 hover:text-white transition-all z-10 backdrop-blur-sm"
+                        title="Ver Histórico de Preços"
+                      >
+                        <History size={16} />
+                      </button>
+
+                      <div className="h-40 bg-gray-900 flex items-center justify-center border-b border-white/5 relative">
+                        {prod.fotoUrl ? (
+                          <img src={prod.fotoUrl} alt={prod.descricao} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                        ) : (
+                          <Image size={32} className="text-gray-600" />
+                        )}
+                      </div>
+                      
+                      <div className="p-4 flex-1 flex flex-col">
+                        <h4 className="font-bold text-white text-sm leading-snug mb-3">{prod.descricao}</h4>
+                        
+                        {/* LISTAGEM DOS CANAIS ATIVOS (VISÃO DE TABELA) */}
+                        <div className="space-y-3 mt-auto">
+                          {(prod.canais || []).map((c, i) => (
+                            <div key={c.id || i} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col gap-2 relative">
+                              {/* Tarja colorida de canal */}
+                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500/50"></div>
+                              
+                              <div className="flex justify-between items-center ml-2 border-b border-white/5 pb-2">
+                                <span className="text-xs font-black text-gray-300 uppercase tracking-wider">{c.canal}</span>
+                                <div className="text-right">
+                                  {c.precoDe && <span className="text-[10px] text-gray-500 line-through mr-1">R$ {c.precoDe}</span>}
+                                  <span className="text-sm font-black text-emerald-400">R$ {c.precoPor || c.preco || '0.00'}</span>
+                                </div>
+                              </div>
+                              
+                              {(c.kits || []).map((kit, kIdx) => (
+                                <div key={kit.id || kIdx} className="flex justify-between items-center ml-2 pt-1.5 border-t border-white/5 mt-1.5 first:border-0 first:mt-0">
+                                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1 truncate max-w-[120px]" title={kit.descricao}>
+                                    <Package size={12} className="shrink-0"/> {kit.descricao || 'Kit'}
+                                  </span>
+                                  <div className="text-right shrink-0">
+                                    {kit.precoDe && <span className="text-[10px] text-gray-500 line-through mr-1">R$ {kit.precoDe}</span>}
+                                    <span className="text-xs font-black text-indigo-300">R$ {kit.precoPor || '0.00'}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Painel de Histórico (Sanduíche) */}
+                      {showProductHistoryId === prod.id && (
+                        <div className="absolute inset-0 bg-black/95 backdrop-blur-xl p-4 flex flex-col z-20 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-4">
+                          <div className="flex justify-between items-center mb-4">
+                            <h5 className="text-xs font-bold text-white uppercase tracking-wider">Trilha de Auditoria</h5>
+                            <button onClick={() => setShowProductHistoryId(null)} className="text-gray-400 hover:text-white"><X size={16}/></button>
+                          </div>
+                          <div className="space-y-4">
+                            {prod.historico?.map((hist, idx) => (
+                              <div key={idx} className="border-l-2 border-indigo-500 pl-3 relative">
+                                <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-indigo-500"></div>
+                                <span className="text-[9px] text-gray-500 block mb-1">{hist.data} por {hist.author}</span>
+                                {hist.mudancas.map((m, mIdx) => (
+                                  <p key={mIdx} className="text-[11px] text-gray-300 leading-snug mb-0.5">• {m}</p>
+                                ))}
+                              </div>
+                            ))}
+                            {(!prod.historico || prod.historico.length === 0) && (
+                              <p className="text-[10px] text-gray-500 italic text-center">Nenhum registro encontrado.</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {canEdit && (
+                        <div className="flex border-t border-white/5 bg-black/40 mt-3">
+                          <button onClick={() => abrirEdicaoProduto(prod)} className="flex-1 py-3 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors border-r border-white/5 uppercase tracking-wider flex items-center justify-center gap-1">
+                            <Edit2 size={12}/> Editar Preços
+                          </button>
+                          <button onClick={() => handleDeleteProduct(prod.id)} className="flex-1 py-3 text-[10px] font-bold text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors uppercase tracking-wider flex items-center justify-center gap-1">
+                            <Trash2 size={12}/> Remover
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* === SIDE PANEL DE CRIAÇÃO/EDIÇÃO DE PRODUTO (GAVETA LATERAL) === */}
+          {productModalOpen && (
+            <div className="fixed inset-0 bg-[#0B0F19]/60 backdrop-blur-sm flex justify-end z-[9999]">
+              <div className="absolute inset-0" onClick={() => setProductModalOpen(false)}></div>
+              
+              <div className="relative bg-gray-900 border-l border-white/10 w-full max-w-xl h-full shadow-[-10px_0_30px_rgba(0,0,0,0.5)] flex flex-col animate-in slide-in-from-right duration-300">
+                
+                {/* Cabeçalho */}
+                <div className="flex justify-between items-center shrink-0 border-b border-white/5 p-6 bg-black/20">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Package size={20} className="text-indigo-400"/> 
+                    {editingProductId ? 'Editar Tabela de Preços' : 'Novo Produto'}
+                  </h3>
+                  <button onClick={() => setProductModalOpen(false)} className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-white/5 rounded-lg">
+                    <X size={20}/>
+                  </button>
+                </div>
+
+                {/* Corpo do Formulário com Rolagem Interna */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+                  
+                  {/* BLOCO 1: INFOS GERAIS DO PRODUTO */}
+                  <div className="space-y-4 border-b border-white/5 pb-6">
+                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">Informações Base</h4>
+                    
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição / Nome do Produto</label>
+                      <input type="text" value={productForm.descricao} onChange={e => setProductForm({...productForm, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 shadow-inner text-sm transition-colors" placeholder="Ex: Tênis Esportivo Runner X" />
+                    </div>
+                    
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Foto do Modelo (Thumbnail)</label>
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                          {productForm.fotoUrl ? (
+                            <img src={productForm.fotoUrl} alt="Preview" className="w-full h-full object-cover" />
+                          ) : (
+                            <Image size={20} className="text-gray-600" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <label className="w-full cursor-pointer bg-black/40 border border-white/10 hover:border-indigo-500 text-gray-300 rounded-xl p-3 text-sm transition-colors flex items-center justify-center gap-2 border-dashed">
+                            <Upload size={16} className="text-indigo-400" />
+                            <span>Fazer Upload de Imagem</span>
+                            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                          </label>
+                          <p className="text-[9px] text-gray-500 mt-1 text-center">A imagem será comprimida automaticamente (max 300px).</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* BLOCO 2: TABELA DE PREÇOS POR CANAL */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest">Tabela de Preços e Kits</h4>
+                      <button 
+                        onClick={() => setProductForm({
+                          ...productForm, 
+                          canais: [...productForm.canais, { id: Date.now(), canal: 'Novo Canal', precoDe: '', precoPor: '', kits: [] }] 
+                        })} 
+                        className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-lg hover:bg-emerald-500/30 transition-colors flex items-center gap-1"
+                      >
+                        <Plus size={14}/> Ativar Canal
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      {(productForm.canais || []).map((c, idx) => (
+                        <div key={c.id} className="bg-black/30 border border-white/10 rounded-2xl p-4 relative group">
+                          
+                          <button 
+                            onClick={() => {
+                              const novosCanais = productForm.canais.filter((_, i) => i !== idx);
+                              setProductForm({...productForm, canais: novosCanais});
+                            }} 
+                            className="absolute top-4 right-4 text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 p-1.5 rounded-lg transition-colors"
+                            title="Remover este canal"
+                          >
+                            <Trash2 size={14}/>
+                          </button>
+
+                          <div className="mb-4 pr-10">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Marketplace</label>
+                            <select value={c.canal} onChange={e => {
+                              const novosCanais = [...productForm.canais];
+                              novosCanais[idx].canal = e.target.value;
+                              setProductForm({...productForm, canais: novosCanais});
+                            }} className="w-full bg-white/5 border border-white/10 text-white font-bold rounded-lg p-2.5 text-xs outline-none focus:border-indigo-500 transition-colors cursor-pointer">
+                              {clientAvailableMarketplaces.map(m => <option key={m} value={m} className="bg-gray-900">{m.toUpperCase()}</option>)}
+                            </select>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 mb-4">
+                            <div>
+                              <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Preço 'DE' (Riscado)</label>
+                              <input type="number" step="0.01" value={c.precoDe} onChange={e => {
+                                const novos = [...productForm.canais]; novos[idx].precoDe = e.target.value; setProductForm({...productForm, canais: novos});
+                              }} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded-lg p-2.5 outline-none focus:border-indigo-500 transition-colors text-xs" placeholder="R$ 0,00" />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-emerald-400 uppercase block mb-1">Preço 'POR' (Venda)</label>
+                              <input type="number" step="0.01" value={c.precoPor} onChange={e => {
+                                const novos = [...productForm.canais]; novos[idx].precoPor = e.target.value; setProductForm({...productForm, canais: novos});
+                              }} className="w-full bg-emerald-500/10 border border-emerald-500/30 text-white font-bold rounded-lg p-2.5 outline-none focus:border-emerald-500 transition-colors text-xs placeholder:text-emerald-500/30" placeholder="R$ 0,00" />
+                            </div>
+                          </div>
+
+                          <div className="border-t border-white/5 pt-3">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                Kits e Variações
+                              </span>
+                              <button 
+                                onClick={() => {
+                                  const novos = [...productForm.canais];
+                                  if (!novos[idx].kits) novos[idx].kits = [];
+                                  novos[idx].kits.push({ id: Date.now(), descricao: '', precoDe: '', precoPor: '' });
+                                  setProductForm({...productForm, canais: novos});
+                                }}
+                                className="text-[9px] font-bold bg-indigo-500/20 text-indigo-300 px-2.5 py-1.5 rounded-lg hover:bg-indigo-500/30 transition-colors flex items-center gap-1"
+                              >
+                                <Plus size={12}/> Adicionar Kit
+                              </button>
+                            </div>
+
+                            <div className="space-y-2">
+                              {(c.kits || []).map((kit, kitIdx) => (
+                                <div key={kit.id} className="flex gap-2 animate-in fade-in bg-indigo-500/5 p-2.5 rounded-xl border border-indigo-500/10 items-end">
+                                  <div className="flex-1">
+                                    <label className="text-[9px] font-bold text-indigo-300 uppercase block mb-1">Desc. Kit</label>
+                                    <input type="text" value={kit.descricao} onChange={e => {
+                                      const novos = [...productForm.canais]; novos[idx].kits[kitIdx].descricao = e.target.value; setProductForm({...productForm, canais: novos});
+                                    }} className="w-full bg-black/40 border border-white/10 text-white rounded-md p-2 outline-none focus:border-indigo-500 transition-colors text-[10px]" placeholder="Ex: Kit 3 Pares" />
+                                  </div>
+                                  <div className="w-20">
+                                    <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">DE</label>
+                                    <input type="number" step="0.01" value={kit.precoDe} onChange={e => {
+                                      const novos = [...productForm.canais]; novos[idx].kits[kitIdx].precoDe = e.target.value; setProductForm({...productForm, canais: novos});
+                                    }} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded-md p-2 outline-none focus:border-indigo-500 transition-colors text-[10px]" placeholder="R$" />
+                                  </div>
+                                  <div className="w-20">
+                                    <label className="text-[9px] font-bold text-indigo-400 uppercase block mb-1">POR</label>
+                                    <input type="number" step="0.01" value={kit.precoPor} onChange={e => {
+                                      const novos = [...productForm.canais]; novos[idx].kits[kitIdx].precoPor = e.target.value; setProductForm({...productForm, canais: novos});
+                                    }} className="w-full bg-indigo-500/20 border border-indigo-500/40 text-white font-bold rounded-md p-2 outline-none focus:border-indigo-500 transition-colors text-[10px]" placeholder="R$" />
+                                  </div>
+                                  <button 
+                                    onClick={() => {
+                                      const novos = [...productForm.canais];
+                                      novos[idx].kits = novos[idx].kits.filter((_, i) => i !== kitIdx);
+                                      setProductForm({...productForm, canais: novos});
+                                    }} 
+                                    className="p-2 text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg transition-colors mb-[1px]"
+                                    title="Remover Kit"
+                                  >
+                                    <Trash2 size={12}/>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                        </div>
+                      ))}
+                      {(!productForm?.canais || productForm.canais.length === 0) && (
+                        <div className="text-center p-6 border border-dashed border-white/10 rounded-xl">
+                          <p className="text-xs text-gray-500">Nenhum canal ativo para este produto.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Botão Salvar Fixo */}
+                <div className="p-6 border-t border-white/5 bg-black/20 shrink-0">
+                  <button onClick={handleSaveProduct} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm flex items-center justify-center gap-2">
+                    {editingProductId ? <Save size={18}/> : <Plus size={18}/>}
+                    {editingProductId ? 'Salvar Tabela de Preços' : 'Finalizar Cadastro'}
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
 
