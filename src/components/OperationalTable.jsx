@@ -8,7 +8,8 @@ export default function OperationalTable({
   addNewStoreToClient, openHistoryModal, openClientFile, formatCurrency, 
   showValues, generateClientWhatsAppLink, generateStoreWhatsAppLink,
   clientGrowthMap, updateGlobalSettings,
-  startEditingStore, editingStoreId, setEditingStoreId, storeEditData, setStoreEditData, saveStoreEdit, deleteStore, offboardClient
+  startEditingStore, editingStoreId, setEditingStoreId, storeEditData, setStoreEditData, saveStoreEdit, deleteStore, offboardClient,
+  openTaskModal
 }) {
 
   const filteredGroups = dashboardData.groupedClients;
@@ -218,7 +219,6 @@ export default function OperationalTable({
                           </div>
                         </div>
                       ) : (
-                        // MODO DE VISUALIZAÇÃO (Padrão)
                         <>
                           {/* Header */}
                           <div className="flex justify-between items-start mb-4 mt-1">

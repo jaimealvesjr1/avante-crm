@@ -421,8 +421,20 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <CheckCircle2 size={20} className="text-indigo-400"/> {store.store}
               </h3>
-              <p className="text-xs text-gray-400 mt-1 uppercase tracking-wider font-medium">
-                {store.client} {store.marketplace && `• ${store.marketplace}`}
+              <p className="text-xs text-gray-400 mt-1 uppercase tracking-wider font-medium flex items-center gap-1">
+                <button 
+                   onClick={() => {
+                      if (window.openClientFileGlobal) {
+                         onClose(); 
+                         window.openClientFileGlobal(store.client); 
+                      }
+                   }}
+                   className="hover:text-indigo-400 transition-colors cursor-pointer text-left"
+                   title="Abrir Ficha do Cliente"
+                >
+                   {store.client}
+                </button> 
+                {store.marketplace && ` • ${store.marketplace}`}
               </p>
             </div>
             <button onClick={onClose} className="lg:hidden p-2 hover:bg-white/10 rounded-full transition-colors border border-transparent">
@@ -896,12 +908,12 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                         <div className="flex items-center gap-4 bg-black/40 px-4 py-2 rounded-xl border border-white/5">
                           {c.precoDe && (
                             <div className="flex flex-col items-end">
-                              <span className="text-[10px] text-gray-500 uppercase font-bold leading-none mb-1">De</span>
+                              <span className="text-[10px] text-gray-500 uppercase font-bold leading-none mb-1">Cheio</span>
                               <span className="text-xs text-gray-400 line-through font-medium">R$ {c.precoDe}</span>
                             </div>
                           )}
                           <div className="flex flex-col items-end">
-                            <span className="text-[10px] text-emerald-500 uppercase font-bold leading-none mb-1">Por</span>
+                            <span className="text-[10px] text-emerald-500 uppercase font-bold leading-none mb-1">Promoção</span>
                             <span className="text-xl font-black text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.4)]">R$ {c.precoPor || c.preco || '0.00'}</span>
                           </div>
                         </div>

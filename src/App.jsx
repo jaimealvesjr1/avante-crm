@@ -449,6 +449,9 @@ export default function App() {
     const group = dashboardData.groupedClients.find(g => g.client === clientName);
     if (group) { setActiveClientGroup(group); setClientFileOpen(true); }
   };
+  
+  // Atalho global para que componentes profundos (como TaskModal) consigam chamar
+  window.openClientFileGlobal = openClientFile;
 
   const handleLogin = async (e) => { 
     e.preventDefault(); 
@@ -1742,6 +1745,10 @@ export default function App() {
               generateStoreWhatsAppLink={generateStoreWhatsAppLink}
               generateClientWhatsAppLink={generateClientWhatsAppLink}
               openClientFile={openClientFile}
+              openTaskModal={(storeRow) => { 
+                setActiveTaskStoreId(storeRow.id); 
+                setTaskModalOpen(true); 
+              }}
             />
           )}
 

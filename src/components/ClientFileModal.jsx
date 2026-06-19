@@ -1116,7 +1116,7 @@ export default function ClientFileModal({
                     onClick={() => {
                       setProductForm({ 
                         fotoUrl: '', descricao: '', 
-                        canais: [{ id: Date.now(), canal: 'Shopee', precoDe: '', precoPor: '', temKit: false, kitDescricao: 'Kit 2 Pares', precoDeKit: '', precoPorKit: '' }] 
+                        canais: [{ id: Date.now(), canal: 'shopee', precoDe: '', precoPor: '', temKit: false, kits: [] }] 
                       });
                       setEditingProductId(null);
                       setProductModalOpen(true);
@@ -1160,9 +1160,8 @@ export default function ClientFileModal({
                         
                         {/* LISTAGEM DOS CANAIS ATIVOS (VISÃO DE TABELA) */}
                         <div className="space-y-3 mt-auto">
-                          {(prod.canais || []).map((c, i) => (
-                            <div key={c.id || i} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col gap-2 relative">
-                              {/* Tarja colorida de canal */}
+                          {(prod.canais || prod.precosCanais || []).map((c, i) => (
+                            <div key={c.id || i} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden">
                               <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500/50"></div>
                               
                               <div className="flex justify-between items-center ml-2 border-b border-white/5 pb-2">
@@ -1173,6 +1172,7 @@ export default function ClientFileModal({
                                 </div>
                               </div>
                               
+                              {/* Kits */}
                               {(c.kits || []).map((kit, kIdx) => (
                                 <div key={kit.id || kIdx} className="flex justify-between items-center ml-2 pt-1.5 border-t border-white/5 mt-1.5 first:border-0 first:mt-0">
                                   <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1 truncate max-w-[120px]" title={kit.descricao}>
@@ -1193,21 +1193,21 @@ export default function ClientFileModal({
                       {showProductHistoryId === prod.id && (
                         <div className="absolute inset-0 bg-black/95 backdrop-blur-xl p-4 flex flex-col z-20 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-4">
                           <div className="flex justify-between items-center mb-4">
-                            <h5 className="text-xs font-bold text-white uppercase tracking-wider">Trilha de Auditoria</h5>
-                            <button onClick={() => setShowProductHistoryId(null)} className="text-gray-400 hover:text-white"><X size={16}/></button>
+                            <h5 className="text-sm font-bold text-white uppercase tracking-wider">Trilha de Auditoria</h5>
+                            <button onClick={() => setShowProductHistoryId(null)} className="text-gray-400 hover:text-white bg-white/5 p-1 rounded-md"><X size={16}/></button>
                           </div>
                           <div className="space-y-4">
                             {prod.historico?.map((hist, idx) => (
                               <div key={idx} className="border-l-2 border-indigo-500 pl-3 relative">
-                                <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-indigo-500"></div>
-                                <span className="text-[9px] text-gray-500 block mb-1">{hist.data} por {hist.author}</span>
+                                <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-indigo-500"></div>
+                                <span className="text-xs text-gray-400 font-bold block mb-1">{hist.data} por {hist.author}</span>
                                 {hist.mudancas.map((m, mIdx) => (
-                                  <p key={mIdx} className="text-[11px] text-gray-300 leading-snug mb-0.5">• {m}</p>
+                                  <p key={mIdx} className="text-xs text-gray-200 leading-relaxed mb-1">• {m}</p>
                                 ))}
                               </div>
                             ))}
                             {(!prod.historico || prod.historico.length === 0) && (
-                              <p className="text-[10px] text-gray-500 italic text-center">Nenhum registro encontrado.</p>
+                              <p className="text-xs text-gray-500 italic text-center">Nenhum registro encontrado.</p>
                             )}
                           </div>
                         </div>
@@ -1313,25 +1313,25 @@ export default function ClientFileModal({
                           </button>
 
                           <div className="mb-4 pr-10">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Marketplace</label>
-                            <select value={c.canal} onChange={e => {
+                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Marketplace / Canal de Venda</label>
+                            <select value={c.canal || 'Shopee'} onChange={e => {
                               const novosCanais = [...productForm.canais];
                               novosCanais[idx].canal = e.target.value;
                               setProductForm({...productForm, canais: novosCanais});
                             }} className="w-full bg-white/5 border border-white/10 text-white font-bold rounded-lg p-2.5 text-xs outline-none focus:border-indigo-500 transition-colors cursor-pointer">
-                              {clientAvailableMarketplaces.map(m => <option key={m} value={m} className="bg-gray-900">{m.toUpperCase()}</option>)}
+                              {ALL_MARKETPLACES.map(m => <option key={m} value={m} className="bg-gray-900">{m.toUpperCase()}</option>)}
                             </select>
                           </div>
 
                           <div className="grid grid-cols-2 gap-3 mb-4">
                             <div>
-                              <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Preço 'DE' (Riscado)</label>
+                              <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Preço Cheio</label>
                               <input type="number" step="0.01" value={c.precoDe} onChange={e => {
                                 const novos = [...productForm.canais]; novos[idx].precoDe = e.target.value; setProductForm({...productForm, canais: novos});
                               }} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded-lg p-2.5 outline-none focus:border-indigo-500 transition-colors text-xs" placeholder="R$ 0,00" />
                             </div>
                             <div>
-                              <label className="text-[9px] font-bold text-emerald-400 uppercase block mb-1">Preço 'POR' (Venda)</label>
+                              <label className="text-[9px] font-bold text-emerald-400 uppercase block mb-1">Preço Promoção</label>
                               <input type="number" step="0.01" value={c.precoPor} onChange={e => {
                                 const novos = [...productForm.canais]; novos[idx].precoPor = e.target.value; setProductForm({...productForm, canais: novos});
                               }} className="w-full bg-emerald-500/10 border border-emerald-500/30 text-white font-bold rounded-lg p-2.5 outline-none focus:border-emerald-500 transition-colors text-xs placeholder:text-emerald-500/30" placeholder="R$ 0,00" />
@@ -1360,19 +1360,19 @@ export default function ClientFileModal({
                               {(c.kits || []).map((kit, kitIdx) => (
                                 <div key={kit.id} className="flex gap-2 animate-in fade-in bg-indigo-500/5 p-2.5 rounded-xl border border-indigo-500/10 items-end">
                                   <div className="flex-1">
-                                    <label className="text-[9px] font-bold text-indigo-300 uppercase block mb-1">Desc. Kit</label>
+                                    <label className="text-[9px] font-bold text-indigo-300 uppercase block mb-1">Tipo de Kit</label>
                                     <input type="text" value={kit.descricao} onChange={e => {
                                       const novos = [...productForm.canais]; novos[idx].kits[kitIdx].descricao = e.target.value; setProductForm({...productForm, canais: novos});
                                     }} className="w-full bg-black/40 border border-white/10 text-white rounded-md p-2 outline-none focus:border-indigo-500 transition-colors text-[10px]" placeholder="Ex: Kit 3 Pares" />
                                   </div>
                                   <div className="w-20">
-                                    <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">DE</label>
+                                    <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Cheio</label>
                                     <input type="number" step="0.01" value={kit.precoDe} onChange={e => {
                                       const novos = [...productForm.canais]; novos[idx].kits[kitIdx].precoDe = e.target.value; setProductForm({...productForm, canais: novos});
                                     }} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded-md p-2 outline-none focus:border-indigo-500 transition-colors text-[10px]" placeholder="R$" />
                                   </div>
                                   <div className="w-20">
-                                    <label className="text-[9px] font-bold text-indigo-400 uppercase block mb-1">POR</label>
+                                    <label className="text-[9px] font-bold text-indigo-400 uppercase block mb-1">Promoção</label>
                                     <input type="number" step="0.01" value={kit.precoPor} onChange={e => {
                                       const novos = [...productForm.canais]; novos[idx].kits[kitIdx].precoPor = e.target.value; setProductForm({...productForm, canais: novos});
                                     }} className="w-full bg-indigo-500/20 border border-indigo-500/40 text-white font-bold rounded-md p-2 outline-none focus:border-indigo-500 transition-colors text-[10px]" placeholder="R$" />
