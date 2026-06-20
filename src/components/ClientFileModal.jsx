@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Flame, Clock, X, CheckSquare, ClipboardList, History, 
   PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, 
   TrendingDown, Edit2, Briefcase, Plus, LogOut, Activity, Package, 
-  Image, MoreVertical, Trash2, Upload } from 'lucide-react';
+  Image, MoreVertical, Trash2, Upload, DollarSign, FileText } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, 
   YAxis, CartesianGrid, LineChart, Line, ReferenceLine, ComposedChart, Area, Legend } from 'recharts';
 import { toast } from 'react-hot-toast';
@@ -81,20 +81,29 @@ export default function ClientFileModal({
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
 
-
-  // === ESTADOS PARA PRODUTOS ===
+  // === ESTADOS DO CATÁLOGO DE PRODUTOS ===
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
   const [showProductHistoryId, setShowProductHistoryId] = useState(null);
   
   const [productForm, setProductForm] = useState({
-    fotoUrl: '', descricao: '', 
-    canais: [{ id: Date.now(), canal: 'Shopee', precoDe: '', precoPor: '', kits: [] }]
+    fotoUrl: '', 
+    descricao: '', 
+    custo: '', 
+    variacoes: [], 
+    observacoes: '', // NOVO CAMPO
+    canais: [
+      { 
+        id: Date.now(), 
+        canal: 'Shopee', 
+        modalidade: '', 
+        ofertas: [{ id: Date.now() + 1, quantidade: 1, precoDe: '', precoPor: '' }] // NOVA ESTRUTURA
+      }
+    ]
   });
 
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Usuário';
 
-  // Usamos a primeira loja do cliente como "hospedeira" do catálogo de produtos
   const masterStore = useMemo(() => {
     return stores.find(s => s.client === clientGroup.client);
   }, [stores, clientGroup.client]);
@@ -102,6 +111,20 @@ export default function ClientFileModal({
   const clientProducts = useMemo(() => {
     return masterStore?.produtos || [];
   }, [masterStore]);
+
+  // Função para Cálculo Inteligente do Lucro Bruto
+  const calcularLucroOferta = (precoVenda, custoBase, quantidade) => {
+    const venda = Number(precoVenda) || 0;
+    const custoUnico = Number(custoBase) || 0;
+    const qtdPares = Number(quantidade) || 1;
+    
+    if (venda === 0) return { valor: 0, margem: 0 };
+    
+    const custoTotal = custoUnico * qtdPares;
+    const lucro = venda - custoTotal;
+    const margem = (lucro / venda) * 100;
+    return { valor: lucro, margem: margem };
+  };
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -112,7 +135,7 @@ export default function ClientFileModal({
       const img = new window.Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 300; // Tamanho máximo para thumbnail
+        const MAX_WIDTH = 300; 
         const scaleSize = MAX_WIDTH / img.width;
         
         canvas.width = MAX_WIDTH;
@@ -122,7 +145,6 @@ export default function ClientFileModal({
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
-        
         setProductForm({...productForm, fotoUrl: compressedBase64});
       };
       img.src = event.target.result;
@@ -141,25 +163,25 @@ export default function ClientFileModal({
     if (editingProductId) {
       updatedProducts = updatedProducts.map(p => {
         if (p.id === editingProductId) {
-          // --- AUDITORIA ---
-          productForm.canais.forEach(novoCanal => {
-            const canalAntigo = (p.canais || []).find(c => c.id === novoCanal.id);
-            if (!canalAntigo) {
-              historyLog.mudancas.push(`Novo canal ativado: ${novoCanal.canal} por R$${novoCanal.precoPor}`);
-            } else if (canalAntigo.precoPor !== novoCanal.precoPor) {
-              historyLog.mudancas.push(`Preço (${novoCanal.canal}): de R$${canalAntigo.precoPor} para R$${novoCanal.precoPor}`);
-            }
-          });
-
+          if (p.custo !== productForm.custo) {
+            historyLog.mudancas.push(`Custo alterado de R$${p.custo || '0'} para R$${productForm.custo || '0'}`);
+          }
+          if (JSON.stringify(p.canais) !== JSON.stringify(productForm.canais)) {
+            historyLog.mudancas.push(`Tabela de preços dos canais foi atualizada`);
+          }
+          if (p.observacoes !== productForm.observacoes) {
+            historyLog.mudancas.push(`Observações do produto foram modificadas`);
+          }
           return { ...productForm, id: p.id, historico: historyLog.mudancas.length > 0 ? [historyLog, ...(p.historico || [])] : p.historico };
         }
         return p;
       });
-      toast.success("Catálogo atualizado!");
+      toast.success("Catálogo atualizado com sucesso!");
     } else {
+      historyLog.mudancas.push("Produto adicionado ao catálogo.");
       const novoProduto = { ...productForm, id: Date.now() + Math.random(), historico: [historyLog] };
       updatedProducts.push(novoProduto);
-      toast.success("Produto adicionado!");
+      toast.success("Produto cadastrado com sucesso!");
     }
 
     const updatedMaster = { ...masterStore, produtos: updatedProducts };
@@ -182,59 +204,190 @@ export default function ClientFileModal({
     toast.success("Produto removido.");
   };
 
+  const handleDuplicateProduct = (prod) => {
+    if (!canEdit) return toast.error("Você não tem permissão para duplicar produtos.");
+
+    let baseName = prod.descricao;
+    let copyName = `${baseName} (Cópia)`;
+    let counter = 1;
+
+    while (clientProducts.some(p => p.descricao.trim().toLowerCase() === copyName.toLowerCase())) {
+      counter++;
+      copyName = `${baseName} (Cópia ${counter})`;
+    }
+
+    const historyLog = { 
+      data: new Date().toLocaleString('pt-BR'), 
+      author: username, 
+      mudancas: [`Produto duplicado a partir de "${baseName}"`] 
+    };
+
+    const newProduct = {
+      ...prod,
+      id: Date.now() + Math.random(),
+      descricao: copyName,
+      historico: [historyLog]
+    };
+
+    const updatedProducts = [...clientProducts, newProduct];
+    const updatedMaster = { ...masterStore, produtos: updatedProducts };
+    
+    updateStoreInCloud(updatedMaster);
+    setStores(stores.map(s => s.client === clientGroup.client ? { ...s, produtos: updatedProducts } : s));
+    
+    toast.success("Produto duplicado com sucesso!");
+  };
+
+  // --- FUNÇÕES DE VARIAÇÕES ---
+  const handleAddVariacao = () => {
+    setProductForm({
+      ...productForm,
+      variacoes: [...(productForm.variacoes || []), { id: Date.now(), cor: '', tamanhos: [] }]
+    });
+  };
+
+  const handleUpdateCor = (id, novaCor) => {
+    const novasVariacoes = productForm.variacoes.map(v => v.id === id ? { ...v, cor: novaCor } : v);
+    setProductForm({ ...productForm, variacoes: novasVariacoes });
+  };
+
+  const handleRemoveVariacao = (id) => {
+    setProductForm({ ...productForm, variacoes: productForm.variacoes.filter(v => v.id !== id) });
+  };
+
+  const handleAddTamanho = (e, variacaoId) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const novoTamanho = e.target.value.trim();
+      if (novoTamanho) {
+        const novasVariacoes = productForm.variacoes.map(v => {
+          if (v.id === variacaoId && !v.tamanhos.includes(novoTamanho)) {
+            return { ...v, tamanhos: [...v.tamanhos, novoTamanho] };
+          }
+          return v;
+        });
+        setProductForm({ ...productForm, variacoes: novasVariacoes });
+        e.target.value = ''; 
+      }
+    }
+  };
+
+  const handleRemoveTamanho = (variacaoId, tamanhoParaRemover) => {
+    const novasVariacoes = productForm.variacoes.map(v => {
+      if (v.id === variacaoId) {
+        return { ...v, tamanhos: v.tamanhos.filter(t => t !== tamanhoParaRemover) };
+      }
+      return v;
+    });
+    setProductForm({ ...productForm, variacoes: novasVariacoes });
+  };
+
+  // --- FUNÇÕES DA TABELA DE PREÇOS (OFERTAS) ---
+  const handleAddOferta = (canalIdx) => {
+    const novosCanais = [...productForm.canais];
+    const ofertasAtuais = novosCanais[canalIdx].ofertas || [];
+    const ultimaQtd = ofertasAtuais.length > 0 ? Math.max(...ofertasAtuais.map(o => Number(o.quantidade) || 0)) : 0;
+    
+    novosCanais[canalIdx].ofertas.push({
+        id: Date.now() + Math.random(),
+        quantidade: ultimaQtd + 1,
+        precoDe: '',
+        precoPor: ''
+    });
+    setProductForm({...productForm, canais: novosCanais});
+  };
+
+  const handleUpdateOferta = (canalIdx, ofertaIdx, field, value) => {
+    const novosCanais = [...productForm.canais];
+    novosCanais[canalIdx].ofertas[ofertaIdx][field] = value;
+    setProductForm({...productForm, canais: novosCanais});
+  };
+
+  const handleRemoveOferta = (canalIdx, ofertaIdx) => {
+    const novosCanais = [...productForm.canais];
+    novosCanais[canalIdx].ofertas = novosCanais[canalIdx].ofertas.filter((_, i) => i !== ofertaIdx);
+    setProductForm({...productForm, canais: novosCanais});
+  };
+
   const abrirEdicaoProduto = (prod) => {
-    // 1. Tenta pegar os canais novos, se não achar, tenta os antigos, se não achar, usa array vazio
+    // Migração de Estruturas Antigas para o Novo Padrão de Ofertas
     let canaisAtuais = prod.canais || prod.precosCanais || [];
     
-    // 2. Transforma (adapta) formato antigo para o novo formato de canais
     let canaisAdaptados = canaisAtuais.map(c => {
-      // Garante retrocompatibilidade: converte o formato antigo em um item do novo array
-      let kitsAdaptados = c.kits || [];
-      if (!c.kits && (c.temKit || prod.temKit)) {
-        kitsAdaptados = [{
-          id: Date.now() + Math.random(),
-          descricao: prod.kitDescricao || c.kitDescricao || `Kit ${prod.qtdParesKit || 'X'} Itens`,
-          precoDe: c.precoDeKit || '',
-          precoPor: c.precoPorKit || prod.precoKit || ''
-        }];
+      let ofertasAdaptadas = c.ofertas || [];
+      
+      // Se não existir "ofertas", tenta migrar do formato "precoDe/precoPor/Kits" antigo
+      if (ofertasAdaptadas.length === 0) {
+        if (c.precoPor || c.preco || c.precoDe || prod.precoDe) {
+            ofertasAdaptadas.push({
+                id: Date.now() + Math.random(),
+                quantidade: 1,
+                precoDe: c.precoDe || prod.precoDe || '',
+                precoPor: c.precoPor || c.preco || ''
+            });
+        }
+        (c.kits || []).forEach(k => {
+            const match = k.descricao?.match(/(\d+)/);
+            const qtd = match ? parseInt(match[0]) : 2; 
+            ofertasAdaptadas.push({
+                id: k.id || Date.now() + Math.random(),
+                quantidade: qtd,
+                precoDe: k.precoDe || '',
+                precoPor: k.precoPor || ''
+            });
+        });
+        
+        // Garante que tenha pelo menos uma linha em branco caso tudo falhe
+        if (ofertasAdaptadas.length === 0) {
+            ofertasAdaptadas.push({ id: Date.now() + Math.random(), quantidade: 1, precoDe: '', precoPor: '' });
+        }
       }
 
       return {
         id: c.id || Date.now() + Math.random(),
         canal: c.canal || 'Shopee',
-        precoDe: prod.precoDe || '', 
-        precoPor: c.precoPor || c.preco || '', 
-        kits: kitsAdaptados
+        modalidade: c.modalidade || '', 
+        ofertas: ofertasAdaptadas
       };
     });
 
-    // 3. Se for um produto novo ou sem canais, cria um canal padrão para não dar erro no map
     if (canaisAdaptados.length === 0) {
       canaisAdaptados.push({ 
-          id: Date.now(), canal: 'Shopee', precoDe: '', precoPor: '', kits: [] 
+          id: Date.now(), canal: 'Shopee', modalidade: '', 
+          ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '' }] 
       });
+    }
+
+    let variacoesAdaptadas = prod.variacoes || [];
+    if (variacoesAdaptadas.length === 0 && (prod.cores?.length > 0 || prod.tamanhos?.length > 0)) {
+      variacoesAdaptadas = (prod.cores || []).map((c, i) => ({
+        id: Date.now() + i,
+        cor: c,
+        tamanhos: prod.tamanhos || []
+      }));
     }
 
     setProductForm({
       fotoUrl: prod.fotoUrl || '', 
       descricao: prod.descricao || '', 
-      canais: canaisAdaptados // <--- Agora sempre existe e é um array
+      custo: prod.custo || '', 
+      observacoes: prod.observacoes || '', 
+      variacoes: variacoesAdaptadas,
+      canais: canaisAdaptados 
     });
     
     setEditingProductId(prod.id);
     setProductModalOpen(true);
   };
 
-  // Filtra as lojas apenas por cliente (Bruto da nuvem, imune a filtros da tabela)
+  // --- CÁLCULOS DO DASHBOARD (Mantidos Inalterados) ---
   const liveStores = useMemo(() => {
     const rawClientStores = stores.filter(s => s.client === clientGroup.client && !s.arquivada);
-    // Enriquece cada loja usando o motor utilitário centralizado
     return rawClientStores.map(s => 
       enrichStoreMetrics(s, currentDay, daysInMonth || 30, globalGrowth || 10, clientGrowthMap, marketplaceGrowthMap)
     );
   }, [stores, clientGroup.client, currentDay, daysInMonth, globalGrowth, clientGrowthMap, marketplaceGrowthMap]);
 
-  // Estatísticas consolidadas baseadas nas lojas limpas e enriquecidas
   const clientUnfilteredStats = useMemo(() => {
     let currentRevenue = 0, adsInvestment = 0, orders = 0, units = 0, totalTarget = 0, projectedGmv = 0;
     
@@ -541,28 +694,23 @@ export default function ClientFileModal({
     return liveStores[0]?.potentialMarketplaces || [];
   }, [liveStores]);
 
-  // Cria uma lista única (sem duplicatas) unindo o que já está ativo com o que está no radar
   const clientAvailableMarketplaces = useMemo(() => {
     const combined = new Set([...Array.from(activeMarketplaces), ...potentialMarketplaces]);
     return Array.from(combined).sort();
   }, [activeMarketplaces, potentialMarketplaces]);
 
-  // 2. Função para alternar o status do marketplace (Potencial <-> Inativo)
   const togglePotentialMarketplace = (mkt) => {
-    if (!canUseBatchEntry) return; // Trava de segurança por nível de cargo
-    if (activeMarketplaces.has(mkt)) return; // Se já estiver ativo, não faz nada
+    if (!canUseBatchEntry) return; 
+    if (activeMarketplaces.has(mkt)) return; 
 
     let newPotentials = [...potentialMarketplaces];
     
     if (newPotentials.includes(mkt)) {
-      // Se já era potencial, remove
       newPotentials = newPotentials.filter(p => p !== mkt); 
     } else {
-      // Se não era, adiciona à lista de expansão
       newPotentials.push(mkt); 
     }
 
-    // Atualiza em lote (batch) todas as lojas deste cliente na nuvem
     let updatedStoresGlobal = [...stores];
     liveStores.forEach(store => {
       const updatedStore = { ...store, potentialMarketplaces: newPotentials };
@@ -654,7 +802,6 @@ export default function ClientFileModal({
               </div>
             </div>
 
-            {/* Botão Fechar */}
             <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-full transition-colors ml-4 shrink-0">
               <X size={20} />
             </button>
@@ -682,8 +829,6 @@ export default function ClientFileModal({
           {/* ABA 1: DASHBOARD E RADAR */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-in fade-in">
-
-              {/* BLOCO DE EVENTOS DA WAR ROOM */}
               {clientEvents.length > 0 && (
                   <div className="bg-gradient-to-r from-orange-600/10 to-black/20 rounded-2xl p-5 border border-orange-500/20 shadow-sm">
                       <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Flame size={14}/> Eventos do Mês Ativos</h3>
@@ -726,27 +871,22 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              {/* Grid de Cartões de Resumo */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
                 
                 <div className="sm:col-span-2 bg-gradient-to-r from-indigo-900/20 to-black/20 p-5 rounded-2xl border border-indigo-500/20 shadow-sm flex flex-col justify-center">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 w-full">
-                    
                     <div className="flex-1 w-full">
                       <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Faturamento Histórico</span>
                       <p className="text-2xl font-bold text-indigo-300 mt-1">{formatCurrency(allTimeTotalGmv)}</p>
                       <p className="text-xs text-gray-400 mt-1">Acumulado de todos os meses</p>
                     </div>
-                    
                     <div className="w-px h-12 bg-white/10 hidden sm:block"></div>
                     <div className="w-full h-px bg-white/10 sm:hidden my-1"></div>
-                    
                     <div className="flex-1 w-full sm:pl-2">
                       <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Neste mês</span>
                       <p className="text-2xl font-bold text-blue-400 mt-1">{formatCurrency(clientUnfilteredStats.currentRevenue)}</p>
                       <p className="text-xs text-gray-400 mt-1">Meta Global: {formatCurrency(clientUnfilteredStats.totalTarget)}</p>
                     </div>
-
                   </div>
                 </div>
 
@@ -764,7 +904,6 @@ export default function ClientFileModal({
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Investimento Ads & Eficiência</span>
                   <p className="text-2xl font-bold text-amber-500 mt-1">{formatCurrency(clientUnfilteredStats.adsInvestment)}</p>
-                  
                   <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/10">
                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">
                         ROAS: <span className="text-white text-xs">{clientUnfilteredStats.roas} x</span>
@@ -779,14 +918,12 @@ export default function ClientFileModal({
 
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 flex flex-col justify-center shadow-sm">
                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider" title="Participação no Faturamento Global da Agência">Share na Carteira</span>
-                  
                   <div className="flex items-center gap-2 mt-1">
                     <p className={`text-2xl font-bold ${shareEvolucao.evolution >= 0 ? 'text-indigo-400' : 'text-rose-400'}`}>
                       {shareEvolucao.currentShare.toFixed(1)}%
                     </p>
                     {shareEvolucao.evolution >= 0 ? <TrendingUp size={20} className="text-indigo-400" /> : <TrendingDown size={20} className="text-rose-400" />}
                   </div>
-                  
                   <div className="flex flex-col mt-3 pt-3 border-t border-white/10 gap-1.5">
                     <p className="text-[10px] text-gray-400 flex justify-between">
                       Mês passado (Fechado): 
@@ -803,7 +940,6 @@ export default function ClientFileModal({
 
               </div>
 
-              {/* GRÁFICOS: LINHA 2 (Eficiência Ads, Share por Loja, Faturamento Canal) */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
                   <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Zap size={16} className="text-amber-400" /> Eficiência de Ads (ROAS)</h3>
@@ -862,7 +998,6 @@ export default function ClientFileModal({
                 </div>
               </div>
 
-              {/* GRÁFICOS: LINHA 3 (Tração Diária + Evolução Histórica) */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
                 <div className="bg-white/[0.02] backdrop-blur-xl p-5 rounded-2xl border border-white/5 shadow-sm flex flex-col">
@@ -954,7 +1089,7 @@ export default function ClientFileModal({
             </div>
           )}
 
-          {/* === ABA 2: LANÇAMENTOS INTELIGENTES === */}
+          {/* === ABA: LANÇAMENTOS INTELIGENTES === */}
           {activeTab === 'apuracao' && (
             <div className="space-y-6 animate-in fade-in">
               <div className="bg-black/20 rounded-2xl border border-white/5 overflow-x-auto">
@@ -985,6 +1120,7 @@ export default function ClientFileModal({
             </div>
           )}
 
+          {/* === ABA: HISTÓRICO & TAREFAS === */}
           {activeTab === 'historico' && (
             <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mt-4 animate-in fade-in">
               <div className="xl:col-span-3 flex flex-col gap-6">
@@ -1104,6 +1240,7 @@ export default function ClientFileModal({
             </div>
           )}
 
+          {/* === ABA: CATÁLOGO DE PRODUTOS === */}
           {activeTab === 'produtos' && (
             <div className="space-y-6 animate-in fade-in">
               <div className="flex justify-between items-center bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
@@ -1115,8 +1252,8 @@ export default function ClientFileModal({
                   <button 
                     onClick={() => {
                       setProductForm({ 
-                        fotoUrl: '', descricao: '', 
-                        canais: [{ id: Date.now(), canal: 'shopee', precoDe: '', precoPor: '', temKit: false, kits: [] }] 
+                        fotoUrl: '', descricao: '', custo: '', observacoes: '', variacoes: [], 
+                        canais: [{ id: Date.now(), canal: 'Shopee', modalidade: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '' }] }] 
                       });
                       setEditingProductId(null);
                       setProductModalOpen(true);
@@ -1135,10 +1272,11 @@ export default function ClientFileModal({
                   <p className="text-gray-500 text-xs mt-1">Cadastre os produtos focos da curva A deste cliente.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {clientProducts.map(prod => (
                     <div key={prod.id} className="bg-black/30 border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col group relative">
                       
+                      {/* BOTAO HISTORICO */}
                       <button 
                         onClick={() => setShowProductHistoryId(showProductHistoryId === prod.id ? null : prod.id)}
                         className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 rounded-lg text-gray-400 hover:text-white transition-all z-10 backdrop-blur-sm"
@@ -1147,7 +1285,8 @@ export default function ClientFileModal({
                         <History size={16} />
                       </button>
 
-                      <div className="h-40 bg-gray-900 flex items-center justify-center border-b border-white/5 relative">
+                      {/* FOTO */}
+                      <div className="h-40 bg-gray-900 flex items-center justify-center border-b border-white/5 relative shrink-0">
                         {prod.fotoUrl ? (
                           <img src={prod.fotoUrl} alt={prod.descricao} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                         ) : (
@@ -1155,38 +1294,68 @@ export default function ClientFileModal({
                         )}
                       </div>
                       
+                      {/* INFOS */}
                       <div className="p-4 flex-1 flex flex-col">
-                        <h4 className="font-bold text-white text-sm leading-snug mb-3">{prod.descricao}</h4>
+                        <h4 className="font-bold text-white text-sm leading-snug mb-1">{prod.descricao}</h4>
+                        {prod.custo && (
+                          <span className="text-[10px] text-gray-400 mb-2 block">Custo Unitário: <strong className="text-emerald-400">R$ {prod.custo}</strong></span>
+                        )}
                         
-                        {/* LISTAGEM DOS CANAIS ATIVOS (VISÃO DE TABELA) */}
-                        <div className="space-y-3 mt-auto">
-                          {(prod.canais || prod.precosCanais || []).map((c, i) => (
-                            <div key={c.id || i} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden">
-                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500/50"></div>
-                              
-                              <div className="flex justify-between items-center ml-2 border-b border-white/5 pb-2">
-                                <span className="text-xs font-black text-gray-300 uppercase tracking-wider">{c.canal}</span>
-                                <div className="text-right">
-                                  {c.precoDe && <span className="text-[10px] text-gray-500 line-through mr-1">R$ {c.precoDe}</span>}
-                                  <span className="text-sm font-black text-emerald-400">R$ {c.precoPor || c.preco || '0.00'}</span>
-                                </div>
+                        {/* VARIAÇÕES NO CARD */}
+                        <div className="flex flex-col gap-1.5 mb-4">
+                          {(prod.variacoes || []).map(v => (
+                            <div key={v.id} className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
+                              <span className="text-[10px] font-bold text-gray-400 w-16 truncate shrink-0" title={v.cor}>{v.cor || 'Sem cor'}:</span>
+                              <div className="flex flex-wrap gap-1 flex-1">
+                                {v.tamanhos.map(t => (
+                                  <span key={t} className="bg-gray-800 text-gray-300 text-[9px] px-1.5 py-0.5 rounded border border-gray-700">{t}</span>
+                                ))}
+                                {v.tamanhos.length === 0 && <span className="text-[9px] text-gray-600">Sem tamanhos</span>}
                               </div>
-                              
-                              {/* Kits */}
-                              {(c.kits || []).map((kit, kIdx) => (
-                                <div key={kit.id || kIdx} className="flex justify-between items-center ml-2 pt-1.5 border-t border-white/5 mt-1.5 first:border-0 first:mt-0">
-                                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1 truncate max-w-[120px]" title={kit.descricao}>
-                                    <Package size={12} className="shrink-0"/> {kit.descricao || 'Kit'}
-                                  </span>
-                                  <div className="text-right shrink-0">
-                                    {kit.precoDe && <span className="text-[10px] text-gray-500 line-through mr-1">R$ {kit.precoDe}</span>}
-                                    <span className="text-xs font-black text-indigo-300">R$ {kit.precoPor || '0.00'}</span>
-                                  </div>
-                                </div>
-                              ))}
                             </div>
                           ))}
                         </div>
+                        
+                        {/* TABELA DE OFERTAS NO CARD */}
+                        <div className="space-y-3 mt-auto">
+                          {(prod.canais || []).map((c, i) => (
+                              <div key={c.id || i} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden">
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500/50"></div>
+                                
+                                <div className="flex flex-col ml-2 border-b border-white/5 pb-2 mb-1">
+                                    <span className="text-xs font-black text-gray-300 uppercase tracking-wider leading-tight">{c.canal}</span>
+                                    {c.modalidade && <span className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">{c.modalidade}</span>}
+                                </div>
+
+                                {/* LISTA DE PREÇOS */}
+                                {(c.ofertas || []).map(of => {
+                                    const lucro = calcularLucroOferta(of.precoPor || of.precoDe, prod.custo, of.quantidade);
+                                    const isNegativo = lucro.valor < 0;
+                                    return (
+                                      <div key={of.id} className="flex justify-between items-center ml-2 text-xs py-1">
+                                          <span className="text-[10px] text-gray-400 font-bold">{of.quantidade} Par{of.quantidade > 1 ? 'es' : ''}</span>
+                                          <div className="text-right flex items-center gap-2">
+                                            <span className="font-black text-emerald-400">R$ {of.precoPor || of.precoDe || '0.00'}</span>
+                                            {prod.custo && (
+                                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isNegativo ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`} title={`Margem: ${lucro.margem.toFixed(1)}%`}>
+                                                {isNegativo ? '' : '+'}R$ {lucro.valor.toFixed(2)}
+                                              </span>
+                                            )}
+                                          </div>
+                                      </div>
+                                    );
+                                })}
+                              </div>
+                            ))}
+                        </div>
+
+                        {/* OBSERVAÇÕES NO RODAPÉ DO CARD */}
+                        {prod.observacoes && (
+                           <div className="mt-4 pt-3 border-t border-white/5 flex items-start gap-1.5 text-[10px] text-gray-500">
+                              <FileText size={12} className="shrink-0 mt-0.5 text-indigo-400" />
+                              <span className="line-clamp-2 italic" title={prod.observacoes}>{prod.observacoes}</span>
+                           </div>
+                        )}
                       </div>
 
                       {/* Painel de Histórico (Sanduíche) */}
@@ -1214,12 +1383,15 @@ export default function ClientFileModal({
                       )}
 
                       {canEdit && (
-                        <div className="flex border-t border-white/5 bg-black/40 mt-3">
+                        <div className="flex border-t border-white/5 bg-black/40">
                           <button onClick={() => abrirEdicaoProduto(prod)} className="flex-1 py-3 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors border-r border-white/5 uppercase tracking-wider flex items-center justify-center gap-1">
-                            <Edit2 size={12}/> Editar Preços
+                            <Edit2 size={12}/> Editar
+                          </button>
+                          <button onClick={() => handleDuplicateProduct(prod)} className="flex-1 py-3 text-[10px] font-bold text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-colors border-r border-white/5 uppercase tracking-wider flex items-center justify-center gap-1">
+                            <CopyPlus size={12}/> Duplicar
                           </button>
                           <button onClick={() => handleDeleteProduct(prod.id)} className="flex-1 py-3 text-[10px] font-bold text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors uppercase tracking-wider flex items-center justify-center gap-1">
-                            <Trash2 size={12}/> Remover
+                            <Trash2 size={12}/> Excluir
                           </button>
                         </div>
                       )}
@@ -1241,7 +1413,7 @@ export default function ClientFileModal({
                 <div className="flex justify-between items-center shrink-0 border-b border-white/5 p-6 bg-black/20">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
                     <Package size={20} className="text-indigo-400"/> 
-                    {editingProductId ? 'Editar Tabela de Preços' : 'Novo Produto'}
+                    {editingProductId ? 'Editar Produto' : 'Novo Produto'}
                   </h3>
                   <button onClick={() => setProductModalOpen(false)} className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-white/5 rounded-lg">
                     <X size={20}/>
@@ -1249,18 +1421,24 @@ export default function ClientFileModal({
                 </div>
 
                 {/* Corpo do Formulário com Rolagem Interna */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6 pb-32">
                   
                   {/* BLOCO 1: INFOS GERAIS DO PRODUTO */}
                   <div className="space-y-4 border-b border-white/5 pb-6">
                     <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">Informações Base</h4>
                     
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição / Nome do Produto</label>
-                      <input type="text" value={productForm.descricao} onChange={e => setProductForm({...productForm, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 shadow-inner text-sm transition-colors" placeholder="Ex: Tênis Esportivo Runner X" />
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="sm:col-span-2">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Produto</label>
+                        <input type="text" value={productForm.descricao} onChange={e => setProductForm({...productForm, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 shadow-inner text-sm transition-colors" placeholder="Ex: Tênis Esportivo Runner X" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-emerald-400 uppercase flex items-center gap-1"><DollarSign size={10}/> Custo Fixo Unitário</label>
+                        <input type="number" step="0.01" value={productForm.custo} onChange={e => setProductForm({...productForm, custo: e.target.value})} className="w-full bg-black/40 border border-emerald-500/30 text-emerald-400 rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm transition-colors placeholder:text-emerald-500/20" placeholder="R$ 0,00" />
+                      </div>
                     </div>
-                    
-                    <div>
+
+                    <div className="pt-2">
                       <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Foto do Modelo (Thumbnail)</label>
                       <div className="flex items-center gap-4">
                         <div className="w-16 h-16 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
@@ -1276,20 +1454,59 @@ export default function ClientFileModal({
                             <span>Fazer Upload de Imagem</span>
                             <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
                           </label>
-                          <p className="text-[9px] text-gray-500 mt-1 text-center">A imagem será comprimida automaticamente (max 300px).</p>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* BLOCO 2: TABELA DE PREÇOS POR CANAL */}
-                  <div className="space-y-4">
+                  {/* BLOCO 2: VARIAÇÕES */}
+                  <div className="space-y-4 border-b border-white/5 pb-6">
                     <div className="flex justify-between items-center">
-                      <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest">Tabela de Preços e Kits</h4>
+                      <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">Variações do Produto</h4>
+                      <button onClick={handleAddVariacao} className="text-[10px] font-bold bg-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-lg hover:bg-indigo-500/30 transition-colors flex items-center gap-1">
+                        <Plus size={14}/> Nova Cor
+                      </button>
+                    </div>
+
+                    {(productForm.variacoes || []).map((variacao, vIdx) => (
+                      <div key={variacao.id} className="bg-black/20 border border-white/5 p-3 rounded-xl flex flex-col gap-3 relative animate-in fade-in">
+                        <button onClick={() => handleRemoveVariacao(variacao.id)} className="absolute top-3 right-3 text-gray-500 hover:text-red-400 transition-colors" title="Excluir Cor">
+                          <Trash2 size={14}/>
+                        </button>
+                        
+                        <div className="flex flex-col sm:flex-row gap-3 pr-6">
+                          <div className="w-full sm:w-1/3">
+                            <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Cor Primária</label>
+                            <input type="text" value={variacao.cor} onChange={e => handleUpdateCor(variacao.id, e.target.value)} placeholder="Ex: Preto" className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-indigo-500 text-xs transition-colors" />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Tamanhos Disponíveis (Aperte Enter)</label>
+                            <input type="text" onKeyDown={e => handleAddTamanho(e, variacao.id)} placeholder="Ex: 38 e dê Enter" className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-indigo-500 text-xs transition-colors mb-2" />
+                            
+                            <div className="flex flex-wrap gap-1">
+                              {variacao.tamanhos.map(t => (
+                                <span key={t} className="bg-indigo-500/20 text-indigo-300 text-[10px] font-bold px-2 py-1 rounded-md border border-indigo-500/30 flex items-center gap-1">
+                                  {t} <X size={10} className="cursor-pointer hover:text-red-400" onClick={() => handleRemoveTamanho(variacao.id, t)}/>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {(!productForm.variacoes || productForm.variacoes.length === 0) && (
+                      <p className="text-[10px] text-gray-500 italic text-center">Nenhuma variação adicionada.</p>
+                    )}
+                  </div>
+
+                  {/* BLOCO 3: TABELA DE PREÇOS POR CANAL */}
+                  <div className="space-y-4 pb-6">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest">Tabela de Preços e Lucros</h4>
                       <button 
                         onClick={() => setProductForm({
                           ...productForm, 
-                          canais: [...productForm.canais, { id: Date.now(), canal: 'Novo Canal', precoDe: '', precoPor: '', kits: [] }] 
+                          canais: [...productForm.canais, { id: Date.now(), canal: 'Novo Canal', modalidade: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '' }] }] 
                         })} 
                         className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-lg hover:bg-emerald-500/30 transition-colors flex items-center gap-1"
                       >
@@ -1297,7 +1514,7 @@ export default function ClientFileModal({
                       </button>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-5">
                       {(productForm.canais || []).map((c, idx) => (
                         <div key={c.id} className="bg-black/30 border border-white/10 rounded-2xl p-4 relative group">
                           
@@ -1312,85 +1529,87 @@ export default function ClientFileModal({
                             <Trash2 size={14}/>
                           </button>
 
-                          <div className="mb-4 pr-10">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Marketplace / Canal de Venda</label>
-                            <select value={c.canal || 'Shopee'} onChange={e => {
-                              const novosCanais = [...productForm.canais];
-                              novosCanais[idx].canal = e.target.value;
-                              setProductForm({...productForm, canais: novosCanais});
-                            }} className="w-full bg-white/5 border border-white/10 text-white font-bold rounded-lg p-2.5 text-xs outline-none focus:border-indigo-500 transition-colors cursor-pointer">
-                              {ALL_MARKETPLACES.map(m => <option key={m} value={m} className="bg-gray-900">{m.toUpperCase()}</option>)}
-                            </select>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3 mb-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 pr-10">
                             <div>
-                              <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Preço Cheio</label>
-                              <input type="number" step="0.01" value={c.precoDe} onChange={e => {
-                                const novos = [...productForm.canais]; novos[idx].precoDe = e.target.value; setProductForm({...productForm, canais: novos});
-                              }} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded-lg p-2.5 outline-none focus:border-indigo-500 transition-colors text-xs" placeholder="R$ 0,00" />
+                              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Marketplace</label>
+                              <select value={c.canal || 'Shopee'} onChange={e => {
+                                const novosCanais = [...productForm.canais];
+                                novosCanais[idx].canal = e.target.value;
+                                setProductForm({...productForm, canais: novosCanais});
+                              }} className="w-full bg-white/5 border border-white/10 text-white font-bold rounded-lg p-2 text-xs outline-none focus:border-indigo-500 transition-colors cursor-pointer">
+                                {ALL_MARKETPLACES.map(m => <option key={m} value={m} className="bg-gray-900">{m.toUpperCase()}</option>)}
+                              </select>
                             </div>
                             <div>
-                              <label className="text-[9px] font-bold text-emerald-400 uppercase block mb-1">Preço Promoção</label>
-                              <input type="number" step="0.01" value={c.precoPor} onChange={e => {
-                                const novos = [...productForm.canais]; novos[idx].precoPor = e.target.value; setProductForm({...productForm, canais: novos});
-                              }} className="w-full bg-emerald-500/10 border border-emerald-500/30 text-white font-bold rounded-lg p-2.5 outline-none focus:border-emerald-500 transition-colors text-xs placeholder:text-emerald-500/30" placeholder="R$ 0,00" />
+                              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Modalidade / Conta</label>
+                              <input type="text" value={c.modalidade || ''} onChange={e => {
+                                const novosCanais = [...productForm.canais];
+                                novosCanais[idx].modalidade = e.target.value;
+                                setProductForm({...productForm, canais: novosCanais});
+                              }} placeholder="Ex: CPF, Premium, Full" className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2 text-xs outline-none focus:border-indigo-500 transition-colors" />
                             </div>
                           </div>
 
-                          <div className="border-t border-white/5 pt-3">
-                            <div className="flex items-center justify-between mb-3">
-                              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                Kits e Variações
-                              </span>
-                              <button 
-                                onClick={() => {
-                                  const novos = [...productForm.canais];
-                                  if (!novos[idx].kits) novos[idx].kits = [];
-                                  novos[idx].kits.push({ id: Date.now(), descricao: '', precoDe: '', precoPor: '' });
-                                  setProductForm({...productForm, canais: novos});
-                                }}
-                                className="text-[9px] font-bold bg-indigo-500/20 text-indigo-300 px-2.5 py-1.5 rounded-lg hover:bg-indigo-500/30 transition-colors flex items-center gap-1"
-                              >
-                                <Plus size={12}/> Adicionar Kit
-                              </button>
-                            </div>
+                          {/* NOVA TABELA DE LINHAS DE PREÇO (OFERTAS) */}
+                          <div className="mt-2">
+                             <div className="flex justify-between items-end mb-2">
+                               <label className="text-[10px] font-bold text-gray-500 uppercase">Configuração de Venda</label>
+                               <button 
+                                 onClick={() => handleAddOferta(idx)}
+                                 className="text-[9px] font-bold bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded hover:bg-indigo-500/30 transition-colors flex items-center gap-1"
+                               >
+                                 <Plus size={10}/> Adicionar Quantidade
+                               </button>
+                             </div>
 
-                            <div className="space-y-2">
-                              {(c.kits || []).map((kit, kitIdx) => (
-                                <div key={kit.id} className="flex gap-2 animate-in fade-in bg-indigo-500/5 p-2.5 rounded-xl border border-indigo-500/10 items-end">
-                                  <div className="flex-1">
-                                    <label className="text-[9px] font-bold text-indigo-300 uppercase block mb-1">Tipo de Kit</label>
-                                    <input type="text" value={kit.descricao} onChange={e => {
-                                      const novos = [...productForm.canais]; novos[idx].kits[kitIdx].descricao = e.target.value; setProductForm({...productForm, canais: novos});
-                                    }} className="w-full bg-black/40 border border-white/10 text-white rounded-md p-2 outline-none focus:border-indigo-500 transition-colors text-[10px]" placeholder="Ex: Kit 3 Pares" />
-                                  </div>
-                                  <div className="w-20">
-                                    <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Cheio</label>
-                                    <input type="number" step="0.01" value={kit.precoDe} onChange={e => {
-                                      const novos = [...productForm.canais]; novos[idx].kits[kitIdx].precoDe = e.target.value; setProductForm({...productForm, canais: novos});
-                                    }} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded-md p-2 outline-none focus:border-indigo-500 transition-colors text-[10px]" placeholder="R$" />
-                                  </div>
-                                  <div className="w-20">
-                                    <label className="text-[9px] font-bold text-indigo-400 uppercase block mb-1">Promoção</label>
-                                    <input type="number" step="0.01" value={kit.precoPor} onChange={e => {
-                                      const novos = [...productForm.canais]; novos[idx].kits[kitIdx].precoPor = e.target.value; setProductForm({...productForm, canais: novos});
-                                    }} className="w-full bg-indigo-500/20 border border-indigo-500/40 text-white font-bold rounded-md p-2 outline-none focus:border-indigo-500 transition-colors text-[10px]" placeholder="R$" />
-                                  </div>
-                                  <button 
-                                    onClick={() => {
-                                      const novos = [...productForm.canais];
-                                      novos[idx].kits = novos[idx].kits.filter((_, i) => i !== kitIdx);
-                                      setProductForm({...productForm, canais: novos});
-                                    }} 
-                                    className="p-2 text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg transition-colors mb-[1px]"
-                                    title="Remover Kit"
-                                  >
-                                    <Trash2 size={12}/>
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
+                             <div className="overflow-x-auto">
+                               <table className="w-full text-left">
+                                 <thead>
+                                   <tr className="text-[9px] text-gray-500 uppercase tracking-wider border-b border-white/10">
+                                     <th className="pb-1.5 w-16">Pares</th>
+                                     <th className="pb-1.5 w-24">Cheio</th>
+                                     <th className="pb-1.5 w-24 text-emerald-400">Promoção</th>
+                                     <th className="pb-1.5 min-w-[80px] text-center">Lucro Bruto</th>
+                                     <th className="pb-1.5 w-8"></th>
+                                   </tr>
+                                 </thead>
+                                 <tbody>
+                                   {(c.ofertas || []).map((of, oIdx) => {
+                                      const lucro = calcularLucroOferta(of.precoPor || of.precoDe, productForm.custo, of.quantidade);
+                                      const isNegativo = lucro.valor < 0;
+
+                                      return (
+                                        <tr key={of.id} className="border-b border-white/5 last:border-0">
+                                           <td className="py-2 pr-2 text-center">
+                                              <input type="number" min="1" value={of.quantidade} onChange={e => handleUpdateOferta(idx, oIdx, 'quantidade', e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded p-1.5 text-xs outline-none focus:border-indigo-500 text-center" />
+                                           </td>
+                                           <td className="py-2 pr-2 text-center">
+                                              <input type="number" step="0.01" value={of.precoDe} onChange={e => handleUpdateOferta(idx, oIdx, 'precoDe', e.target.value)} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded p-1.5 text-xs outline-none focus:border-indigo-500" placeholder="R$" />
+                                           </td>
+                                           <td className="py-2 pr-2 text-center">
+                                              <input type="number" step="0.01" value={of.precoPor} onChange={e => handleUpdateOferta(idx, oIdx, 'precoPor', e.target.value)} className="w-full bg-emerald-500/10 border border-emerald-500/30 text-white font-bold rounded p-1.5 text-xs outline-none focus:border-emerald-500 placeholder:text-emerald-500/30" placeholder="R$" />
+                                           </td>
+                                           <td className="py-2 px-1 text-center">
+                                              <div className="flex flex-col items-center">
+                                                <span className={`text-[11px] font-black ${isNegativo ? 'text-red-400' : 'text-emerald-400'}`}>
+                                                  R$ {lucro.valor.toFixed(2)}
+                                                </span>
+                                                <span className={`text-[9px] font-bold ${isNegativo ? 'text-red-500' : 'text-emerald-500/60'}`}>
+                                                  {lucro.margem.toFixed(1)}%
+                                                </span>
+                                              </div>
+                                           </td>
+                                           <td className="py-2 text-right">
+                                              <button onClick={() => handleRemoveOferta(idx, oIdx)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors" title="Remover Linha">
+                                                <X size={12}/>
+                                              </button>
+                                           </td>
+                                        </tr>
+                                      )
+                                   })}
+                                 </tbody>
+                               </table>
+                             </div>
                           </div>
 
                         </div>
@@ -1403,10 +1622,21 @@ export default function ClientFileModal({
                     </div>
                   </div>
 
+                  {/* BLOCO 4: OBSERVAÇÕES */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">Observações Internas</h4>
+                    <textarea 
+                      value={productForm.observacoes || ''} 
+                      onChange={e => setProductForm({...productForm, observacoes: e.target.value})} 
+                      placeholder="Cole aqui links dos anúncios, detalhes de logística, ou regras de separação..."
+                      className="w-full h-24 bg-black/40 border border-white/10 text-gray-300 rounded-xl p-3 outline-none focus:border-indigo-500 shadow-inner text-xs transition-colors resize-none custom-scrollbar"
+                    />
+                  </div>
+
                 </div>
 
-                {/* Botão Salvar Fixo */}
-                <div className="p-6 border-t border-white/5 bg-black/20 shrink-0">
+                {/* Botão Salvar Fixo (Rodapé da Gaveta) */}
+                <div className="absolute bottom-0 left-0 w-full p-4 border-t border-white/10 bg-gray-900/95 backdrop-blur-xl z-10">
                   <button onClick={handleSaveProduct} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm flex items-center justify-center gap-2">
                     {editingProductId ? <Save size={18}/> : <Plus size={18}/>}
                     {editingProductId ? 'Salvar Tabela de Preços' : 'Finalizar Cadastro'}

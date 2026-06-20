@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package, FileText } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../utils/taskEngine';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus, onCopyTaskToBulk }) {
-  const [newLog, setNewLog] = useState('');
-  const [newChecklist, setNewChecklist] = useState('');
-  const [newChecklistResp, setNewChecklistResp] = useState('');
-  const [newTaskDate, setNewTaskDate] = useState('');
-  const [newTaskTime, setNewTaskTime] = useState('');
-  const [newTaskRecurrence, setNewTaskRecurrence] = useState('none');
-  const [newTaskWeight, setNewTaskWeight] = useState('media');
+  const [newLog, useState] = React.useState('');
+  const [newChecklist, setNewChecklist] = React.useState('');
+  const [newChecklistResp, setNewChecklistResp] = React.useState('');
+  const [newTaskDate, setNewTaskDate] = React.useState('');
+  const [newTaskTime, setNewTaskTime] = React.useState('');
+  const [newTaskRecurrence, setNewTaskRecurrence] = React.useState('none');
+  const [newTaskWeight, setNewTaskWeight] = React.useState('media');
 
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome;
   const isVisitante = currentUserData?.role === 'Visitante';
@@ -20,25 +20,25 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     return isAdmin || task.responsavel === myName || task.criadoPor === myName;
   };
 
-  const [nextDate, setNextDate] = useState(store.dataProximoAcesso ? store.dataProximoAcesso.split('T')[0] : '');
-  const [storeResp, setStoreResp] = useState(store.responsavel || '');
-  const [fixedNotes, setFixedNotes] = useState(store.notasFixas || '');
-  const [isDuplicating, setIsDuplicating] = useState(false);
-  const [duplicateTargetId, setDuplicateTargetId] = useState('');
-  const [isSavingNotes, setIsSavingNotes] = useState(false);
-  const [isScheduling, setIsScheduling] = useState(false);
-  const [isAddingTask, setIsAddingTask] = useState(false);
-  const [editingTaskId, setEditingTaskId] = useState(null);
-  const [editTaskData, setEditTaskData] = useState({});
-  const [selectedProduct, setSelectedProduct] = useState(null); // <-- Novo estado aqui
+  const [nextDate, setNextDate] = React.useState(store.dataProximoAcesso ? store.dataProximoAcesso.split('T')[0] : '');
+  const [storeResp, setStoreResp] = React.useState(store.responsavel || '');
+  const [fixedNotes, setFixedNotes] = React.useState(store.notasFixas || '');
+  const [isDuplicating, setIsDuplicating] = React.useState(false);
+  const [duplicateTargetId, setDuplicateTargetId] = React.useState('');
+  const [isSavingNotes, setIsSavingNotes] = React.useState(false);
+  const [isScheduling, setIsScheduling] = React.useState(false);
+  const [isAddingTask, setIsAddingTask] = React.useState(false);
+  const [editingTaskId, setEditingTaskId] = React.useState(null);
+  const [editTaskData, setEditTaskData] = React.useState({});
+  const [selectedProduct, setSelectedProduct] = React.useState(null); 
 
-  const [dailyGMV, setDailyGMV] = useState('');
-  const [dailyAds, setDailyAds] = useState('');
-  const [dailyOrders, setDailyOrders] = useState('');
-  const [dailyUnits, setDailyUnits] = useState('');
-  const [entryDay, setEntryDay] = useState(new Date().getDate());
-  const [isSavingDaily, setIsSavingDaily] = useState(false);
-  const [pendingStartInfo, setPendingStartInfo] = useState(null);
+  const [dailyGMV, setDailyGMV] = React.useState('');
+  const [dailyAds, setDailyAds] = React.useState('');
+  const [dailyOrders, setDailyOrders] = React.useState('');
+  const [dailyUnits, setDailyUnits] = React.useState('');
+  const [entryDay, setEntryDay] = React.useState(new Date().getDate());
+  const [isSavingDaily, setIsSavingDaily] = React.useState(false);
+  const [pendingStartInfo, setPendingStartInfo] = React.useState(null);
 
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
@@ -368,7 +368,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
           dataProximoAcesso: newNextAccess || oldStore.dataProximoAcesso || ''
         };
         updateStoreInCloud(finalOldStore);
-        setStores(prev => prev.map(s => s.id === oldStore.id ? finalOldStore : s));
+        setStores(stores.map(s => s.id === oldStore.id ? finalOldStore : s));
       }
       executeStart(currentTaskId, currentTaskText);
     } else {
@@ -400,12 +400,26 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       };
       
       updateStoreInCloud(finalStoreObj);
-      setStores(prev => prev.map(s => s.id === store.id ? finalStoreObj : s));
+      setStores(stores.map(s => s.id === store.id ? finalStoreObj : s));
 
       broadcastTaskFocus(`▶️ Executando: ${currentTaskText} | ${store.store}`, 'set', store.id);
     }
     setPendingStartInfo(null);
     toast.success(action === 'complete' ? "Anterior concluída e nova iniciada!" : "Anterior pausada e nova iniciada!");
+  };
+
+  // Funções Auxiliares de Cálculo de Lucro do Catálogo
+  const calcularLucroOferta = (precoVenda, custoBase, quantidade) => {
+    const venda = Number(precoVenda) || 0;
+    const custoUnico = Number(custoBase) || 0;
+    const qtdPares = Number(quantidade) || 1;
+    
+    if (venda === 0) return { valor: 0, margem: 0 };
+    
+    const custoTotal = custoUnico * qtdPares;
+    const lucro = venda - custoTotal;
+    const margem = (lucro / venda) * 100;
+    return { valor: lucro, margem: margem };
   };
 
   const clientProducts = store.produtos || stores.find(s => s.client === store.client)?.produtos || [];
@@ -765,9 +779,9 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 </h4>
                 <div className="flex overflow-x-auto gap-3 pb-2 custom-scrollbar">
                   {clientProducts.map(prod => {
-                    // Tenta exibir especificamente o preço mapeado para o marketplace desta aba
                     const canalAtivo = (prod.canais || []).find(c => c.canal?.toLowerCase() === store.marketplace?.toLowerCase());
-                    const precoExibicao = canalAtivo?.precoPor || prod.precoDe || '---';
+                    const melhorOferta = canalAtivo?.ofertas?.[0]; 
+                    const precoExibicao = melhorOferta?.precoPor || melhorOferta?.precoDe || prod.precoPor || prod.precoDe || '---';
 
                     return (
                       <div 
@@ -840,7 +854,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
         </div>
       </div>
 
-      {/* GAVETA LATERAL: DETALHES DO PRODUTO */}
+      {/* GAVETA LATERAL: DETALHES DO PRODUTO (ATUALIZADA) */}
       {selectedProduct && (
           <>
             {/* Overlay para foco */}
@@ -871,9 +885,9 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     <div className="flex-1">
                       <h4 className="text-lg font-black text-white leading-tight drop-shadow-lg">{selectedProduct.descricao}</h4>
                       <div className="flex gap-2 mt-2">
-                        {selectedProduct.precoDe && (
-                          <span className="text-xs font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
-                            Tabela: R$ {selectedProduct.precoDe}
+                        {selectedProduct.custo && (
+                          <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 shadow-sm">
+                            Custo Un: R$ {selectedProduct.custo}
                           </span>
                         )}
                       </div>
@@ -881,8 +895,29 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                  </div>
               </div>
               
-              {/* Listagem de Canais e Preços */}
+              {/* Listagem de Variações e Preços */}
               <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pt-2 space-y-5">
+                
+                {/* VARIAÇÕES (CORES E TAMANHOS) */}
+                {(selectedProduct.variacoes && selectedProduct.variacoes.length > 0) && (
+                  <div className="bg-white/[0.02] border border-white/10 p-4 rounded-2xl">
+                    <h5 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Variações Disponíveis</h5>
+                    <div className="flex flex-col gap-2">
+                      {selectedProduct.variacoes.map(v => (
+                        <div key={v.id} className="flex flex-col sm:flex-row sm:items-center gap-2">
+                          <span className="text-[10px] font-bold text-indigo-300 w-16 truncate shrink-0" title={v.cor}>{v.cor || 'Sem cor'}:</span>
+                          <div className="flex flex-wrap gap-1 flex-1">
+                            {v.tamanhos.map(t => (
+                              <span key={t} className="bg-gray-800 text-gray-300 text-[10px] px-2 py-0.5 rounded border border-gray-700">{t}</span>
+                            ))}
+                            {v.tamanhos.length === 0 && <span className="text-[9px] text-gray-600">Sem tamanhos</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between mb-2">
                    <div className="flex items-center gap-2">
                      <TrendingUp size={16} className="text-indigo-400" />
@@ -901,46 +936,68 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-3">
                           <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div>
-                          <span className="text-sm font-black text-white uppercase tracking-wider">{c.canal}</span>
-                        </div>
-                        
-                        {/* Container de Preço Principal - Otimizado para leitura */}
-                        <div className="flex items-center gap-4 bg-black/40 px-4 py-2 rounded-xl border border-white/5">
-                          {c.precoDe && (
-                            <div className="flex flex-col items-end">
-                              <span className="text-[10px] text-gray-500 uppercase font-bold leading-none mb-1">Cheio</span>
-                              <span className="text-xs text-gray-400 line-through font-medium">R$ {c.precoDe}</span>
-                            </div>
-                          )}
-                          <div className="flex flex-col items-end">
-                            <span className="text-[10px] text-emerald-500 uppercase font-bold leading-none mb-1">Promoção</span>
-                            <span className="text-xl font-black text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.4)]">R$ {c.precoPor || c.preco || '0.00'}</span>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-black text-white uppercase tracking-wider">{c.canal}</span>
+                            {c.modalidade && <span className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">{c.modalidade}</span>}
                           </div>
                         </div>
                       </div>
                       
-                      {/* Kits Relacionados */}
+                      {/* TABELA DE OFERTAS */}
+                      {(c.ofertas && c.ofertas.length > 0) && (
+                        <div className="mt-2 bg-black/30 rounded-xl p-3 border border-white/5">
+                           <table className="w-full text-left">
+                             <thead>
+                               <tr className="text-[9px] text-gray-500 uppercase tracking-wider border-b border-white/10">
+                                 <th className="pb-2 w-16">Pares</th>
+                                 <th className="pb-2 w-20">P. Cheio</th>
+                                 <th className="pb-2 w-20 text-emerald-400">Promo</th>
+                                 <th className="pb-2 text-right">Lucro Bruto</th>
+                               </tr>
+                             </thead>
+                             <tbody className="divide-y divide-white/5">
+                               {c.ofertas.map(of => {
+                                  const lucro = calcularLucroOferta(of.precoPor || of.precoDe, selectedProduct.custo, of.quantidade);
+                                  const isNegativo = lucro.valor < 0;
+
+                                  return (
+                                    <tr key={of.id} className="group/row">
+                                       <td className="py-2.5 text-[11px] font-bold text-gray-300">{of.quantidade}</td>
+                                       <td className="py-2.5 text-[11px] text-gray-500 line-through">R$ {of.precoDe}</td>
+                                       <td className="py-2.5 text-[11px] font-black text-emerald-400">R$ {of.precoPor || of.precoDe || '0.00'}</td>
+                                       <td className="py-2.5 text-right flex flex-col items-end">
+                                            <span className={`text-[11px] font-black ${isNegativo ? 'text-red-400' : 'text-emerald-400'}`}>
+                                              {isNegativo ? '' : '+'}R$ {lucro.valor.toFixed(2)}
+                                            </span>
+                                            {selectedProduct.custo && (
+                                                <span className={`text-[9px] font-bold ${isNegativo ? 'text-red-500' : 'text-emerald-500/60'}`}>
+                                                  {lucro.margem.toFixed(1)}%
+                                                </span>
+                                            )}
+                                       </td>
+                                    </tr>
+                                  )
+                               })}
+                             </tbody>
+                           </table>
+                        </div>
+                      )}
+
+                      {/* Kits Legados (Retrocompatibilidade) */}
                       {c.kits && c.kits.length > 0 && (
-                        <div className="space-y-2 mt-2">
-                          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1">Kits Disponíveis</p>
+                        <div className="space-y-2 mt-2 border-t border-white/5 pt-3">
+                          <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Kits Legados</p>
                           {(c.kits || []).map((kit, kIdx) => (
-                            <div key={kit.id || kIdx} className="flex justify-between items-center bg-black/30 hover:bg-black/50 p-3 rounded-xl border border-white/5 transition-colors">
-                              <div className="flex items-center gap-3">
-                                <div className="p-1.5 bg-indigo-500/10 rounded-lg">
-                                  <Package size={14} className="text-indigo-400"/>
-                                </div>
-                                <span className="text-xs font-bold text-indigo-100 uppercase tracking-wide truncate max-w-[180px]">
+                            <div key={kit.id || kIdx} className="flex justify-between items-center bg-black/30 p-2.5 rounded-xl border border-white/5">
+                              <div className="flex items-center gap-2">
+                                <Package size={12} className="text-indigo-400"/>
+                                <span className="text-[10px] font-bold text-indigo-100 uppercase tracking-wide truncate max-w-[150px]">
                                   {kit.descricao || 'Kit'}
                                 </span>
                               </div>
-                              
-                              <div className="flex items-center gap-3">
-                                {kit.precoDe && (
-                                  <span className="text-[11px] text-gray-600 line-through font-bold">R$ {kit.precoDe}</span>
-                                )}
-                                <div className="bg-indigo-500/10 px-3 py-1 rounded-lg border border-indigo-500/20">
-                                  <span className="text-sm font-black text-indigo-300">R$ {kit.precoPor || '0.00'}</span>
-                                </div>
+                              <div className="flex items-center gap-2">
+                                {kit.precoDe && <span className="text-[9px] text-gray-600 line-through font-bold">R$ {kit.precoDe}</span>}
+                                <span className="text-[11px] font-black text-indigo-300">R$ {kit.precoPor || '0.00'}</span>
                               </div>
                             </div>
                           ))}
@@ -948,19 +1005,20 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                       )}
                     </div>
                   ))}
-
-                  {(!selectedProduct.canais || selectedProduct.canais.length === 0) && (
-                    <div className="flex flex-col items-center justify-center p-12 bg-white/[0.01] border border-dashed border-white/10 rounded-3xl text-center gap-3">
-                      <AlertCircle size={32} className="text-gray-700" />
-                      <p className="text-sm text-gray-500 font-medium">Este produto ainda não possui<br/>canais precificados.</p>
-                    </div>
-                  )}
                 </div>
-              </div>
 
-              {/* Rodapé informativo */}
-              <div className="p-4 bg-black/40 border-t border-white/5 text-center">
-                 <p className="text-[9px] text-gray-600 font-bold uppercase tracking-[0.3em]">Avante CRM • Inteligência Comercial</p>
+                {/* Observações do Produto */}
+                {selectedProduct.observacoes && (
+                   <div className="mt-4 bg-indigo-500/5 border border-indigo-500/10 rounded-xl p-4 flex flex-col gap-2 relative">
+                      <div className="flex items-center gap-1.5 text-indigo-400">
+                        <FileText size={14} className="shrink-0" />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Observações da Gestão</span>
+                      </div>
+                      <p className="text-xs text-indigo-100/70 leading-relaxed whitespace-pre-wrap">
+                        {selectedProduct.observacoes}
+                      </p>
+                   </div>
+                )}
               </div>
             </div>
           </>
