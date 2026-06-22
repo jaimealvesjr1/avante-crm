@@ -91,13 +91,13 @@ export default function ClientFileModal({
     descricao: '', 
     custo: '', 
     variacoes: [], 
-    observacoes: '', // NOVO CAMPO
+    observacoes: '',
     canais: [
       { 
         id: Date.now(), 
         canal: 'Shopee', 
         modalidade: '', 
-        ofertas: [{ id: Date.now() + 1, quantidade: 1, precoDe: '', precoPor: '' }] // NOVA ESTRUTURA
+        ofertas: [{ id: Date.now() + 1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] // Campo "lucro" agora é string para input
       }
     ]
   });
@@ -111,20 +111,6 @@ export default function ClientFileModal({
   const clientProducts = useMemo(() => {
     return masterStore?.produtos || [];
   }, [masterStore]);
-
-  // Função para Cálculo Inteligente do Lucro Bruto
-  const calcularLucroOferta = (precoVenda, custoBase, quantidade) => {
-    const venda = Number(precoVenda) || 0;
-    const custoUnico = Number(custoBase) || 0;
-    const qtdPares = Number(quantidade) || 1;
-    
-    if (venda === 0) return { valor: 0, margem: 0 };
-    
-    const custoTotal = custoUnico * qtdPares;
-    const lucro = venda - custoTotal;
-    const margem = (lucro / venda) * 100;
-    return { valor: lucro, margem: margem };
-  };
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -292,7 +278,8 @@ export default function ClientFileModal({
         id: Date.now() + Math.random(),
         quantidade: ultimaQtd + 1,
         precoDe: '',
-        precoPor: ''
+        precoPor: '',
+        lucro: ''
     });
     setProductForm({...productForm, canais: novosCanais});
   };
@@ -310,20 +297,19 @@ export default function ClientFileModal({
   };
 
   const abrirEdicaoProduto = (prod) => {
-    // Migração de Estruturas Antigas para o Novo Padrão de Ofertas
     let canaisAtuais = prod.canais || prod.precosCanais || [];
     
     let canaisAdaptados = canaisAtuais.map(c => {
       let ofertasAdaptadas = c.ofertas || [];
       
-      // Se não existir "ofertas", tenta migrar do formato "precoDe/precoPor/Kits" antigo
       if (ofertasAdaptadas.length === 0) {
         if (c.precoPor || c.preco || c.precoDe || prod.precoDe) {
             ofertasAdaptadas.push({
                 id: Date.now() + Math.random(),
                 quantidade: 1,
                 precoDe: c.precoDe || prod.precoDe || '',
-                precoPor: c.precoPor || c.preco || ''
+                precoPor: c.precoPor || c.preco || '',
+                lucro: c.lucro || ''
             });
         }
         (c.kits || []).forEach(k => {
@@ -333,14 +319,17 @@ export default function ClientFileModal({
                 id: k.id || Date.now() + Math.random(),
                 quantidade: qtd,
                 precoDe: k.precoDe || '',
-                precoPor: k.precoPor || ''
+                precoPor: k.precoPor || '',
+                lucro: k.lucro || ''
             });
         });
         
-        // Garante que tenha pelo menos uma linha em branco caso tudo falhe
         if (ofertasAdaptadas.length === 0) {
-            ofertasAdaptadas.push({ id: Date.now() + Math.random(), quantidade: 1, precoDe: '', precoPor: '' });
+            ofertasAdaptadas.push({ id: Date.now() + Math.random(), quantidade: 1, precoDe: '', precoPor: '', lucro: '' });
         }
+      } else {
+        // Garante que a propriedade lucro exista nos itens migrados
+        ofertasAdaptadas = ofertasAdaptadas.map(o => ({...o, lucro: o.lucro || ''}));
       }
 
       return {
@@ -354,7 +343,7 @@ export default function ClientFileModal({
     if (canaisAdaptados.length === 0) {
       canaisAdaptados.push({ 
           id: Date.now(), canal: 'Shopee', modalidade: '', 
-          ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '' }] 
+          ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] 
       });
     }
 
@@ -1253,7 +1242,7 @@ export default function ClientFileModal({
                     onClick={() => {
                       setProductForm({ 
                         fotoUrl: '', descricao: '', custo: '', observacoes: '', variacoes: [], 
-                        canais: [{ id: Date.now(), canal: 'Shopee', modalidade: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '' }] }] 
+                        canais: [{ id: Date.now(), canal: 'Shopee', modalidade: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] }] 
                       });
                       setEditingProductId(null);
                       setProductModalOpen(true);
@@ -1329,16 +1318,19 @@ export default function ClientFileModal({
 
                                 {/* LISTA DE PREÇOS */}
                                 {(c.ofertas || []).map(of => {
-                                    const lucro = calcularLucroOferta(of.precoPor || of.precoDe, prod.custo, of.quantidade);
-                                    const isNegativo = lucro.valor < 0;
+                                    const lucroVal = Number(of.lucro) || 0;
+                                    const venda = Number(of.precoPor || of.precoDe) || 0;
+                                    const margem = venda > 0 ? (lucroVal / venda) * 100 : 0;
+                                    const isNegativo = lucroVal < 0;
+
                                     return (
                                       <div key={of.id} className="flex justify-between items-center ml-2 text-xs py-1">
                                           <span className="text-[10px] text-gray-400 font-bold">{of.quantidade} Par{of.quantidade > 1 ? 'es' : ''}</span>
                                           <div className="text-right flex items-center gap-2">
                                             <span className="font-black text-emerald-400">R$ {of.precoPor || of.precoDe || '0.00'}</span>
-                                            {prod.custo && (
-                                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isNegativo ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`} title={`Margem: ${lucro.margem.toFixed(1)}%`}>
-                                                {isNegativo ? '' : '+'}R$ {lucro.valor.toFixed(2)}
+                                            {of.lucro && (
+                                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isNegativo ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`} title={`Margem: ${margem.toFixed(1)}%`}>
+                                                {isNegativo ? '' : '+'}R$ {lucroVal.toFixed(2)}
                                               </span>
                                             )}
                                           </div>
@@ -1425,11 +1417,11 @@ export default function ClientFileModal({
                   
                   {/* BLOCO 1: INFOS GERAIS DO PRODUTO */}
                   <div className="space-y-4 border-b border-white/5 pb-6">
-                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">Informações Base</h4>
+                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">1. Informações Base</h4>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="sm:col-span-2">
-                        <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Produto</label>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição / Nome do Produto</label>
                         <input type="text" value={productForm.descricao} onChange={e => setProductForm({...productForm, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 shadow-inner text-sm transition-colors" placeholder="Ex: Tênis Esportivo Runner X" />
                       </div>
                       <div>
@@ -1462,7 +1454,7 @@ export default function ClientFileModal({
                   {/* BLOCO 2: VARIAÇÕES */}
                   <div className="space-y-4 border-b border-white/5 pb-6">
                     <div className="flex justify-between items-center">
-                      <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">Variações do Produto</h4>
+                      <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">2. Variações do Produto</h4>
                       <button onClick={handleAddVariacao} className="text-[10px] font-bold bg-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-lg hover:bg-indigo-500/30 transition-colors flex items-center gap-1">
                         <Plus size={14}/> Nova Cor
                       </button>
@@ -1500,13 +1492,13 @@ export default function ClientFileModal({
                   </div>
 
                   {/* BLOCO 3: TABELA DE PREÇOS POR CANAL */}
-                  <div className="space-y-4 pb-6">
+                  <div className="space-y-4 pb-6 border-b border-white/5">
                     <div className="flex justify-between items-center">
-                      <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest">Tabela de Preços e Lucros</h4>
+                      <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest">3. Tabela de Preços e Lucros</h4>
                       <button 
                         onClick={() => setProductForm({
                           ...productForm, 
-                          canais: [...productForm.canais, { id: Date.now(), canal: 'Novo Canal', modalidade: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '' }] }] 
+                          canais: [...productForm.canais, { id: Date.now(), canal: 'Novo Canal', modalidade: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] }] 
                         })} 
                         className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-lg hover:bg-emerald-500/30 transition-colors flex items-center gap-1"
                       >
@@ -1546,7 +1538,7 @@ export default function ClientFileModal({
                                 const novosCanais = [...productForm.canais];
                                 novosCanais[idx].modalidade = e.target.value;
                                 setProductForm({...productForm, canais: novosCanais});
-                              }} placeholder="Ex: CPF, Premium, Full" className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2 text-xs outline-none focus:border-indigo-500 transition-colors" />
+                              }} placeholder="Ex: CPF, Premium, Full" className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2.5 text-xs outline-none focus:border-indigo-500 transition-colors" />
                             </div>
                           </div>
 
@@ -1567,37 +1559,27 @@ export default function ClientFileModal({
                                  <thead>
                                    <tr className="text-[9px] text-gray-500 uppercase tracking-wider border-b border-white/10">
                                      <th className="pb-1.5 w-16">Pares</th>
-                                     <th className="pb-1.5 w-24">Cheio</th>
-                                     <th className="pb-1.5 w-24 text-emerald-400">Promoção</th>
-                                     <th className="pb-1.5 min-w-[80px] text-center">Lucro Bruto</th>
+                                     <th className="pb-1.5 w-24">P. Cheio</th>
+                                     <th className="pb-1.5 w-24 text-emerald-400">P. Promo</th>
+                                     <th className="pb-1.5 min-w-[80px] text-center text-indigo-400">Lucro (R$)</th>
                                      <th className="pb-1.5 w-8"></th>
                                    </tr>
                                  </thead>
                                  <tbody>
                                    {(c.ofertas || []).map((of, oIdx) => {
-                                      const lucro = calcularLucroOferta(of.precoPor || of.precoDe, productForm.custo, of.quantidade);
-                                      const isNegativo = lucro.valor < 0;
-
                                       return (
                                         <tr key={of.id} className="border-b border-white/5 last:border-0">
-                                           <td className="py-2 pr-2 text-center">
+                                           <td className="py-2 pr-2">
                                               <input type="number" min="1" value={of.quantidade} onChange={e => handleUpdateOferta(idx, oIdx, 'quantidade', e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded p-1.5 text-xs outline-none focus:border-indigo-500 text-center" />
                                            </td>
-                                           <td className="py-2 pr-2 text-center">
+                                           <td className="py-2 pr-2">
                                               <input type="number" step="0.01" value={of.precoDe} onChange={e => handleUpdateOferta(idx, oIdx, 'precoDe', e.target.value)} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded p-1.5 text-xs outline-none focus:border-indigo-500" placeholder="R$" />
                                            </td>
-                                           <td className="py-2 pr-2 text-center">
+                                           <td className="py-2 pr-2">
                                               <input type="number" step="0.01" value={of.precoPor} onChange={e => handleUpdateOferta(idx, oIdx, 'precoPor', e.target.value)} className="w-full bg-emerald-500/10 border border-emerald-500/30 text-white font-bold rounded p-1.5 text-xs outline-none focus:border-emerald-500 placeholder:text-emerald-500/30" placeholder="R$" />
                                            </td>
-                                           <td className="py-2 px-1 text-center">
-                                              <div className="flex flex-col items-center">
-                                                <span className={`text-[11px] font-black ${isNegativo ? 'text-red-400' : 'text-emerald-400'}`}>
-                                                  R$ {lucro.valor.toFixed(2)}
-                                                </span>
-                                                <span className={`text-[9px] font-bold ${isNegativo ? 'text-red-500' : 'text-emerald-500/60'}`}>
-                                                  {lucro.margem.toFixed(1)}%
-                                                </span>
-                                              </div>
+                                           <td className="py-2 pr-2">
+                                              <input type="number" step="0.01" value={of.lucro || ''} onChange={e => handleUpdateOferta(idx, oIdx, 'lucro', e.target.value)} className="w-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-bold rounded p-1.5 text-xs outline-none focus:border-indigo-500 placeholder:text-indigo-500/30 text-center" placeholder="R$" />
                                            </td>
                                            <td className="py-2 text-right">
                                               <button onClick={() => handleRemoveOferta(idx, oIdx)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors" title="Remover Linha">
@@ -1624,7 +1606,7 @@ export default function ClientFileModal({
 
                   {/* BLOCO 4: OBSERVAÇÕES */}
                   <div className="space-y-4">
-                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">Observações Internas</h4>
+                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">4. Observações Internas</h4>
                     <textarea 
                       value={productForm.observacoes || ''} 
                       onChange={e => setProductForm({...productForm, observacoes: e.target.value})} 
@@ -1649,14 +1631,6 @@ export default function ClientFileModal({
 
         </div>
       </div>
-
-      <BulkTaskModal 
-        isOpen={isBulkTaskModalOpen} 
-        onClose={() => setIsBulkTaskModalOpen(false)} 
-        stores={liveStores} 
-        onSave={handleBulkTaskSave} 
-        teamMembers={teamMembers} 
-      />
     </div>
   );
 }

@@ -1,16 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package, FileText } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../utils/taskEngine';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus, onCopyTaskToBulk }) {
-  const [newLog, useState] = React.useState('');
-  const [newChecklist, setNewChecklist] = React.useState('');
-  const [newChecklistResp, setNewChecklistResp] = React.useState('');
-  const [newTaskDate, setNewTaskDate] = React.useState('');
-  const [newTaskTime, setNewTaskTime] = React.useState('');
-  const [newTaskRecurrence, setNewTaskRecurrence] = React.useState('none');
-  const [newTaskWeight, setNewTaskWeight] = React.useState('media');
+  const [newLog, setNewLog] = useState('');
+  const [newChecklist, setNewChecklist] = useState('');
+  const [newChecklistResp, setNewChecklistResp] = useState('');
+  const [newTaskDate, setNewTaskDate] = useState('');
+  const [newTaskTime, setNewTaskTime] = useState('');
+  const [newTaskRecurrence, setNewTaskRecurrence] = useState('none');
+  const [newTaskWeight, setNewTaskWeight] = useState('media');
+
+  // Estados para o Auto-completar (Sugestões)
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome;
   const isVisitante = currentUserData?.role === 'Visitante';
@@ -20,28 +24,43 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     return isAdmin || task.responsavel === myName || task.criadoPor === myName;
   };
 
-  const [nextDate, setNextDate] = React.useState(store.dataProximoAcesso ? store.dataProximoAcesso.split('T')[0] : '');
-  const [storeResp, setStoreResp] = React.useState(store.responsavel || '');
-  const [fixedNotes, setFixedNotes] = React.useState(store.notasFixas || '');
-  const [isDuplicating, setIsDuplicating] = React.useState(false);
-  const [duplicateTargetId, setDuplicateTargetId] = React.useState('');
-  const [isSavingNotes, setIsSavingNotes] = React.useState(false);
-  const [isScheduling, setIsScheduling] = React.useState(false);
-  const [isAddingTask, setIsAddingTask] = React.useState(false);
-  const [editingTaskId, setEditingTaskId] = React.useState(null);
-  const [editTaskData, setEditTaskData] = React.useState({});
-  const [selectedProduct, setSelectedProduct] = React.useState(null); 
+  const [nextDate, setNextDate] = useState(store.dataProximoAcesso ? store.dataProximoAcesso.split('T')[0] : '');
+  const [storeResp, setStoreResp] = useState(store.responsavel || '');
+  const [fixedNotes, setFixedNotes] = useState(store.notasFixas || '');
+  const [isDuplicating, setIsDuplicating] = useState(false);
+  const [duplicateTargetId, setDuplicateTargetId] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [isAddingTask, setIsAddingTask] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editTaskData, setEditTaskData] = useState({});
+  const [selectedProduct, setSelectedProduct] = useState(null); 
 
-  const [dailyGMV, setDailyGMV] = React.useState('');
-  const [dailyAds, setDailyAds] = React.useState('');
-  const [dailyOrders, setDailyOrders] = React.useState('');
-  const [dailyUnits, setDailyUnits] = React.useState('');
-  const [entryDay, setEntryDay] = React.useState(new Date().getDate());
-  const [isSavingDaily, setIsSavingDaily] = React.useState(false);
-  const [pendingStartInfo, setPendingStartInfo] = React.useState(null);
+  const [dailyGMV, setDailyGMV] = useState('');
+  const [dailyAds, setDailyAds] = useState('');
+  const [dailyOrders, setDailyOrders] = useState('');
+  const [dailyUnits, setDailyUnits] = useState('');
+  const [entryDay, setEntryDay] = useState(new Date().getDate());
+  const [isSavingDaily, setIsSavingDaily] = useState(false);
+  const [pendingStartInfo, setPendingStartInfo] = useState(null);
 
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
+
+  // Cria um banco de dados único com o texto de TODAS as tarefas já criadas na agência
+  const allUniqueTasks = useMemo(() => {
+    const taskSet = new Set();
+    stores.forEach(s => {
+      if (s.checklists) {
+        s.checklists.forEach(t => {
+          if (t.texto && t.texto.trim().length > 3) {
+            taskSet.add(t.texto.trim());
+          }
+        });
+      }
+    });
+    return Array.from(taskSet);
+  }, [stores]);
 
   const getInitials = (name) => {
     if (!name) return '?';
@@ -61,25 +80,9 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     return colors[Math.abs(hash) % colors.length];
   };
 
-  const Avatar = ({ name, size = 'md' }) => {
-    const sizeClasses = size === 'sm' ? 'w-5 h-5 text-[9px]' : size === 'lg' ? 'w-8 h-8 text-xs' : 'w-6 h-6 text-[10px]';
-    return (
-      <div className={`${sizeClasses} rounded-full bg-gradient-to-br ${getAvatarColor(name)} flex items-center justify-center font-bold text-white shadow-sm border border-white/20 shrink-0 cursor-default`} title={name || 'Sem Responsável'}>
-        {getInitials(name)}
-      </div>
-    );
-  };
-
   const saveChanges = (updatedStore) => {
     updateStoreInCloud(updatedStore);
     setStores(stores.map(s => s.id === updatedStore.id ? updatedStore : s));
-  };
-
-  const handleStoreRespChange = (e) => {
-    const newResp = e.target.value;
-    setStoreResp(newResp);
-    saveChanges({ ...store, responsavel: newResp });
-    toast.success('Responsável updated com sucesso!');
   };
 
   const addLog = () => {
@@ -97,69 +100,28 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     }
   };
 
-  const saveDailyEntry = () => {
-    if (!dailyGMV && !dailyAds && !dailyOrders && !dailyUnits) return toast.error("Preencha os dados para lançar.");
-    setIsSavingDaily(true);
-    const gmvVal = Number(dailyGMV) || 0;
-    const adsVal = Number(dailyAds) || 0;
-    const ordersVal = Number(dailyOrders) || 0;
-    const unitsVal = Number(dailyUnits) || 0;
-    const dayVal = Number(entryDay);
-
-    let prevRev = 0, prevAds = 0, prevOrd = 0, prevUni = 0;
-    const pastEntries = [...(store.history || [])].filter(h => h.day < dayVal).sort((a,b) => b.day - a.day);
-    if(pastEntries.length > 0) {
-        prevRev = pastEntries[0].revenue || 0;
-        prevAds = pastEntries[0].ads || 0;
-        prevOrd = pastEntries[0].orders || 0;
-        prevUni = pastEntries[0].units || 0;
-    }
-
-    const cumRev = prevRev + gmvVal;
-    const cumAds = prevAds + adsVal;
-    const cumOrd = prevOrd + ordersVal;
-    const cumUni = prevUni + unitsVal;
-
-    const entry = { id: Date.now(), day: dayVal, dailyRevenue: gmvVal, revenue: cumRev, ads: cumAds, orders: cumOrd, units: cumUni, date: new Date().toLocaleDateString('pt-BR') };
-
-    let updatedHistory = [...(store.history || [])];
-    const existingIndex = updatedHistory.findIndex(h => h.day === dayVal);
+  // Manipula a digitação e aciona as sugestões
+  const handleChecklistChange = (e) => {
+    const val = e.target.value;
+    setNewChecklist(val);
     
-    if(existingIndex >= 0) {
-      const existingEntry = updatedHistory[existingIndex];
-      entry.id = existingEntry.id;
-      entry.dailyRevenue = (existingEntry.dailyRevenue || 0) + gmvVal;
-      entry.revenue = (existingEntry.revenue || 0) + gmvVal;
-      entry.ads = (existingEntry.ads || 0) + cumAds;
-      entry.orders = (existingEntry.orders || 0) + ordersVal;
-      entry.units = (existingEntry.units || 0) + unitsVal;
-      updatedHistory[existingIndex] = entry;
+    if (val.trim().length >= 2) {
+      const filtered = allUniqueTasks.filter(t => 
+        t.toLowerCase().includes(val.toLowerCase()) && t.toLowerCase() !== val.toLowerCase()
+      );
+      setSuggestions(filtered.slice(0, 6)); // Mostra no máximo as top 6
+      setShowSuggestions(filtered.length > 0);
     } else {
-      updatedHistory.push(entry);
+      setShowSuggestions(false);
     }
-
-    const log = { id: Date.now() + 1, data: new Date().toLocaleString('pt-BR'), texto: `📊 Lançamento [Dia ${dayVal}]: R$${gmvVal} | Ads R$${adsVal} | ${ordersVal} Ped`, author: username };
-    const updatedStore = { ...store, history: updatedHistory.sort((a,b) => a.day - b.day), taskLogs: [...(store.taskLogs || []), log], dataUltimoAcesso: new Date().toISOString() };
-    const maxDay = Math.max(...updatedStore.history.map(h => h.day));
-    if (dayVal === maxDay) {
-      updatedStore.currentRevenue = cumRev;
-      updatedStore.adsInvestment = cumAds;
-      updatedStore.orders = cumOrd;
-      updatedStore.units = cumUni;
-    }
-
-    saveChanges(updatedStore);
-    setTimeout(() => {
-      setIsSavingDaily(false);
-      setDailyGMV(''); setDailyAds(''); setDailyOrders(''); setDailyUnits('');
-      toast.success(`Dados lançados com sucesso!`);
-    }, 600);
   };
 
   const addChecklist = () => {
     if (!newChecklist.trim()) return;
     setIsAddingTask(true);
-    const item = { id: Date.now(), texto: newChecklist, feita: false, responsavel: newChecklistResp.trim(), criadoPor: username, data: newTaskDate, hora: newTaskTime, recorrencia: newTaskRecurrence };
+    setShowSuggestions(false);
+    
+    const item = { id: Date.now(), texto: newChecklist, feita: false, responsavel: newChecklistResp.trim(), criadoPor: username, data: newTaskDate, hora: newTaskTime, recorrencia: newTaskRecurrence, peso: newTaskWeight };
     const updatedChecklists = [...(store.checklists || []), item];
     const newNextAccess = calculateNextAccess(updatedChecklists);
 
@@ -225,18 +187,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), log], dataProximoAcesso: finalNextAccess, dataUltimoAcesso: new Date().toISOString() });
     setEditingTaskId(null);
     toast.success('Tarefa atualizada!');
-  };
-
-  const saveNextDate = () => {
-    setIsScheduling(true);
-    saveChanges({ ...store, dataProximoAcesso: nextDate ? `${nextDate}T00:00` : '' });
-    setTimeout(() => { setIsScheduling(false); toast.success('Retorno agendado com sucesso!'); }, 500);
-  };
-
-  const clearNextDate = () => {
-    setNextDate('');
-    saveChanges({ ...store, dataProximoAcesso: '' });
-    toast.success('Agendamento removido!');
   };
 
   const saveFixedNotes = () => {
@@ -408,7 +358,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     toast.success(action === 'complete' ? "Anterior concluída e nova iniciada!" : "Anterior pausada e nova iniciada!");
   };
 
-  // Funções Auxiliares de Cálculo de Lucro do Catálogo
   const calcularLucroOferta = (precoVenda, custoBase, quantidade) => {
     const venda = Number(precoVenda) || 0;
     const custoUnico = Number(custoBase) || 0;
@@ -654,9 +603,45 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               </div>
               
               <div className="flex flex-col gap-3 bg-black/20 p-4 rounded-2xl border border-white/5 shadow-inner">
-                <div className="flex flex-col lg:flex-row gap-2">
-                  <input type="text" value={newChecklist} onChange={e => setNewChecklist(e.target.value)} onKeyDown={e => e.key === 'Enter' && addChecklist()} placeholder="O que precisa ser feito?" className="flex-1 bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" />
-                  <select value={newChecklistResp} onChange={e => setNewChecklistResp(e.target.value)} className="w-full md:w-36 bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-gray-300 outline-none focus:border-indigo-500 cursor-pointer transition-colors">
+                <div className="flex flex-col lg:flex-row gap-2 relative z-20">
+                  <div className="relative flex-1">
+                    <input 
+                      type="text" 
+                      value={newChecklist} 
+                      onChange={handleChecklistChange} 
+                      onKeyDown={e => {
+                         if (e.key === 'Enter') {
+                            setShowSuggestions(false);
+                            addChecklist();
+                         }
+                      }}
+                      onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                      placeholder="O que precisa ser feito?" 
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" 
+                    />
+                    
+                    {/* DROPDOWN DE SUGESTÕES */}
+                    {showSuggestions && suggestions.length > 0 && (
+                      <ul className="absolute top-full left-0 w-full mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
+                        {suggestions.map((sug, idx) => (
+                          <li 
+                            key={idx} 
+                            onMouseDown={(e) => { 
+                              e.preventDefault(); 
+                              setNewChecklist(sug); 
+                              setShowSuggestions(false); 
+                            }} 
+                            className="px-4 py-2.5 text-sm text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer transition-colors border-b border-gray-800 last:border-0 truncate"
+                          >
+                            {sug}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  
+                  <select value={newChecklistResp} onChange={e => setNewChecklistResp(e.target.value)} className="w-full md:w-36 bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-gray-300 outline-none focus:border-indigo-500 cursor-pointer transition-colors shrink-0">
                     <option value="">Sem Resp.</option>
                     {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
@@ -667,7 +652,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     <span className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Atenção: Defina a data e o horário limite para concluir a tarefa</span>
                 </div>
 
-                <div className="flex flex-wrap gap-2 items-center">
+                <div className="flex flex-wrap gap-2 items-center relative z-10">
                   <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Data Limite para Conclusão" />
                   <input type="time" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Horário Limite" />
 
