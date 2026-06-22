@@ -91,13 +91,13 @@ export default function ClientFileModal({
     descricao: '', 
     custo: '', 
     variacoes: [], 
-    observacoes: '',
     canais: [
       { 
         id: Date.now(), 
         canal: 'Shopee', 
         modalidade: '', 
-        ofertas: [{ id: Date.now() + 1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] // Campo "lucro" agora é string para input
+        observacoes: '', // Observação agora fica dentro do canal
+        ofertas: [{ id: Date.now() + 1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] 
       }
     ]
   });
@@ -153,10 +153,7 @@ export default function ClientFileModal({
             historyLog.mudancas.push(`Custo alterado de R$${p.custo || '0'} para R$${productForm.custo || '0'}`);
           }
           if (JSON.stringify(p.canais) !== JSON.stringify(productForm.canais)) {
-            historyLog.mudancas.push(`Tabela de preços dos canais foi atualizada`);
-          }
-          if (p.observacoes !== productForm.observacoes) {
-            historyLog.mudancas.push(`Observações do produto foram modificadas`);
+            historyLog.mudancas.push(`A tabela de preços ou observações dos canais foi atualizada`);
           }
           return { ...productForm, id: p.id, historico: historyLog.mudancas.length > 0 ? [historyLog, ...(p.historico || [])] : p.historico };
         }
@@ -328,21 +325,26 @@ export default function ClientFileModal({
             ofertasAdaptadas.push({ id: Date.now() + Math.random(), quantidade: 1, precoDe: '', precoPor: '', lucro: '' });
         }
       } else {
-        // Garante que a propriedade lucro exista nos itens migrados
         ofertasAdaptadas = ofertasAdaptadas.map(o => ({...o, lucro: o.lucro || ''}));
+      }
+
+      let obsDoCanal = c.observacoes || '';
+      if (!obsDoCanal && prod.observacoes && canaisAtuais.indexOf(c) === 0) {
+        obsDoCanal = prod.observacoes;
       }
 
       return {
         id: c.id || Date.now() + Math.random(),
         canal: c.canal || 'Shopee',
         modalidade: c.modalidade || '', 
+        observacoes: obsDoCanal, // Observação interna do canal
         ofertas: ofertasAdaptadas
       };
     });
 
     if (canaisAdaptados.length === 0) {
       canaisAdaptados.push({ 
-          id: Date.now(), canal: 'Shopee', modalidade: '', 
+          id: Date.now(), canal: 'Shopee', modalidade: '', observacoes: prod.observacoes || '', // Aproveita a antiga se existir
           ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] 
       });
     }
@@ -360,7 +362,6 @@ export default function ClientFileModal({
       fotoUrl: prod.fotoUrl || '', 
       descricao: prod.descricao || '', 
       custo: prod.custo || '', 
-      observacoes: prod.observacoes || '', 
       variacoes: variacoesAdaptadas,
       canais: canaisAdaptados 
     });
@@ -369,7 +370,7 @@ export default function ClientFileModal({
     setProductModalOpen(true);
   };
 
-  // --- CÁLCULOS DO DASHBOARD (Mantidos Inalterados) ---
+  // --- CÁLCULOS DO DASHBOARD ---
   const liveStores = useMemo(() => {
     const rawClientStores = stores.filter(s => s.client === clientGroup.client && !s.arquivada);
     return rawClientStores.map(s => 
@@ -1242,7 +1243,7 @@ export default function ClientFileModal({
                     onClick={() => {
                       setProductForm({ 
                         fotoUrl: '', descricao: '', custo: '', observacoes: '', variacoes: [], 
-                        canais: [{ id: Date.now(), canal: 'Shopee', modalidade: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] }] 
+                        canais: [{ id: Date.now(), canal: 'Shopee', modalidade: '', observacoes: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] }] 
                       });
                       setEditingProductId(null);
                       setProductModalOpen(true);
@@ -1307,7 +1308,8 @@ export default function ClientFileModal({
                         
                         {/* TABELA DE OFERTAS NO CARD */}
                         <div className="space-y-3 mt-auto">
-                          {(prod.canais || []).map((c, i) => (
+                          {(prod.canais || []).map((c, i) => {
+                              return (
                               <div key={c.id || i} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden">
                                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500/50"></div>
                                 
@@ -1324,10 +1326,13 @@ export default function ClientFileModal({
                                     const isNegativo = lucroVal < 0;
 
                                     return (
-                                      <div key={of.id} className="flex justify-between items-center ml-2 text-xs py-1">
+                                      <div key={of.id} className="flex justify-between items-center ml-2 text-xs py-1 border-b border-white/5 last:border-0">
                                           <span className="text-[10px] text-gray-400 font-bold">{of.quantidade} Par{of.quantidade > 1 ? 'es' : ''}</span>
                                           <div className="text-right flex items-center gap-2">
-                                            <span className="font-black text-emerald-400">R$ {of.precoPor || of.precoDe || '0.00'}</span>
+                                            <div className="flex flex-col">
+                                              {of.precoDe && <span className="text-[9px] text-gray-600 line-through">R$ {of.precoDe}</span>}
+                                              <span className="font-black text-emerald-400">R$ {of.precoPor || of.precoDe || '0.00'}</span>
+                                            </div>
                                             {of.lucro && (
                                               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isNegativo ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`} title={`Margem: ${margem.toFixed(1)}%`}>
                                                 {isNegativo ? '' : '+'}R$ {lucroVal.toFixed(2)}
@@ -1337,17 +1342,18 @@ export default function ClientFileModal({
                                       </div>
                                     );
                                 })}
-                              </div>
-                            ))}
-                        </div>
 
-                        {/* OBSERVAÇÕES NO RODAPÉ DO CARD */}
-                        {prod.observacoes && (
-                           <div className="mt-4 pt-3 border-t border-white/5 flex items-start gap-1.5 text-[10px] text-gray-500">
-                              <FileText size={12} className="shrink-0 mt-0.5 text-indigo-400" />
-                              <span className="line-clamp-2 italic" title={prod.observacoes}>{prod.observacoes}</span>
-                           </div>
-                        )}
+                                {/* OBSERVAÇÕES DO CANAL */}
+                                {c.observacoes && (
+                                   <div className="mt-2 ml-2 pt-2 border-t border-white/5 flex items-start gap-1.5 text-[9px] text-gray-500">
+                                      <FileText size={10} className="shrink-0 mt-0.5 text-indigo-400" />
+                                      <span className="line-clamp-2 italic" title={c.observacoes}>{c.observacoes}</span>
+                                   </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
 
                       {/* Painel de Histórico (Sanduíche) */}
@@ -1375,7 +1381,7 @@ export default function ClientFileModal({
                       )}
 
                       {canEdit && (
-                        <div className="flex border-t border-white/5 bg-black/40">
+                        <div className="flex border-t border-white/5 bg-black/40 mt-3">
                           <button onClick={() => abrirEdicaoProduto(prod)} className="flex-1 py-3 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors border-r border-white/5 uppercase tracking-wider flex items-center justify-center gap-1">
                             <Edit2 size={12}/> Editar
                           </button>
@@ -1492,13 +1498,13 @@ export default function ClientFileModal({
                   </div>
 
                   {/* BLOCO 3: TABELA DE PREÇOS POR CANAL */}
-                  <div className="space-y-4 pb-6 border-b border-white/5">
+                  <div className="space-y-4 pb-6">
                     <div className="flex justify-between items-center">
                       <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest">3. Tabela de Preços e Lucros</h4>
                       <button 
                         onClick={() => setProductForm({
                           ...productForm, 
-                          canais: [...productForm.canais, { id: Date.now(), canal: 'Novo Canal', modalidade: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] }] 
+                          canais: [...productForm.canais, { id: Date.now(), canal: 'Novo Canal', modalidade: '', observacoes: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] }] 
                         })} 
                         className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-lg hover:bg-emerald-500/30 transition-colors flex items-center gap-1"
                       >
@@ -1592,6 +1598,21 @@ export default function ClientFileModal({
                                  </tbody>
                                </table>
                              </div>
+
+                             {/* CAMPO DE OBSERVAÇÃO DO CANAL */}
+                             <div className="mt-3">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Observações Internas (Regras, Links de Anúncios, etc.)</label>
+                                <textarea 
+                                  value={c.observacoes || ''} 
+                                  onChange={e => {
+                                    const novosCanais = [...productForm.canais];
+                                    novosCanais[idx].observacoes = e.target.value;
+                                    setProductForm({...productForm, canais: novosCanais});
+                                  }}
+                                  placeholder="Cole aqui links dos anúncios ou regras de separação para este canal..."
+                                  className="w-full h-16 bg-black/40 border border-white/10 text-gray-300 rounded-xl p-2 outline-none focus:border-indigo-500 shadow-inner text-xs transition-colors resize-none custom-scrollbar"
+                                />
+                             </div>
                           </div>
 
                         </div>
@@ -1602,17 +1623,6 @@ export default function ClientFileModal({
                         </div>
                       )}
                     </div>
-                  </div>
-
-                  {/* BLOCO 4: OBSERVAÇÕES */}
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">4. Observações Internas</h4>
-                    <textarea 
-                      value={productForm.observacoes || ''} 
-                      onChange={e => setProductForm({...productForm, observacoes: e.target.value})} 
-                      placeholder="Cole aqui links dos anúncios, detalhes de logística, ou regras de separação..."
-                      className="w-full h-24 bg-black/40 border border-white/10 text-gray-300 rounded-xl p-3 outline-none focus:border-indigo-500 shadow-inner text-xs transition-colors resize-none custom-scrollbar"
-                    />
                   </div>
 
                 </div>

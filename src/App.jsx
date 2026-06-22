@@ -51,7 +51,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.9.5';
+  const CURRENT_VERSION = '2.9.6';
   
   const [showValues, setShowValues] = useState(() => {
     return localStorage.getItem('avante_show_values') !== 'false';

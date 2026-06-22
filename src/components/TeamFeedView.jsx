@@ -33,8 +33,10 @@ export default function TeamFeedView({
     const [visitForm, setVisitForm] = useState({ id: null, client: '', date: '', time: '', responsavel: '' });
     
     const [expandedUserXP, setExpandedUserXP] = useState(null);
-
     const [showPausedTasks, setShowPausedTasks] = useState(false);
+
+    // NOVO ESTADO: Controla o filtro de tempo do Ranking (Padrão: Esta Semana)
+    const [rankingPeriod, setRankingPeriod] = useState('semana');
 
     const minhasTarefasPausadas = useMemo(() => {
         const pausadas = [];
@@ -74,12 +76,9 @@ export default function TeamFeedView({
         if (!updateStoreInCloud) return;
 
         let taskDate = new Date();
-        
         taskDate.setHours(taskDate.getHours() + hoursToAdd);
         
         const newDate = new Date(taskDate.getTime() - (taskDate.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-        
-        // 4. Formata a hora para o padrão do banco de dados (HH:MM)
         const newTime = taskDate.toTimeString().substring(0, 5);
 
         const updatedChecklists = store.checklists.map(c => 
@@ -147,20 +146,27 @@ export default function TeamFeedView({
 
         if (!window.confirm(`Deseja concluir a tarefa: "${task.texto}"?`)) return;
 
-        const nextAccess = calculateNextAccess(updatedChecklists);
+        try {
+            const { updatedChecklists, newLog } = processTaskCompletion(store, task, myName);
+            const nextAccess = calculateNextAccess(updatedChecklists);
 
-        updateStoreInCloud({ 
-            ...store, 
-            checklists: updatedChecklists,
-            taskLogs: [...(store.taskLogs || []), newLog],
-            dataProximoAcesso: nextAccess || '' 
-        });
+            updateStoreInCloud({ 
+                ...store, 
+                checklists: updatedChecklists,
+                taskLogs: [...(store.taskLogs || []), newLog],
+                dataProximoAcesso: nextAccess || store.dataProximoAcesso || '',
+                dataUltimoAcesso: new Date().toISOString()
+            });
 
-        if (broadcastTaskFocus && userName === myName) {
-            broadcastTaskFocus('', 'clear');
+            if (broadcastTaskFocus && userName === myName) {
+                broadcastTaskFocus('', 'clear', store.id);
+            }
+            
+            toast.success("Tarefa finalizada e XP computado!");
+        } catch (error) {
+            console.error("Erro ao concluir a tarefa pelo radar:", error);
+            toast.error("Ocorreu um erro ao atualizar a tarefa. Verifique o console.");
         }
-        
-        toast.success("Tarefa finalizada e XP computado!");
     };
 
     const handleDeleteSpecificTask = async (e, storeId, taskId, isRoutine) => {
@@ -230,13 +236,30 @@ export default function TeamFeedView({
         const targetStore = stores.find(s => s.store === storeName);
         if (targetStore && openTaskModal) openTaskModal(targetStore);
     };
-    
-    const now = new Date();
-    const localTodayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-    
-    // === NOVA CONTAGEM DE XP: COM HISTÓRICO E AUDITORIA ===
-    const rankingDiario = useMemo(() => {
+
+    // === NOVO SISTEMA DE XP COM FILTRO DINÂMICO (Timestamps Seguros) ===
+    const rankingEquipe = useMemo(() => {
         const stats = {};
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        // Define as barreiras de tempo seguras (Início e Fim do período selecionado em Milissegundos)
+        let startMs, endMs;
+        if (rankingPeriod === 'hoje') {
+            startMs = today.getTime();
+            endMs = startMs + 86399999;
+        } else if (rankingPeriod === 'semana') {
+            const day = today.getDay(); // 0 (Dom) até 6 (Sáb)
+            const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Pega a Segunda-feira
+            const monday = new Date(today.getFullYear(), today.getMonth(), diff);
+            startMs = monday.getTime();
+            endMs = startMs + (7 * 86400000) - 1; // Domingo às 23:59:59
+        } else { // mes
+            const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+            startMs = firstDay.getTime();
+            const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+            endMs = lastDay.getTime();
+        }
 
         const globalAverages = {
             baixa: { totalTime: 0, count: 0, avg: 15 * 60000 }, 
@@ -244,12 +267,13 @@ export default function TeamFeedView({
             alta:  { totalTime: 0, count: 0, avg: 60 * 60000 }
         };
 
+        // 1. Calcula a Média Global (independente de período, para ter base de comparação)
         stores.forEach(store => {
             (store.checklists || []).forEach(task => {
-                if (task.feita) {
+                if (task.feita && task.completedAtFull && task.startedAt) {
                     let duration = task.accumulatedTimeMs || 0;
-                    if (!duration && task.startedAt && task.completedAtFull) {
-                        duration = new Date(task.completedAtFull) - new Date(task.startedAt);
+                    if (!duration) {
+                        duration = new Date(task.completedAtFull).getTime() - new Date(task.startedAt).getTime();
                     }
                     if (duration > 60000 && duration < 86400000) { 
                         const weight = task.peso || 'media';
@@ -268,96 +292,110 @@ export default function TeamFeedView({
             }
         });
 
+        // 2. Pontua as tarefas se elas aconteceram dentro do Período Selecionado
         stores.forEach(store => {
             (store.checklists || []).forEach(task => {
-                // 1. XP POR CRIAÇÃO
+                
+                // XP POR CRIAÇÃO (Se criou dentro do período)
                 if (task.id && task.criadoPor && task.recorrencia !== 'ghost') {
-                    const timestamp = Math.floor(task.id);
-                    if (timestamp > 1600000000000) { 
-                        const creationDate = new Date(timestamp - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-                        if (creationDate === localTodayStr) {
-                            const creator = task.criadoPor;
-                            if (!stats[creator]) {
-                                stats[creator] = { name: creator, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } }, history: [] };
-                            }
-                            stats[creator].points += 2;
-                            stats[creator].history.push({
-                                id: `crt-${task.id}`,
-                                points: 2,
-                                desc: `Proatividade: Criou tarefa para ${store.store}`
-                            });
+                    const timestampCriacao = Math.floor(task.id);
+                    if (timestampCriacao > 1600000000000 && timestampCriacao >= startMs && timestampCriacao <= endMs) { 
+                        const creator = task.criadoPor;
+                        if (!stats[creator]) {
+                            stats[creator] = { name: creator, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } }, history: [] };
                         }
+                        stats[creator].points += 2;
+                        stats[creator].history.push({
+                            id: `crt-${task.id}`,
+                            points: 2,
+                            desc: `Proatividade: Criou tarefa para ${store.store}`,
+                            timestamp: timestampCriacao
+                        });
                     }
                 }
 
-                // 2. XP POR CONCLUSÃO
-                if (task.feita && task.completedAt === localTodayStr) {
-                    const author = task.completedBy || 'Sistema';
-                    if (!stats[author]) {
-                        stats[author] = { name: author, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } }, history: [] };
-                    }
-                    
-                    stats[author].tasks += 1;
-                    const weight = task.peso || 'media';
-                    
-                    let earnedPoints = 0;
-                    let detailsArr = [];
-
-                    // Base por dificuldade
-                    if (weight === 'baixa') { earnedPoints += 10; detailsArr.push('Baixa (+10)'); }
-                    else if (weight === 'media') { earnedPoints += 20; detailsArr.push('Média (+20)'); }
-                    else if (weight === 'alta') { earnedPoints += 30; detailsArr.push('Alta (+30)'); }
-
-                    // Prazos
-                    if (task.data) {
-                        if (task.data >= localTodayStr) { earnedPoints += 5; detailsArr.push('No Prazo (+5)'); }
-                        else { earnedPoints -= 10; detailsArr.push('Atrasada (-10)'); }
+                // XP POR CONCLUSÃO (Se completou dentro do período)
+                if (task.feita) {
+                    let completedTimestamp = 0;
+                    if (task.completedAtFull) {
+                        completedTimestamp = new Date(task.completedAtFull).getTime();
+                    } else if (task.completedAt) {
+                        // Fallback para tarefas muito antigas que só salvaram YYYY-MM-DD
+                        completedTimestamp = new Date(task.completedAt + "T12:00:00").getTime();
                     }
 
-                    // Velocidade vs Média
-                    let taskDuration = 0;
-                    if (task.accumulatedTimeMs) {
-                        taskDuration = task.accumulatedTimeMs;
-                    } else if (task.startedAt && task.completedAtFull) {
-                        taskDuration = new Date(task.completedAtFull) - new Date(task.startedAt);
+                    if (completedTimestamp >= startMs && completedTimestamp <= endMs) {
+                        const author = task.completedBy || 'Sistema';
+                        if (!stats[author]) {
+                            stats[author] = { name: author, tasks: 0, points: 0, times: { baixa: { t: 0, c: 0 }, media: { t: 0, c: 0 }, alta: { t: 0, c: 0 } }, history: [] };
+                        }
+                        
+                        stats[author].tasks += 1;
+                        const weight = task.peso || 'media';
+                        
+                        let earnedPoints = 0;
+                        let detailsArr = [];
+
+                        // Base por dificuldade
+                        if (weight === 'baixa') { earnedPoints += 10; detailsArr.push('Baixa (+10)'); }
+                        else if (weight === 'media') { earnedPoints += 20; detailsArr.push('Média (+20)'); }
+                        else if (weight === 'alta') { earnedPoints += 30; detailsArr.push('Alta (+30)'); }
+
+                        // Prazos (Verificamos convertendo a string de prazo com a data de conclusão real)
+                        if (task.data) {
+                            const dataConclusaoLocal = new Date(completedTimestamp - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                            if (task.data >= dataConclusaoLocal) { earnedPoints += 5; detailsArr.push('No Prazo (+5)'); }
+                            else { earnedPoints -= 10; detailsArr.push('Atrasada (-10)'); }
+                        }
+
+                        // Velocidade vs Média
+                        let taskDuration = 0;
+                        if (task.accumulatedTimeMs) {
+                            taskDuration = task.accumulatedTimeMs;
+                        } else if (task.startedAt && task.completedAtFull) {
+                            taskDuration = new Date(task.completedAtFull).getTime() - new Date(task.startedAt).getTime();
+                        }
+
+                        if (taskDuration > 60000 && taskDuration < 86400000) {
+                            const expectedTimeMs = globalAverages[weight].avg;
+                            const tolerance = 60000; 
+
+                            if (taskDuration < (expectedTimeMs - tolerance)) {
+                                earnedPoints += 5; detailsArr.push('Rápida (+5)');
+                            } else if (taskDuration > (expectedTimeMs + tolerance)) {
+                                earnedPoints -= 5; detailsArr.push('Lenta (-5)');
+                            } 
+
+                            stats[author].times[weight].t += taskDuration;
+                            stats[author].times[weight].c += 1;
+                        }
+                        
+                        stats[author].points += earnedPoints;
+                        stats[author].history.push({
+                            id: `cmp-${task.id}`,
+                            points: earnedPoints,
+                            desc: `Concluiu "${task.texto}" em ${store.store}`,
+                            details: detailsArr.join(' | '),
+                            timestamp: completedTimestamp
+                        });
                     }
-
-                    if (taskDuration > 0 && taskDuration < 86400000) {
-                        const expectedTimeMs = globalAverages[weight].avg;
-                        const tolerance = 60000; 
-
-                        if (taskDuration < (expectedTimeMs - tolerance)) {
-                            earnedPoints += 5; detailsArr.push('Rápida (+5)');
-                        } else if (taskDuration > (expectedTimeMs + tolerance)) {
-                            earnedPoints -= 5; detailsArr.push('Lenta (-5)');
-                        } 
-
-                        stats[author].times[weight].t += taskDuration;
-                        stats[author].times[weight].c += 1;
-                    }
-                    
-                    stats[author].points += earnedPoints;
-                    stats[author].history.push({
-                        id: `cmp-${task.id}`,
-                        points: earnedPoints,
-                        desc: `Concluiu "${task.texto}" em ${store.store}`,
-                        details: detailsArr.join(' | ')
-                    });
                 }
             });
         });
 
+        // 3. Monta o Array Final
         return Object.values(stats).map(r => {
             const avgBaixa = r.times.baixa.c > 0 ? Math.round(r.times.baixa.t / r.times.baixa.c / 60000) : 0;
             const avgMedia = r.times.media.c > 0 ? Math.round(r.times.media.t / r.times.media.c / 60000) : 0;
             const avgAlta = r.times.alta.c > 0 ? Math.round(r.times.alta.t / r.times.alta.c / 60000) : 0;
             
-            // Ordenar o histórico (do mais alto XP para o menor)
-            r.history.sort((a, b) => b.points - a.points);
+            // Ordena o extrato do mais recente para o mais antigo (dentro da timeline selecionada)
+            r.history.sort((a, b) => b.timestamp - a.timestamp);
             
             return { ...r, avgBaixa, avgMedia, avgAlta };
-        }).sort((a, b) => b.points - a.points);
-    }, [stores, localTodayStr]);
+        }).sort((a, b) => b.points - a.points); // Ordena quem tem mais pontos primeiro
+
+    }, [stores, rankingPeriod]);
 
     const deadlinesData = useMemo(() => {
         const items = [];
@@ -665,7 +703,6 @@ export default function TeamFeedView({
                 {/* COLUNA DIREITA: Trabalhando Agora -> Pacing -> Ranking */}
                 <div className="lg:col-span-1 flex flex-col gap-6">
 
-
                     {/* BANNER DE DESTAQUE SAZONAL */}
                     {activeEvent ? (
                         <div className="bg-gradient-to-r from-orange-600/20 to-red-600/20 border border-orange-500/30 p-5 rounded-3xl shadow-[0_4px_20px_rgba(234,88,12,0.15)] flex flex-col gap-4">
@@ -968,12 +1005,23 @@ export default function TeamFeedView({
 
                     {/* RANKING DE EXECUÇÃO COM HISTÓRICO EXPANSÍVEL */}
                     <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
-                        <div className="mb-4 border-b border-gray-700 pb-4">
-                            <h3 className="text-lg font-bold tracking-wide text-blue-400 uppercase flex items-center gap-2">🏆 Execução Diária</h3>
+                        <div className="mb-4 border-b border-gray-700 pb-4 flex justify-between items-center">
+                            <h3 className="text-lg font-bold tracking-wide text-blue-400 uppercase flex items-center gap-2">
+                                🏆 Ranking da Equipe
+                            </h3>
+                            <select
+                                value={rankingPeriod}
+                                onChange={e => setRankingPeriod(e.target.value)}
+                                className="bg-gray-900 border border-gray-700 text-[10px] font-bold text-gray-300 rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer shadow-inner"
+                            >
+                                <option value="hoje">HOJE</option>
+                                <option value="semana">ESTA SEMANA</option>
+                                <option value="mes">ESTE MÊS</option>
+                            </select>
                         </div>
                         
                         <div className="space-y-3 pr-2">
-                            {rankingDiario.map((rank, i) => {
+                            {rankingEquipe.map((rank, i) => {
                                 const memberData = teamMembers?.find(m => m.nomeCompleto === rank.name || m.nome === rank.name);
                                 const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
                                 const userPhoto = memberData?.avatarUrl || null;
@@ -1021,7 +1069,7 @@ export default function TeamFeedView({
                                         {/* CAIXA DE AUDITORIA DE XP EXPANSÍVEL */}
                                         {isExpanded && (
                                             <div className="mt-2 pt-2 border-t border-gray-700/50 flex flex-col gap-2 cursor-default" onClick={(e) => e.stopPropagation()}>
-                                                <h5 className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Extrato de XP (Hoje)</h5>
+                                                <h5 className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Extrato de XP</h5>
                                                 {rank.history.length > 0 ? rank.history.map((hItem) => (
                                                     <div key={hItem.id} className="bg-black/30 p-2 rounded flex justify-between items-start gap-2">
                                                         <div className="flex-1">
@@ -1040,7 +1088,7 @@ export default function TeamFeedView({
                                     </div> 
                                 );
                             })}
-                            {rankingDiario.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada hoje.</div>}
+                            {rankingEquipe.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada neste período.</div>}
                         </div>
 
                         <div className="mt-4 pt-4 border-t border-gray-700/50 text-[10px] text-gray-400 text-center leading-relaxed">
