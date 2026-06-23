@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 // Importamos query, where e getDocs do Firestore para fazer as buscas filtradas
 import { collection, onSnapshot, doc, setDoc, query, where, getDocs } from "firebase/firestore";
-import { db } from '../firebase';
+import { db } from '../services/firebase';
 import { toast } from 'react-hot-toast';
 
 // Importamos a nossa nova função de utilidade (saindo da pasta hooks e entrando na utils)

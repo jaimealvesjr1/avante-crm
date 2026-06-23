@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { X, Target, Save, TrendingUp, ShoppingBag, Briefcase, Globe, ArrowRight, CalendarDays, Play, Trash2, Flame, Download } from 'lucide-react';
 import { doc, writeBatch, deleteField } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
-import { formatCurrency, formatNumber } from '../utils/financeUtils';
+import { formatCurrency, formatNumber } from '../../utils/financeUtils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 

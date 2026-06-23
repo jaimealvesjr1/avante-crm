@@ -1,5 +1,4 @@
 import { initializeApp } from "firebase/app";
-// Importações atualizadas para o novo padrão de cache offline do Firestore
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 

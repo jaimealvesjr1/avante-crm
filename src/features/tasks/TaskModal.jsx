@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package, FileText, Eye, EyeOff, Lock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../utils/taskEngine';
+import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../../utils/taskEngine';
 
 export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus, onCopyTaskToBulk }) {
   const [newLog, setNewLog] = useState('');

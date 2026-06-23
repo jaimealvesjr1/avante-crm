@@ -3,7 +3,7 @@ import { Flame, CalendarDays, Activity, Clock, CheckCircle, AlertCircle,
     Search, CalendarClock, X, Briefcase, AlertTriangle, 
     ChevronDown, ChevronUp, Play, Pause } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
-import { db } from '../firebase';
+import { db } from '../services/firebase';
 import { toast } from 'react-hot-toast';
 import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../utils/taskEngine';
 
@@ -967,7 +967,7 @@ export default function TeamFeedView({
                                             </div>
 
                                             <div className="flex-1">
-                                                <p className="text-sm font-bold text-white flex items-center justify-between mb-1">
+                                                <div className="text-sm font-bold text-white flex items-center justify-between mb-1">
                                                     <span className="uppercase tracking-wider flex items-center gap-2">
                                                         {userName}
                                                     </span>
@@ -988,7 +988,7 @@ export default function TeamFeedView({
                                                             </button>
                                                         )}
                                                     </div>
-                                                </p>
+                                                </div>
                                                 <p className="text-xs text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
                                             </div>
                                         </div>

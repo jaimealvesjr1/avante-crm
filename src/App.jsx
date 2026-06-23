@@ -6,33 +6,34 @@ import {
   TrendingUp, DollarSign, Target, MessageCircle, Upload, Save, Plus, X, Trash2, Zap
 } from 'lucide-react';
 
-import { db, auth, secondaryAuth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, writeBatch, deleteField } from "firebase/firestore";
 import { Toaster, toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 
-import ClientFileModal from './components/ClientFileModal';
+import { db, auth, secondaryAuth } from './services/firebase';
+
 import AuthScreen from './components/AuthScreen';
-
-const ExecutiveDashboard = lazy(() => import('./components/ExecutiveDashboard'));
-const OperationalTable = lazy(() => import('./components/OperationalTable'));
-const FinanceDashboard = lazy(() => import('./components/FinanceDashboard'));
-const WarRoom = lazy(() => import('./components/WarRoom'));
-const AdminPanel = lazy(() => import('./components/AdminPanel'));
-
-import BatchEntry from './components/BatchEntry';
-import TaskView from './components/TaskView';
-import TaskModal from './components/TaskModal';
-import CreateStoreModal from './components/CreateStoreModal';
-import BulkTaskModal from './components/BulkTaskModal';
-import TeamFeedView from './components/TeamFeedView';
-import ExportModal from './components/ExportModal';
-import GoalsSettingsModal from './components/GoalsSettingsModal';
 import ErrorBoundary from './components/ErrorBoundary';
-import CloseMonthModal from './components/CloseMonthModal';
-import StoreHistoryModal from './components/StoreHistoryModal';
+
+const ExecutiveDashboard = lazy(() => import('./pages/ExecutiveDashboard'));
+const OperationalTable = lazy(() => import('./pages/OperationalTable'));
+const FinanceDashboard = lazy(() => import('./pages/FinanceDashboard'));
+const WarRoom = lazy(() => import('./pages/WarRoom'));
+const AdminPanel = lazy(() => import('./pages/AdminPanel'));
+import TaskView from './pages/TaskView';
+import TeamFeedView from './pages/TeamFeedView';
+
+import ClientFileModal from './features/clients/ClientFileModal';
+import BatchEntry from './features/operations/BatchEntry';
+import TaskModal from './features/tasks/TaskModal';
+import CreateStoreModal from './features/clients/CreateStoreModal';
+import BulkTaskModal from './features/tasks/BulkTaskModal';
+import ExportModal from './features/finance/ExportModal';
+import GoalsSettingsModal from './features/finance/GoalsSettingsModal';
+import CloseMonthModal from './features/finance/CloseMonthModal';
+import StoreHistoryModal from './features/clients/StoreHistoryModal';
 
 import { useAvanteData } from './hooks/useAvanteData';
 import { normalizeMonthYear } from './utils/dateUtils';
