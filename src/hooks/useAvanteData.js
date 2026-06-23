@@ -8,12 +8,19 @@ import { toast } from 'react-hot-toast';
 import { getMonthBoundaries } from '../utils/dateUtils';
 
 /**
- * Hook Principal de Dados (Mantido exatamente como o seu original)
- * Escuta as Lojas em tempo real.
+ * Hook Principal de Dados
+ * Escuta as Lojas em tempo real e gere erros assíncronos.
  */
 export function useAvanteData(user) {
   const [stores, setStores] = useState([]);
   const [isDbLoading, setIsDbLoading] = useState(true);
+
+  // 1. NOVO: Estado para guardar o erro assíncrono
+  const [asyncError, setAsyncError] = useState(null);
+
+  if (asyncError) {
+    throw asyncError;
+  }
 
   useEffect(() => {
     if (!user) {
@@ -30,17 +37,36 @@ export function useAvanteData(user) {
       }, 
       (error) => {
         console.error("FALHA CRÍTICA NO FIRESTORE:", error);
-        toast.error(`Acesso negado: ${error.message}`);
+        toast.error(`Acesso negado ou falha de ligação: ${error.message}`);
         setIsDbLoading(false);
+        
+        if (error.code === 'permission-denied' || error.code === 'unavailable') {
+           setAsyncError(new Error("A ligação à base de dados falhou. Verifique a sua internet ou permissões."));
+        }
       }
     );
 
-    return () => unsub(); // Limpa a escuta se o usuário deslogar
+    return () => unsub();
   }, [user]);
 
   const updateStoreInCloud = useCallback(async (updatedStore) => {
     try {
       const safeStore = { ...updatedStore };
+
+      if (safeStore.taskLogs && safeStore.taskLogs.length > 50) {
+        safeStore.taskLogs = safeStore.taskLogs.slice(-50);
+      }
+
+      if (safeStore.checklists) {
+        const tarefasPendentes = safeStore.checklists.filter(t => !t.feita);
+        const tarefasConcluidas = safeStore.checklists.filter(t => t.feita);
+        
+        if (tarefasConcluidas.length > 30) {
+          const ultimasConcluidas = tarefasConcluidas.slice(-30);
+          safeStore.checklists = [...tarefasPendentes, ...ultimasConcluidas];
+        }
+      }
+
       Object.keys(safeStore).forEach(key => {
         if (safeStore[key] === undefined) {
           delete safeStore[key];
@@ -49,8 +75,8 @@ export function useAvanteData(user) {
 
       await setDoc(doc(db, "stores", safeStore.id.toString()), safeStore, { merge: true });
     } catch (e) {
-      console.error("Erro ao salvar:", e);
-      toast.error("Falha de sincronização com o banco.");
+      console.error("Erro ao guardar:", e);
+      toast.error("Falha ao sincronizar com o servidor. A sua ação não foi guardada.");
     }
   }, []);
 
@@ -61,18 +87,14 @@ export function useAvanteData(user) {
 /**
  * NOVA FUNÇÃO: Busca dados de uma coleção específica filtrando pelo mês.
  * Ideal para buscar "Tarefas" (tasks) ou "Histórico" (history).
- * * @param {string} collectionName - Nome da coleção no Firebase (ex: "tasks")
+ * @param {string} collectionName - Nome da coleção no Firebase (ex: "tasks")
  * @param {number} monthOffset - 0 (Mês atual), -1 (Mês anterior), etc.
  */
 export const fetchAppDataForMonth = async (collectionName, monthOffset = 0) => {
-  // 1. Calculamos as datas de início e fim do mês desejado
   const { startOfMonth, endOfMonth } = getMonthBoundaries(monthOffset);
 
-  // 2. Referenciamos a coleção no banco
   const colRef = collection(db, collectionName);
 
-  // 3. Montamos a Query: "Traga os documentos onde a data de criação esteja dentro deste mês"
-  // ATENÇÃO: Seu banco precisa ter um campo de data (ex: 'createdAt') salvo como Timestamp ou Date.
   const q = query(
     colRef,
     where("createdAt", ">=", startOfMonth),
@@ -88,6 +110,7 @@ export const fetchAppDataForMonth = async (collectionName, monthOffset = 0) => {
     return data;
   } catch (error) {
     console.error(`Erro ao buscar dados da coleção ${collectionName} para o mês:`, error);
-    return [];
+    toast.error("Não foi possível carregar os dados históricos. Tente novamente.");
+    return []; 
   }
 };

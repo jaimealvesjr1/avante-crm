@@ -1,27 +1,20 @@
 import { initializeApp } from "firebase/app";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyB1VkKVr9otSxz-oTNq4hTRcjYKo6j2i5k",
-  authDomain: "avante-crm.firebaseapp.com",
-  projectId: "avante-crm",
-  storageBucket: "avante-crm.firebasestorage.app",
-  messagingSenderId: "869884346734",
-  appId: "1:869884346734:web:3df6529418e094e155817f"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Inicializa o App Principal
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+export const db = getFirestore(app);
 
-// Inicializa o Firestore JÁ com o cache persistente ativado (Substitui o enableIndexedDbPersistence)
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-});
-
-// Inicializa o App Secundário (Usado para criar usuários sem deslogar o admin atual)
-const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+import { initializeApp as initializeSecondaryApp } from "firebase/app";
+const secondaryApp = initializeSecondaryApp(firebaseConfig, "Secondary");
 export const secondaryAuth = getAuth(secondaryApp);

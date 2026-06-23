@@ -3,7 +3,7 @@ import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Sa
 import { toast } from 'react-hot-toast';
 import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../../utils/taskEngine';
 
-export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus, onCopyTaskToBulk }) {
+export default function TaskModal({ store, onClose, updateStoreInCloud, stores, setStores, currentUserData, isManager, teamMembers, broadcastTaskFocus, onCopyTaskToBulk, sendGlobalNotification }) {
   const [newLog, setNewLog] = useState('');
   const [newChecklist, setNewChecklist] = useState('');
   const [newChecklistResp, setNewChecklistResp] = useState('');
@@ -12,11 +12,9 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [newTaskRecurrence, setNewTaskRecurrence] = useState('none');
   const [newTaskWeight, setNewTaskWeight] = useState('media');
 
-  // Estados para o Auto-completar (Sugestões)
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // Estados para Acesso da Conta
   const [acessoEmail, setAcessoEmail] = useState(store.acessoEmail || '');
   const [acessoSenha, setAcessoSenha] = useState(store.acessoSenha || '');
   const [showPassword, setShowPassword] = useState(false);
@@ -296,6 +294,11 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       updatedChecklists = result.updatedChecklists;
       updatedLogs = [...updatedLogs, result.newLog];
       toast.success('✅ Tarefa concluída!');
+      
+      if (sendGlobalNotification) {
+        sendGlobalNotification(`Concluiu a tarefa "${task.texto}" na loja ${store.store}.`, 'success');
+      }
+      
     } else {
       updatedChecklists = updatedChecklists.map(c => {
         if (c.id === id) {

@@ -9,6 +9,7 @@ import {
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, writeBatch, deleteField } from "firebase/firestore";
 import { Toaster, toast } from 'react-hot-toast';
+import { useAppStore } from './store/useAppStore';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 
@@ -22,8 +23,8 @@ const OperationalTable = lazy(() => import('./pages/OperationalTable'));
 const FinanceDashboard = lazy(() => import('./pages/FinanceDashboard'));
 const WarRoom = lazy(() => import('./pages/WarRoom'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
-import TaskView from './pages/TaskView';
-import TeamFeedView from './pages/TeamFeedView';
+const TaskView = lazy(() => import('./pages/TaskView'));
+const TeamFeedView = lazy(() => import('./pages/TeamFeedView'));
 
 import ClientFileModal from './features/clients/ClientFileModal';
 import BatchEntry from './features/operations/BatchEntry';
@@ -52,15 +53,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '2.9.7';
-  
-  const [showValues, setShowValues] = useState(() => {
-    return localStorage.getItem('avante_show_values') !== 'false';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('avante_show_values', showValues);
-  }, [showValues]);
+  const CURRENT_VERSION = '3.0.0';
 
   const safeFormatCurrency = (val) => showValues ? formatCurrency(val) : 'R$ •••••';
   const safeFormatNumber = (val) => showValues ? formatNumber(val) : '••••';
@@ -70,12 +63,10 @@ export default function App() {
   const [currentUserData, setCurrentUserData] = useState(null);
 
   const [realUserData, setRealUserData] = useState(null);
-  const [isSimulating, setIsSimulating] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
   
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome || user?.email?.split('@')[0] || 'Membro';
-  const [activeView, setActiveView] = useState('feed_equipe');
 
   const [globalGrowth, setGlobalGrowth] = useState(10);
   const [clientGrowthMap, setClientGrowthMap] = useState({});
@@ -99,19 +90,24 @@ export default function App() {
     return { gmv: totalGmv, progress };
   }, [stores, activeEvent]);
 
-  const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('avante_sync_search') || '');
   const [sortBy, setSortBy] = useState(() => localStorage.getItem('avante_sync_sort') || 'name');
   const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('avante_sync_status') || 'all');
   const [mktFilter, setMktFilter] = useState(() => localStorage.getItem('avante_sync_mkt') || 'all');
   const [respFilter, setRespFilter] = useState(() => localStorage.getItem('avante_sync_resp') || 'all');
 
+  const {
+    activeView, setActiveView,
+    isSimulating, setIsSimulating,
+    searchTerm, setSearchTerm,
+    showValues, toggleShowValues
+  } = useAppStore();
+
   useEffect(() => {
-    localStorage.setItem('avante_sync_search', searchTerm);
     localStorage.setItem('avante_sync_sort', sortBy);
     localStorage.setItem('avante_sync_status', statusFilter);
     localStorage.setItem('avante_sync_mkt', mktFilter);
     localStorage.setItem('avante_sync_resp', respFilter);
-  }, [searchTerm, sortBy, statusFilter, mktFilter, respFilter]);
+  }, [sortBy, statusFilter, mktFilter, respFilter]);
 
   useEffect(() => {
     const handleStorageChange = (e) => {
@@ -173,6 +169,27 @@ export default function App() {
   const [newNoteText, setNewNoteText] = useState('');
   
   const [isBatchMode, setIsBatchMode] = useState(false);
+
+  const lastNotificationId = useRef(null);
+
+  const sendGlobalNotification = async (message, type = 'info') => {
+    if (!user) return;
+    try {
+      // Usamos o nome de quem está logado para assinar a mensagem
+      const senderName = currentUserData?.nomeCompleto || currentUserData?.nome || user.email.split('@')[0];
+      
+      await setDoc(doc(db, "settings", "latest_notification"), {
+        id: Date.now().toString(), // ID único baseado no tempo
+        message: `${senderName}: ${message}`, // Ex: "Jaime: Cadastrou a loja B2X"
+        senderEmail: user.email,
+        type: type, // 'success', 'alert', ou 'info'
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Erro ao emitir notificação global", error);
+    }
+  };
+
   const [isCloseMonthModalOpen, setIsCloseMonthModalOpen] = useState(false);
 
   const [email, setEmail] = useState('');
@@ -334,7 +351,31 @@ export default function App() {
         setInternalTasks(docSnap.data().tasks);
       }
     });
-    return () => { unsubStores(); unsubSettings(); unsubEquipe(); unsubInternal(); };
+
+    const unsubNotifications = onSnapshot(doc(db, "settings", "latest_notification"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        
+        if (data.id && data.id !== lastNotificationId.current && data.senderEmail !== user.email) {
+          lastNotificationId.current = data.id; // Atualiza a memória
+          
+          if (data.type === 'success') {
+            toast.success(data.message, { id: data.id, duration: 5000 });
+          } else if (data.type === 'alert') {
+            toast(data.message, { icon: '🚨', id: data.id, duration: 6000 });
+          } else {
+            toast(data.message, { icon: '📢', id: data.id, duration: 5000 });
+          }
+        }
+      }
+    });
+    return () => { 
+      unsubStores(); 
+      unsubSettings(); 
+      unsubEquipe(); 
+      unsubInternal(); 
+      unsubNotifications();
+    };
   }, [user]);
 
   useEffect(() => {
@@ -386,15 +427,18 @@ export default function App() {
     if (action === 'schedule') {
       await setDoc(globalRef, { scheduledEvents: [...scheduledEvents, payload] }, { merge: true });
       toast.success("Evento agendado com sucesso!");
+      sendGlobalNotification(`🔥 ${payload.name} agendado!`, 'alert');
     } else if (action === 'start') {
       const updatedScheduled = scheduledEvents.filter(e => e.id !== payload.id);
       await setDoc(globalRef, { activeEvent: payload, scheduledEvents: updatedScheduled }, { merge: true });
       setActiveView('war_room');
       toast.success(`Evento ${payload.name} iniciado! War Room aberta.`);
+      sendGlobalNotification(`🔥 Iniciou o evento ${payload.name}! A War Room está aberta!`, 'alert');
     } else if (action === 'end') {
       await setDoc(globalRef, { activeEvent: deleteField() }, { merge: true });
       setActiveView('dashboard');
       toast.success("Evento encerrado! War Room fechada.");
+      sendGlobalNotification(`${payload.name} encerrado!`, 'alert');
     } else if (action === 'delete') {
       const updatedScheduled = scheduledEvents.filter(e => e.id !== payload.id);
       await setDoc(globalRef, { scheduledEvents: updatedScheduled }, { merge: true });
@@ -587,6 +631,7 @@ export default function App() {
     
     if (existingStore && !expandedClients.includes(client)) toggleClientExpansion(client);
     toast.success(`Cadastro de ${store} realizado com sucesso!`);
+    sendGlobalNotification(`Cadastrou uma nova loja (${store}) para o cliente ${client}.`, 'success');
   };
 
   const handleSaveBulkTasks = (storeIds, taskData) => {
@@ -625,6 +670,7 @@ export default function App() {
     
     setStores(batchStores);
     toast.success(`Tarefa replicada em ${storeIds.length} loja(s)!`);
+    sendGlobalNotification(`Delegou uma nova tarefa em massa para ${storeIds.length} lojas.`, 'info');
   };
 
   const handleSaveIndividualEntry = async (storeId, dayStr, cumRev, cumAds, cumOrd, cumUni) => {
@@ -951,7 +997,7 @@ export default function App() {
       // 6. Envia o pacote de atualizações de forma atômica para o Firebase Firestore
       await batch.commit();
       toast.success("Mês fechado com sucesso! Relatórios baixados, histórico atualizado e Faturas geradas.", { id: 'close-month' });
-      
+      sendGlobalNotification(`Acaba de fechar o mês de ${padronizado} com sucesso! 🏆`, 'success');
     } catch (error) {
       console.error(error);
       toast.error("Erro fatal ao fechar o mês: " + error.message, { id: 'close-month' });
@@ -1591,7 +1637,7 @@ export default function App() {
               </div>
               
               <div className="flex items-center gap-0.5 shrink-0">
-                <button onClick={() => setShowValues(!showValues)} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-full text-gray-400 hover:text-white transition-all shadow-sm" title={showValues ? "Ocultar Valores Financeiros" : "Mostrar Valores Financeiros"}>
+                <button onClick={toggleShowValues} className="p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-full text-gray-400 hover:text-white transition-all shadow-sm" title={showValues ? "Ocultar Valores Financeiros" : "Mostrar Valores Financeiros"}>
                   {showValues ? <Eye size={16} /> : <EyeOff size={16} className="text-amber-400" />}
                 </button>
                 <button onClick={() => setPasswordModalOpen(true)} className="hidden sm:block p-2 bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 rounded-full text-gray-400 hover:text-white transition-all shadow-sm" title="Mudar Senha">
@@ -1631,7 +1677,6 @@ export default function App() {
                   </select>
                 </div>
 
-                {/* Filtros em Trilho Horizontal Estrito */}
                 <div className="flex flex-nowrap items-center gap-2 bg-black/20 p-1 rounded-xl border border-white/10 shadow-inner shrink-0">
                   <div className="flex flex-nowrap gap-1 border-r border-white/10 pr-2 pl-1">
                       {['all', 'danger', 'warning', 'success'].map(f => (
@@ -1645,7 +1690,6 @@ export default function App() {
                     <option value="all" className="bg-gray-900 text-white">🛍️ CANAIS</option>
                     {uniqueMkts.map(m => <option key={m} value={m} className="bg-gray-900 text-white">{m}</option>)}
                   </select>
-
                 </div>
                 
                 <div className="flex gap-2 items-center shrink-0">
@@ -1668,138 +1712,148 @@ export default function App() {
             </div>
           )}
 
-          {activeView === 'feed_equipe' && (
-            <TeamFeedView 
-              currentUserData={currentUserData} 
-              user={user} 
-              stores={stores.filter(store => !store.arquivada)}
-              teamMembers={teamMembers}
-              searchTerm={searchTerm}
-              openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
-              openBulkTaskModal={() => setBulkTaskModalOpen(true)}
-              updateStoreInCloud={updateStoreInCloud}
-              broadcastTaskFocus={broadcastTaskFocus}
-              scheduledEvents={scheduledEvents}
-              activeEvent={activeEvent}
-              formatCurrency={safeFormatCurrency}
-              scheduledVisits={scheduledVisits}
-              handleVisitAction={handleVisitAction}
-              canEdit={canEdit}
-            />
-          )}
+          <Suspense fallback={
+            <div className="flex flex-col items-center justify-center py-32 text-indigo-400">
+              <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
+              <p className="font-bold text-lg animate-pulse">Carregando dados...</p>
+            </div>
+          }>
 
-          {activeView === 'dashboard' && (
-            <ExecutiveDashboard 
-              dashboardData={dashboardData} 
-              formatCurrency={safeFormatCurrency} 
-              formatNumber={safeFormatNumber}
-              pieData={pieData}
-              roasData={roasData} 
-              COLORS={COLORS} 
-              currentDay={currentDay} 
-              daysInMonth={daysInMonth} 
-              canEdit={canEdit}
-              openGoalsModal={() => setIsGoalsModalOpen(true)}
-              showValues={showValues}
-            />
-          )}
-          
-          {activeView === 'admin' && canEdit && (
-            <AdminPanel 
-              handleCreateUser={handleCreateUser} 
-              newUserEmail={newUserEmail} setNewUserEmail={setNewUserEmail} 
-              newUserPassword={newUserPassword} setNewUserPassword={setNewUserPassword} 
-              newUserName={newUserName} setNewUserName={setNewUserName}
-              teamMembers={teamMembers}
-              handleUpdateUser={handleUpdateUser}
-              handleToggleRole={handleToggleRole}
-              handleDeleteUser={handleDeleteUser}
-              closeMonth={closeMonth}
-              startSimulation={startSimulation}
-              isSimulating={isSimulating}
-            />
-          )}
+            {activeView === 'feed_equipe' && (
+              <TeamFeedView 
+                currentUserData={currentUserData} 
+                user={user} 
+                stores={stores.filter(store => !store.arquivada)}
+                teamMembers={teamMembers}
+                searchTerm={searchTerm}
+                openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
+                openBulkTaskModal={() => setBulkTaskModalOpen(true)}
+                updateStoreInCloud={updateStoreInCloud}
+                broadcastTaskFocus={broadcastTaskFocus}
+                scheduledEvents={scheduledEvents}
+                activeEvent={activeEvent}
+                formatCurrency={safeFormatCurrency}
+                scheduledVisits={scheduledVisits}
+                handleVisitAction={handleVisitAction}
+                canEdit={canEdit}
+              />
+            )}
 
-          {activeView === 'operacional' && (
-            <OperationalTable 
-              canEdit={canEdit} 
-              dashboardData={dashboardData} 
-              expandedClients={expandedClients} 
-              toggleClientExpansion={toggleClientExpansion}
-              formatCurrency={safeFormatCurrency}
-              formatNumber={safeFormatNumber}
-              showValues={showValues} 
-              currentDay={currentDay} 
-              clientGrowthMap={clientGrowthMap}
-              updateGlobalSettings={updateGlobalSettings}
-              addNewStoreToClient={addNewStoreToClient}
-              deleteStore={deleteStore} 
-              deleteClient={deleteClient}
-              startEditingStore={startEditingStore}
-              editingStoreId={editingStoreId} 
-              setEditingStoreId={setEditingStoreId} 
-              storeEditData={storeEditData} 
-              setStoreEditData={setStoreEditData} 
-              saveStoreEdit={saveStoreEdit}
-              handleStoreChange={handleStoreChange}
-              openHistoryModal={openHistoryModal}
-              generateStoreWhatsAppLink={generateStoreWhatsAppLink}
-              generateClientWhatsAppLink={generateClientWhatsAppLink}
-              openClientFile={openClientFile}
-              openTaskModal={(storeRow) => { 
-                setActiveTaskStoreId(storeRow.id); 
-                setTaskModalOpen(true); 
-              }}
-            />
-          )}
+            {activeView === 'dashboard' && (
+              <ExecutiveDashboard 
+                dashboardData={dashboardData} 
+                formatCurrency={safeFormatCurrency} 
+                formatNumber={safeFormatNumber}
+                pieData={pieData}
+                roasData={roasData} 
+                COLORS={COLORS} 
+                currentDay={currentDay} 
+                daysInMonth={daysInMonth} 
+                canEdit={canEdit}
+                openGoalsModal={() => setIsGoalsModalOpen(true)}
+                showValues={showValues}
+              />
+            )}
+            
+            {activeView === 'admin' && canEdit && (
+              <AdminPanel 
+                handleCreateUser={handleCreateUser} 
+                newUserEmail={newUserEmail} setNewUserEmail={setNewUserEmail} 
+                newUserPassword={newUserPassword} setNewUserPassword={setNewUserPassword} 
+                newUserName={newUserName} setNewUserName={setNewUserName}
+                teamMembers={teamMembers}
+                handleUpdateUser={handleUpdateUser}
+                handleToggleRole={handleToggleRole}
+                handleDeleteUser={handleDeleteUser}
+                closeMonth={closeMonth}
+                startSimulation={startSimulation}
+                isSimulating={isSimulating}
+              />
+            )}
 
-          {activeView === 'financeiro' && (
-            <FinanceDashboard
-              db={db} 
-              dashboardData={dashboardData} 
-              formatCurrency={safeFormatCurrency}
-              canEdit={canEdit}
-              teamMembers={teamMembers}
-            />
-          )}
+            {activeView === 'operacional' && (
+              <OperationalTable 
+                canEdit={canEdit} 
+                dashboardData={dashboardData} 
+                expandedClients={expandedClients} 
+                toggleClientExpansion={toggleClientExpansion}
+                formatCurrency={safeFormatCurrency}
+                formatNumber={safeFormatNumber}
+                showValues={showValues} 
+                currentDay={currentDay} 
+                clientGrowthMap={clientGrowthMap}
+                updateGlobalSettings={updateGlobalSettings}
+                addNewStoreToClient={addNewStoreToClient}
+                deleteStore={deleteStore} 
+                deleteClient={deleteClient}
+                startEditingStore={startEditingStore}
+                editingStoreId={editingStoreId} 
+                setEditingStoreId={setEditingStoreId} 
+                storeEditData={storeEditData} 
+                setStoreEditData={setStoreEditData} 
+                saveStoreEdit={saveStoreEdit}
+                handleStoreChange={handleStoreChange}
+                openHistoryModal={openHistoryModal}
+                generateStoreWhatsAppLink={generateStoreWhatsAppLink}
+                generateClientWhatsAppLink={generateClientWhatsAppLink}
+                openClientFile={openClientFile}
+                openTaskModal={(storeRow) => { 
+                  setActiveTaskStoreId(storeRow.id); 
+                  setTaskModalOpen(true); 
+                }}
+              />
+            )}
 
-          {activeView === 'war_room' && activeEvent && canAccessWarRoom && (
-            <WarRoom 
-              stores={dashboardData.flatFilteredStores} 
-              setStores={setStores}
-              updateStoreInCloud={updateStoreInCloud}
-              formatCurrency={safeFormatCurrency}
-              formatNumber={safeFormatNumber}
-              canEdit={canEdit}
-              activeEvent={activeEvent}
-              onEndEvent={() => handleEventAction('end')}
-              canAccessWarRoom={canAccessWarRoom}
-              sortBy={sortBy}
-              currentDay={currentDay}
-            />
-          )}
+            {activeView === 'financeiro' && (
+              <FinanceDashboard
+                db={db} 
+                dashboardData={dashboardData} 
+                formatCurrency={safeFormatCurrency}
+                canEdit={canEdit}
+                teamMembers={teamMembers}
+              />
+            )}
 
-          {activeView === 'rotinas' && (
-            <TaskView 
-              stores={
-                isVisitante 
-                  ? dashboardData.flatFilteredStores.map(store => ({
-                      ...store,
-                      checklists: (store.checklists || []).filter(task => task.responsavel === myName)
-                    })).filter(store => store.checklists?.length > 0)
-                  : dashboardData.flatFilteredStores
-              } 
-              openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
-              openBulkTaskModal={() => setBulkTaskModalOpen(true)}
-              currentUserData={currentUserData}
-              user={user}
-              updateStoreInCloud={updateStoreInCloud}
-              setStores={setStores}
-              openClientFile={openClientFile}
-              teamMembers={teamMembers}
-              broadcastTaskFocus={broadcastTaskFocus}
-            />
-          )}
+            {activeView === 'war_room' && activeEvent && canAccessWarRoom && (
+              <WarRoom 
+                stores={dashboardData.flatFilteredStores} 
+                setStores={setStores}
+                updateStoreInCloud={updateStoreInCloud}
+                formatCurrency={safeFormatCurrency}
+                formatNumber={safeFormatNumber}
+                canEdit={canEdit}
+                activeEvent={activeEvent}
+                onEndEvent={() => handleEventAction('end')}
+                canAccessWarRoom={canAccessWarRoom}
+                sortBy={sortBy}
+                currentDay={currentDay}
+              />
+            )}
+
+            {activeView === 'rotinas' && (
+              <TaskView 
+                stores={
+                  isVisitante 
+                    ? dashboardData.flatFilteredStores.map(store => ({
+                        ...store,
+                        checklists: (store.checklists || []).filter(task => task.responsavel === myName)
+                      })).filter(store => store.checklists?.length > 0)
+                    : dashboardData.flatFilteredStores
+                } 
+                openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
+                openBulkTaskModal={() => setBulkTaskModalOpen(true)}
+                currentUserData={currentUserData}
+                user={user}
+                updateStoreInCloud={updateStoreInCloud}
+                setStores={setStores}
+                openClientFile={openClientFile}
+                teamMembers={teamMembers}
+                broadcastTaskFocus={broadcastTaskFocus}
+                sendGlobalNotification={sendGlobalNotification}
+              />
+            )}
+            
+          </Suspense> 
           <br></br>
         </ErrorBoundary>
       </main>
@@ -1886,6 +1940,7 @@ export default function App() {
           isManager={canEdit}
           teamMembers={teamMembers}
           broadcastTaskFocus={broadcastTaskFocus}
+          sendGlobalNotification={sendGlobalNotification}
           onCopyTaskToBulk={(task) => {
               setBulkTaskInitialData(task);
               setBulkTaskModalOpen(true);
