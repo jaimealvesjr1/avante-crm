@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package, FileText } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package, FileText, Eye, EyeOff, Lock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../utils/taskEngine';
 
@@ -15,6 +15,12 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   // Estados para o Auto-completar (Sugestões)
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Estados para Acesso da Conta
+  const [acessoEmail, setAcessoEmail] = useState(store.acessoEmail || '');
+  const [acessoSenha, setAcessoSenha] = useState(store.acessoSenha || '');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSavingAcesso, setIsSavingAcesso] = useState(false);
 
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome;
   const isVisitante = currentUserData?.role === 'Visitante';
@@ -218,6 +224,20 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     setStores(stores.map(s => s.id === updatedDestStore.id ? updatedDestStore : s));
     toast.success(`Nota duplicada para ${destinationStore.store}!`);
     setIsDuplicating(false); setDuplicateTargetId('');
+  };
+
+  // --- Funções de Acesso da Conta ---
+  const saveAcesso = () => {
+    setIsSavingAcesso(true);
+    const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `🔐 Credenciais de acesso atualizadas`, author: username };
+    saveChanges({ ...store, acessoEmail, acessoSenha, taskLogs: [...(store.taskLogs || []), log] });
+    setTimeout(() => { setIsSavingAcesso(false); toast.success('Credenciais salvas com sucesso!'); }, 500);
+  };
+
+  const handleCopy = (text, type) => {
+    if (!text) return toast.error(`Nenhum ${type.toLowerCase()} para copiar.`);
+    navigator.clipboard.writeText(text);
+    toast.success(`${type} copiado para a área de transferência!`);
   };
 
   const handleStartTask = (taskId, taskText) => {
@@ -603,6 +623,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               </div>
               
               <div className="flex flex-col gap-3 bg-black/20 p-4 rounded-2xl border border-white/5 shadow-inner">
+                {/* CAMPO DE AUTOCOMPLETAR IMPLEMENTADO AQUI */}
                 <div className="flex flex-col lg:flex-row gap-2 relative z-20">
                   <div className="relative flex-1">
                     <input 
@@ -755,6 +776,55 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
           </div>
           
           <div className="p-5 flex-1 flex flex-col gap-5 overflow-y-auto custom-scrollbar">
+
+            {/* ACESSO DA CONTA */}
+            <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/10 shadow-sm shrink-0">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-xs font-bold text-blue-400 uppercase flex items-center gap-2">
+                  <Lock size={14} /> Acesso da Conta
+                </h4>
+              </div>
+              
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={acessoEmail} 
+                    onChange={(e) => setAcessoEmail(e.target.value)} 
+                    placeholder="Login / E-mail"
+                    className="flex-1 bg-black/20 border border-white/10 rounded-xl p-2.5 text-xs text-gray-300 outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <button onClick={() => handleCopy(acessoEmail, 'Login')} className="p-2.5 bg-black/20 border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-colors" title="Copiar Login">
+                    <Copy size={14}/>
+                  </button>
+                </div>
+                
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input 
+                      type={showPassword ? "text" : "password"} 
+                      value={acessoSenha} 
+                      onChange={(e) => setAcessoSenha(e.target.value)} 
+                      placeholder="Senha de Acesso"
+                      className="w-full bg-black/20 border border-white/10 rounded-xl p-2.5 pr-10 text-xs text-gray-300 outline-none focus:border-blue-500 transition-colors"
+                    />
+                    <button 
+                      onClick={() => setShowPassword(!showPassword)} 
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  <button onClick={() => handleCopy(acessoSenha, 'Senha')} className="p-2.5 bg-black/20 border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-colors" title="Copiar Senha">
+                    <Copy size={14}/>
+                  </button>
+                </div>
+
+                <button onClick={saveAcesso} disabled={isSavingAcesso} className="w-full bg-blue-500/20 border border-blue-500/30 hover:bg-blue-500/30 disabled:opacity-50 text-blue-400 font-bold py-2 rounded-xl text-xs flex justify-center items-center gap-2 shadow-sm transition-all mt-1">
+                  {isSavingAcesso ? <Loader2 size={14} className="animate-spin" /> : <><Save size={14} /> Salvar Credenciais</>}
+                </button>
+              </div>
+            </div>
             
             {/* CATÁLOGO DE PRODUTOS (CARROSSEL COMPACTO) */}
             {clientProducts.length > 0 && (
@@ -839,7 +909,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
         </div>
       </div>
 
-      {/* GAVETA LATERAL: DETALHES DO PRODUTO (ATUALIZADA) */}
+      {/* GAVETA LATERAL: DETALHES DO PRODUTO */}
       {selectedProduct && (
           <>
             {/* Overlay para foco */}

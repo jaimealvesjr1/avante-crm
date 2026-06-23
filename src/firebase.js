@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+// Importações atualizadas para o novo padrão de cache offline do Firestore
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -11,17 +12,17 @@ const firebaseConfig = {
   appId: "1:869884346734:web:3df6529418e094e155817f"
 };
 
+// Inicializa o App Principal
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
 
-enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code == 'failed-precondition') {
-    console.warn("Múltiplas abas abertas, o cache funciona em apenas uma.");
-  } else if (err.code == 'unimplemented') {
-    console.warn("O navegador atual não suporta cache offline.");
-  }
+// Inicializa o Firestore JÁ com o cache persistente ativado (Substitui o enableIndexedDbPersistence)
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
 });
 
+// Inicializa o App Secundário (Usado para criar usuários sem deslogar o admin atual)
 const secondaryApp = initializeApp(firebaseConfig, "Secondary");
 export const secondaryAuth = getAuth(secondaryApp);
