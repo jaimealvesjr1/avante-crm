@@ -34,9 +34,8 @@ export default function TeamFeedView({
     
     const [expandedUserXP, setExpandedUserXP] = useState(null);
     const [showPausedTasks, setShowPausedTasks] = useState(false);
-
-    // NOVO ESTADO: Controla o filtro de tempo do Ranking (Padrão: Esta Semana)
     const [rankingPeriod, setRankingPeriod] = useState('semana');
+    const [animatingTasks, setAnimatingTasks] = useState([]);
 
     const minhasTarefasPausadas = useMemo(() => {
         const pausadas = [];
@@ -106,6 +105,17 @@ export default function TeamFeedView({
         if (!task) return;
 
         const isPlaying = task.executingStatus === 'playing';
+
+        if (!isPlaying) {
+            const runningTask = stores
+                .flatMap(s => s.checklists || [])
+                .find(t => t.executingStatus === 'playing' && t.startedBy === myName && !t.feita);
+            
+            if (runningTask) {
+                toast.error("⚠️ Operação bloqueada! Você já tem uma tarefa em andamento. Pause ou conclua a anterior primeiro.");
+                return;
+            }
+        }
         
         const result = isPlaying 
             ? processTaskPause(store, task, myName)
@@ -120,7 +130,7 @@ export default function TeamFeedView({
         
         if (broadcastTaskFocus) {
             const statusMsg = isPlaying ? `⏸️ Pausada: ${task.texto} | ${store.store}` : `▶️ Executando: ${task.texto} | ${store.store}`;
-            broadcastTaskFocus(statusMsg, 'set', store.id);
+            broadcastTaskFocus(statusMsg, 'set', store.id, task.id); // <-- Enviando o ID!
         }
         
         toast.success(isPlaying ? "Tarefa pausada." : "Tarefa iniciada!");
@@ -144,29 +154,36 @@ export default function TeamFeedView({
             return;
         }
 
-        if (!window.confirm(`Deseja concluir a tarefa: "${task.texto}"?`)) return;
+        setAnimatingTasks(prev => [...prev, task.id]);
 
-        try {
-            const { updatedChecklists, newLog } = processTaskCompletion(store, task, myName);
-            const nextAccess = calculateNextAccess(updatedChecklists);
+        setTimeout(() => {
+            try {
+                const { updatedChecklists, newLog } = processTaskCompletion(store, task, myName);
+                const nextAccess = calculateNextAccess(updatedChecklists);
 
-            updateStoreInCloud({ 
-                ...store, 
-                checklists: updatedChecklists,
-                taskLogs: [...(store.taskLogs || []), newLog],
-                dataProximoAcesso: nextAccess || store.dataProximoAcesso || '',
-                dataUltimoAcesso: new Date().toISOString()
-            });
+                updateStoreInCloud({ 
+                    ...store, 
+                    checklists: updatedChecklists,
+                    taskLogs: [...(store.taskLogs || []), newLog],
+                    dataProximoAcesso: nextAccess || store.dataProximoAcesso || '',
+                    dataUltimoAcesso: new Date().toISOString()
+                });
 
-            if (broadcastTaskFocus && userName === myName) {
-                broadcastTaskFocus('', 'clear', store.id);
+                if (broadcastTaskFocus && userName === myName) {
+                    broadcastTaskFocus('', 'clear', store.id);
+                }
+                
+                toast.success("✅ Tarefa finalizada e XP computado!");
+                
+                // 3. Limpamos a memória da animação
+                setAnimatingTasks(prev => prev.filter(id => id !== task.id));
+                
+            } catch (error) {
+                console.error("Erro ao concluir a tarefa pelo radar:", error);
+                toast.error("Ocorreu um erro ao atualizar a tarefa.");
+                setAnimatingTasks(prev => prev.filter(id => id !== task.id)); // Limpa em caso de erro também
             }
-            
-            toast.success("Tarefa finalizada e XP computado!");
-        } catch (error) {
-            console.error("Erro ao concluir a tarefa pelo radar:", error);
-            toast.error("Ocorreu um erro ao atualizar a tarefa. Verifique o console.");
-        }
+        }, 600);
     };
 
     const handleDeleteSpecificTask = async (e, storeId, taskId, isRoutine) => {
@@ -237,24 +254,21 @@ export default function TeamFeedView({
         if (targetStore && openTaskModal) openTaskModal(targetStore);
     };
 
-    // === NOVO SISTEMA DE XP COM FILTRO DINÂMICO (Timestamps Seguros) ===
     const rankingEquipe = useMemo(() => {
         const stats = {};
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         
-        // Define as barreiras de tempo seguras (Início e Fim do período selecionado em Milissegundos)
         let startMs, endMs;
         if (rankingPeriod === 'hoje') {
             startMs = today.getTime();
             endMs = startMs + 86399999;
         } else if (rankingPeriod === 'semana') {
-            const day = today.getDay(); // 0 (Dom) até 6 (Sáb)
-            const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Pega a Segunda-feira
+            const day = today.getDay(); 
+            const diff = today.getDate() - day + (day === 0 ? -6 : 1); 
             const monday = new Date(today.getFullYear(), today.getMonth(), diff);
             startMs = monday.getTime();
-            endMs = startMs + (7 * 86400000) - 1; // Domingo às 23:59:59
-        } else { // mes
+            endMs = startMs + (7 * 86400000) - 1;         } else { 
             const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
             startMs = firstDay.getTime();
             const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -267,7 +281,6 @@ export default function TeamFeedView({
             alta:  { totalTime: 0, count: 0, avg: 60 * 60000 }
         };
 
-        // 1. Calcula a Média Global (independente de período, para ter base de comparação)
         stores.forEach(store => {
             (store.checklists || []).forEach(task => {
                 if (task.feita && task.completedAtFull && task.startedAt) {
@@ -292,11 +305,9 @@ export default function TeamFeedView({
             }
         });
 
-        // 2. Pontua as tarefas se elas aconteceram dentro do Período Selecionado
         stores.forEach(store => {
             (store.checklists || []).forEach(task => {
                 
-                // XP POR CRIAÇÃO (Se criou dentro do período)
                 if (task.id && task.criadoPor && task.recorrencia !== 'ghost') {
                     const timestampCriacao = Math.floor(task.id);
                     if (timestampCriacao > 1600000000000 && timestampCriacao >= startMs && timestampCriacao <= endMs) { 
@@ -314,13 +325,11 @@ export default function TeamFeedView({
                     }
                 }
 
-                // XP POR CONCLUSÃO (Se completou dentro do período)
                 if (task.feita) {
                     let completedTimestamp = 0;
                     if (task.completedAtFull) {
                         completedTimestamp = new Date(task.completedAtFull).getTime();
                     } else if (task.completedAt) {
-                        // Fallback para tarefas muito antigas que só salvaram YYYY-MM-DD
                         completedTimestamp = new Date(task.completedAt + "T12:00:00").getTime();
                     }
 
@@ -336,19 +345,16 @@ export default function TeamFeedView({
                         let earnedPoints = 0;
                         let detailsArr = [];
 
-                        // Base por dificuldade
                         if (weight === 'baixa') { earnedPoints += 10; detailsArr.push('Baixa (+10)'); }
                         else if (weight === 'media') { earnedPoints += 20; detailsArr.push('Média (+20)'); }
                         else if (weight === 'alta') { earnedPoints += 30; detailsArr.push('Alta (+30)'); }
 
-                        // Prazos (Verificamos convertendo a string de prazo com a data de conclusão real)
                         if (task.data) {
                             const dataConclusaoLocal = new Date(completedTimestamp - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
                             if (task.data >= dataConclusaoLocal) { earnedPoints += 5; detailsArr.push('No Prazo (+5)'); }
                             else { earnedPoints -= 10; detailsArr.push('Atrasada (-10)'); }
                         }
 
-                        // Velocidade vs Média
                         let taskDuration = 0;
                         if (task.accumulatedTimeMs) {
                             taskDuration = task.accumulatedTimeMs;
@@ -383,17 +389,15 @@ export default function TeamFeedView({
             });
         });
 
-        // 3. Monta o Array Final
         return Object.values(stats).map(r => {
             const avgBaixa = r.times.baixa.c > 0 ? Math.round(r.times.baixa.t / r.times.baixa.c / 60000) : 0;
             const avgMedia = r.times.media.c > 0 ? Math.round(r.times.media.t / r.times.media.c / 60000) : 0;
             const avgAlta = r.times.alta.c > 0 ? Math.round(r.times.alta.t / r.times.alta.c / 60000) : 0;
             
-            // Ordena o extrato do mais recente para o mais antigo (dentro da timeline selecionada)
             r.history.sort((a, b) => b.timestamp - a.timestamp);
             
             return { ...r, avgBaixa, avgMedia, avgAlta };
-        }).sort((a, b) => b.points - a.points); // Ordena quem tem mais pontos primeiro
+        }).sort((a, b) => b.points - a.points); 
 
     }, [stores, rankingPeriod]);
 
@@ -635,18 +639,18 @@ export default function TeamFeedView({
                                                 >
                                                     {item.executingStatus === 'playing' ? <Pause size={14} /> : <Play size={14} />}
                                                 </button>
-                                            )}
+                                                )}
 
-                                            {isAdmin && (
-                                                <button 
-                                                    onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, isRoutine)}
-                                                    className="text-gray-400 hover:text-red-400 bg-black/60 hover:bg-red-500/20 p-1 rounded-md border border-white/10 hover:border-red-500/30 transition-colors"
-                                                    title="Forçar exclusão desta tarefa"
-                                                >
-                                                    <X size={14} />
-                                                </button>
-                                            )}
-                                        </div>
+                                                {isAdmin && (
+                                                    <button 
+                                                        onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, isRoutine)}
+                                                        className="text-gray-400 hover:text-red-400 bg-black/60 hover:bg-red-500/20 p-1 rounded-md border border-white/10 hover:border-red-500/30 transition-colors"
+                                                        title="Forçar exclusão desta tarefa"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
 
                                             {item.isBeingWorkedOn && (
                                                 <div className="absolute top-3 right-2 flex h-3 w-3">
@@ -989,7 +993,13 @@ export default function TeamFeedView({
                                                         )}
                                                     </div>
                                                 </div>
-                                                <p className="text-xs text-gray-300 mt-1 font-medium leading-relaxed">{data.texto}</p>
+                                                <p className={`text-xs mt-1 font-medium leading-relaxed transition-all duration-300 ${
+                                                    (data.taskId && animatingTasks.includes(data.taskId)) 
+                                                        ? 'text-gray-500 line-through opacity-60' 
+                                                        : 'text-gray-300'
+                                                }`}>
+                                                    {data.texto}
+                                                </p>
                                             </div>
                                         </div>
                                     );

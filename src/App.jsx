@@ -53,7 +53,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.0.0';
+  const CURRENT_VERSION = '3.0.1';
 
   const safeFormatCurrency = (val) => showValues ? formatCurrency(val) : 'R$ •••••';
   const safeFormatNumber = (val) => showValues ? formatNumber(val) : '••••';
@@ -1448,7 +1448,7 @@ export default function App() {
 
   const activeStore = useMemo(() => stores.find(s => s.id === activeStoreId), [stores, activeStoreId]);
 
-  const broadcastTaskFocus = async (taskText, action = 'set', storeId = null) => {
+  const broadcastTaskFocus = async (taskText, action = 'set', storeId = null, taskId = null) => {
     if (!myName) return;
     const updatedStatus = {};
     
@@ -1458,6 +1458,7 @@ export default function App() {
       updatedStatus[myName] = { 
         texto: taskText, 
         storeId: storeId,
+        taskId: taskId, // <-- NOVO: Guardamos o ID exato da tarefa!
         timestamp: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}) 
       };
     }

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, User, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package, FileText, Eye, EyeOff, Lock } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package, FileText, Eye, EyeOff, Lock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../../utils/taskEngine';
 
@@ -28,30 +28,20 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     return isAdmin || task.responsavel === myName || task.criadoPor === myName;
   };
 
-  const [nextDate, setNextDate] = useState(store.dataProximoAcesso ? store.dataProximoAcesso.split('T')[0] : '');
-  const [storeResp, setStoreResp] = useState(store.responsavel || '');
   const [fixedNotes, setFixedNotes] = useState(store.notasFixas || '');
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [duplicateTargetId, setDuplicateTargetId] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
-  const [isScheduling, setIsScheduling] = useState(false);
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editTaskData, setEditTaskData] = useState({});
   const [selectedProduct, setSelectedProduct] = useState(null); 
-
-  const [dailyGMV, setDailyGMV] = useState('');
-  const [dailyAds, setDailyAds] = useState('');
-  const [dailyOrders, setDailyOrders] = useState('');
-  const [dailyUnits, setDailyUnits] = useState('');
-  const [entryDay, setEntryDay] = useState(new Date().getDate());
-  const [isSavingDaily, setIsSavingDaily] = useState(false);
-  const [pendingStartInfo, setPendingStartInfo] = useState(null);
+  
+  const [animatingTasks, setAnimatingTasks] = useState([]);
 
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
 
-  // Cria um banco de dados único com o texto de TODAS as tarefas já criadas na agência
   const allUniqueTasks = useMemo(() => {
     const taskSet = new Set();
     stores.forEach(s => {
@@ -65,24 +55,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     });
     return Array.from(taskSet);
   }, [stores]);
-
-  const getInitials = (name) => {
-    if (!name) return '?';
-    const parts = name.trim().split(' ');
-    if (parts.length > 1) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    return name.substring(0, 2).toUpperCase();
-  };
-
-  const getAvatarColor = (name) => {
-    if (!name) return 'from-gray-600 to-gray-700';
-    const colors = [
-      'from-indigo-500 to-purple-600', 'from-blue-500 to-cyan-600', 'from-emerald-500 to-teal-600',
-      'from-rose-500 to-orange-600', 'from-pink-500 to-rose-600', 'from-amber-500 to-orange-500'
-    ];
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return colors[Math.abs(hash) % colors.length];
-  };
 
   const saveChanges = (updatedStore) => {
     updateStoreInCloud(updatedStore);
@@ -104,7 +76,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     }
   };
 
-  // Manipula a digitação e aciona as sugestões
   const handleChecklistChange = (e) => {
     const val = e.target.value;
     setNewChecklist(val);
@@ -113,7 +84,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       const filtered = allUniqueTasks.filter(t => 
         t.toLowerCase().includes(val.toLowerCase()) && t.toLowerCase() !== val.toLowerCase()
       );
-      setSuggestions(filtered.slice(0, 6)); // Mostra no máximo as top 6
+      setSuggestions(filtered.slice(0, 6)); 
       setShowSuggestions(filtered.length > 0);
     } else {
       setShowSuggestions(false);
@@ -224,7 +195,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     setIsDuplicating(false); setDuplicateTargetId('');
   };
 
-  // --- Funções de Acesso da Conta ---
   const saveAcesso = () => {
     setIsSavingAcesso(true);
     const log = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `🔐 Credenciais de acesso atualizadas`, author: username };
@@ -239,19 +209,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   };
 
   const handleStartTask = (taskId, taskText) => {
-    const runningTask = stores
-      .flatMap(s => (s.checklists || []).map(t => ({ ...t, storeObject: s })))
-      .find(t => t.executingStatus === 'playing' && t.startedBy === username && !t.feita);
-
-    if (runningTask) {
-      setPendingStartInfo({ currentTaskId: taskId, currentTaskText: taskText, runningTask });
-      return;
-    }
-
-    executeStart(taskId, taskText);
-  };
-
-  const executeStart = (taskId, taskText) => {
     const task = store.checklists?.find(t => t.id === taskId);
     if(!task) return;
 
@@ -318,67 +275,16 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     saveChanges({ ...store, checklists: updatedChecklists, taskLogs: updatedLogs, dataUltimoAcesso: new Date().toISOString(), dataProximoAcesso: finalNextAccess });
   };
 
-  const resolveConflictAndStart = async (action) => {
-    if (!pendingStartInfo) return;
-    const { currentTaskId, currentTaskText, runningTask } = pendingStartInfo;
-
-    if (store.id !== runningTask.storeObject.id) {
-      const oldStore = stores.find(s => s.id === runningTask.storeObject.id);
-      if (oldStore) {
-        const oldTask = oldStore.checklists.find(t => t.id === runningTask.id);
-        
-        const result = action === 'complete' 
-          ? processTaskCompletion(oldStore, oldTask, username)
-          : processTaskPause(oldStore, oldTask, username);
-
-        const newNextAccess = calculateNextAccess(result.updatedChecklists);
-
-        const finalOldStore = { 
-          ...oldStore, 
-          checklists: result.updatedChecklists, 
-          taskLogs: [...(oldStore.taskLogs || []), result.newLog], 
-          dataUltimoAcesso: new Date().toISOString(),
-          dataProximoAcesso: newNextAccess || oldStore.dataProximoAcesso || ''
-        };
-        updateStoreInCloud(finalOldStore);
-        setStores(stores.map(s => s.id === oldStore.id ? finalOldStore : s));
-      }
-      executeStart(currentTaskId, currentTaskText);
+  const handleCheckClick = (id, isAlreadyDone) => {
+    if (isAlreadyDone) {
+      toggleChecklist(id);
     } else {
-      const oldTask = store.checklists.find(t => t.id === runningTask.id);
-      
-      const resultOld = action === 'complete'
-        ? processTaskCompletion(store, oldTask, username)
-        : processTaskPause(store, oldTask, username);
-      
-      const tempStore = { ...store, checklists: resultOld.updatedChecklists };
-      const currentTask = tempStore.checklists.find(t => t.id === currentTaskId);
-      
-      const resultNew = processTaskStart(tempStore, currentTask, username);
-
-      const finalLogs = [
-        ...(store.taskLogs || []),
-        resultOld.newLog,
-        resultNew.newLog
-      ];
-
-      const newNextAccess = calculateNextAccess(resultNew.updatedChecklists);
-
-      const finalStoreObj = { 
-        ...store, 
-        checklists: resultNew.updatedChecklists, 
-        taskLogs: finalLogs, 
-        dataUltimoAcesso: new Date().toISOString(),
-        dataProximoAcesso: newNextAccess || store.dataProximoAcesso || ''
-      };
-      
-      updateStoreInCloud(finalStoreObj);
-      setStores(stores.map(s => s.id === store.id ? finalStoreObj : s));
-
-      broadcastTaskFocus(`▶️ Executando: ${currentTaskText} | ${store.store}`, 'set', store.id);
+      setAnimatingTasks(prev => [...prev, id]);
+      setTimeout(() => {
+        toggleChecklist(id);
+        setAnimatingTasks(prev => prev.filter(tId => tId !== id)); 
+      }, 600); 
     }
-    setPendingStartInfo(null);
-    toast.success(action === 'complete' ? "Anterior concluída e nova iniciada!" : "Anterior pausada e nova iniciada!");
   };
 
   const calcularLucroOferta = (precoVenda, custoBase, quantidade) => {
@@ -469,8 +375,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
                   return tasksToRender.map(item => {
                     const isEditing = editingTaskId === item.id;
-                    const canEditTask = isManager || item.criadoPor === username;
-                    
                     const rightNow = new Date();
                     let isOverdue = false;
                     let isWarning = false;
@@ -542,8 +446,11 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                               >
                                 <option value="none">S/ Repetição</option>
                                 <option value="daily">🔁 Diário</option>
+                                <option value="3days">🔁 3 Dias (Relâmpago)</option>
                                 <option value="weekly">🔁 Semanal</option>
+                                <option value="15days">🔁 Quinzenal</option>
                                 <option value="monthly">🔁 Mensal</option>
+                                <option value="90days">🔁 90 Dias (Promo)</option>
                               </select>
                               
                               <select 
@@ -565,9 +472,14 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                         ) : (
                           <div className="flex items-start justify-between w-full">
                             <div className="flex items-start gap-3 flex-1">
-                              <input type="checkbox" checked={item.feita} onChange={() => toggleChecklist(item.id)} className="w-4 h-4 mt-0.5 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" />
+                              <input 
+                                type="checkbox" 
+                                checked={item.feita || animatingTasks.includes(item.id)} 
+                                onChange={() => handleCheckClick(item.id, item.feita)} 
+                                className="w-4 h-4 mt-0.5 rounded border-gray-600 bg-gray-900 text-indigo-500 cursor-pointer" 
+                              />
                               <div className="flex-1 flex flex-col">
-                                <span className={`text-sm font-medium ${item.feita ? 'text-gray-500 line-through' : 'text-gray-200'}`}>
+                                <span className={`text-sm font-medium transition-all duration-300 ${item.feita || animatingTasks.includes(item.id) ? 'text-gray-500 line-through opacity-60' : 'text-gray-200'}`}>
                                   {item.texto}
                                 </span>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -579,7 +491,14 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                                   )}
                                   {item.recorrencia && item.recorrencia !== 'none' && (
                                     <span className="text-[9px] bg-indigo-900/40 border border-indigo-500/50 text-indigo-300 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
-                                      🔁 {item.recorrencia === 'daily' ? 'Diário' : item.recorrencia === 'weekly' ? 'Semanal' : 'Mensal'}
+                                      🔁 {
+                                          item.recorrencia === 'daily' ? 'Diário' : 
+                                          item.recorrencia === '3days' ? '3 Dias' : 
+                                          item.recorrencia === 'weekly' ? 'Semanal' : 
+                                          item.recorrencia === '15days' ? 'Quinzenal' : 
+                                          item.recorrencia === 'monthly' ? 'Mensal' : 
+                                          item.recorrencia === '90days' ? '90 Dias' : item.recorrencia
+                                         }
                                     </span>
                                   )}
                                   {(item.responsavel || item.resp) && <span className="text-[9px] text-gray-400 border border-gray-600 px-1.5 py-0.5 rounded shadow-sm">Resp: {item.responsavel || item.resp}</span>}
@@ -626,7 +545,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               </div>
               
               <div className="flex flex-col gap-3 bg-black/20 p-4 rounded-2xl border border-white/5 shadow-inner">
-                {/* CAMPO DE AUTOCOMPLETAR IMPLEMENTADO AQUI */}
                 <div className="flex flex-col lg:flex-row gap-2 relative z-20">
                   <div className="relative flex-1">
                     <input 
@@ -645,7 +563,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                       className="w-full bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" 
                     />
                     
-                    {/* DROPDOWN DE SUGESTÕES */}
                     {showSuggestions && suggestions.length > 0 && (
                       <ul className="absolute top-full left-0 w-full mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
                         {suggestions.map((sug, idx) => (
@@ -694,8 +611,11 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   <select value={newTaskRecurrence} onChange={e => setNewTaskRecurrence(e.target.value)} className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
                     <option value="none">Sem Repetição</option>
                     <option value="daily">🔁 Diária</option>
+                    <option value="3days">🔁 3 Dias (Relâmpago)</option>
                     <option value="weekly">🔁 Semanal</option>
+                    <option value="15days">🔁 Quinzenal</option>
                     <option value="monthly">🔁 Mensal</option>
+                    <option value="90days">🔁 90 Dias (Promo)</option>
                   </select>
 
                   <button onClick={() => {setNewTaskDate(''); setNewTaskTime(''); setNewTaskRecurrence('none');}} className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2 rounded-xl transition-colors"><Eraser size={14}/></button>
@@ -829,7 +749,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
               </div>
             </div>
             
-            {/* CATÁLOGO DE PRODUTOS (CARROSSEL COMPACTO) */}
+            {/* CATÁLOGO DE PRODUTOS */}
             {clientProducts.length > 0 && (
               <div className="bg-white/[0.03] p-4 rounded-2xl border border-white/10 shadow-sm shrink-0">
                 <h4 className="text-xs font-bold text-indigo-400 uppercase flex items-center gap-2 mb-3">
@@ -915,13 +835,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       {/* GAVETA LATERAL: DETALHES DO PRODUTO */}
       {selectedProduct && (
           <>
-            {/* Overlay para foco */}
             <div className="absolute inset-0 bg-black/60 backdrop-blur-[3px] z-[90]" onClick={() => setSelectedProduct(null)}></div>
-            
-            {/* Painel lateral largo (450px) com Glassmorphism */}
             <div className="absolute top-4 right-4 bottom-4 w-[450px] bg-gradient-to-b from-gray-900/98 to-[#0B0F19] backdrop-blur-3xl border border-white/15 rounded-2xl shadow-[0_30px_60px_rgba(0,0,0,0.8)] flex flex-col z-[100] overflow-hidden animate-in slide-in-from-right-10 duration-300">
-              
-              {/* Header com Imagem em Destaque */}
               <div className="relative h-48 shrink-0 flex items-end p-6 overflow-hidden">
                  <div className="absolute inset-0 bg-gray-900">
                     {selectedProduct.fotoUrl && <img src={selectedProduct.fotoUrl} alt="bg" className="w-full h-full object-cover opacity-25 blur-sm scale-110" />}
@@ -953,10 +868,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                  </div>
               </div>
               
-              {/* Listagem de Variações e Preços */}
               <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pt-2 space-y-5">
-                
-                {/* VARIAÇÕES (CORES E TAMANHOS) */}
                 {(selectedProduct.variacoes && selectedProduct.variacoes.length > 0) && (
                   <div className="bg-white/[0.02] border border-white/10 p-4 rounded-2xl">
                     <h5 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Variações Disponíveis</h5>
@@ -989,8 +901,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 <div className="space-y-4">
                   {(selectedProduct.canais || []).map((c, i) => (
                     <div key={c.id || i} className="bg-white/[0.04] border border-white/10 rounded-2xl p-5 flex flex-col gap-4 relative group transition-all hover:bg-white/[0.06] hover:border-indigo-500/40">
-                      
-                      {/* Badge do Marketplace */}
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-3">
                           <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div>
@@ -1001,7 +911,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                         </div>
                       </div>
                       
-                      {/* TABELA DE OFERTAS */}
                       {(c.ofertas && c.ofertas.length > 0) && (
                         <div className="mt-2 bg-black/30 rounded-xl p-3 border border-white/5">
                            <table className="w-full text-left">
@@ -1041,7 +950,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                         </div>
                       )}
 
-                      {/* Kits Legados (Retrocompatibilidade) */}
                       {c.kits && c.kits.length > 0 && (
                         <div className="space-y-2 mt-2 border-t border-white/5 pt-3">
                           <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Kits Legados</p>
@@ -1065,7 +973,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   ))}
                 </div>
 
-                {/* Observações do Produto */}
                 {selectedProduct.observacoes && (
                    <div className="mt-4 bg-indigo-500/5 border border-indigo-500/10 rounded-xl p-4 flex flex-col gap-2 relative">
                       <div className="flex items-center gap-1.5 text-indigo-400">
@@ -1081,43 +988,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
             </div>
           </>
         )}
-
-      {/* Interface de Resolução de Conflitos */}
-      {pendingStartInfo && (
-        <div className="fixed inset-0 bg-[#0B0F19]/90 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
-          <div className="bg-gray-900 border border-white/10 p-6 rounded-2xl max-w-md w-full shadow-2xl flex flex-col gap-4">
-            <h4 className="text-base font-bold text-white flex items-center gap-2">
-              ⚠️ Tarefa já em execução
-            </h4>
-            <p className="text-sm text-gray-300 leading-relaxed">
-              Você já possui a tarefa <strong className="text-indigo-400">"{pendingStartInfo.runningTask.texto}"</strong> ativa na loja <strong className="text-white">{pendingStartInfo.runningTask.storeObject.store}</strong>.
-            </p>
-            <p className="text-xs text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-              Você deseja pausar ou concluir a tarefa anterior para poder iniciar esta nova?
-            </p>
-            <div className="flex gap-2 mt-2">
-              <button 
-                onClick={() => setPendingStartInfo(null)}
-                className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 font-bold py-2.5 rounded-xl text-xs transition-colors"
-              >
-                Cancelar
-              </button>
-              <button 
-                onClick={() => resolveConflictAndStart('pause')}
-                className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1"
-              >
-                Pausar
-              </button>
-              <button 
-                onClick={() => resolveConflictAndStart('complete')}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1"
-              >
-                Concluir
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

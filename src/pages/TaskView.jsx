@@ -2,8 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { CalendarDays, AlertCircle, Clock, CheckCircle2, MoreHorizontal, Bell, CopyPlus, Check, CalendarClock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores }) {
+export default function TaskView({ stores, openTaskModal, openBulkTaskModal, currentUserData, user, updateStoreInCloud, setStores, sendGlobalNotification }) {
   const [menuOpenId, setMenuOpenId] = useState(null);
+  const [animatingTasks, setAnimatingTasks] = useState([]); 
   const isManager = currentUserData?.role === 'Admin' || currentUserData?.role === 'admin' || currentUserData?.role === 'manager';
 
   const groupedTasks = useMemo(() => {

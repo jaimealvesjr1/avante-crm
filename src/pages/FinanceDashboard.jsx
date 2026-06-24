@@ -49,6 +49,12 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   
   const [demonstrativoData, setDemonstrativoData] = useState(null);
 
+  const parseSafeNumber = (val) => {
+      if (typeof val === 'number') return val;
+      if (!val) return 0;
+      return Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
+  };
+
   useEffect(() => {
     if (!db) return;
     
@@ -94,26 +100,39 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     !busca || d.descricao.toLowerCase().includes(busca) || d.categoria.toLowerCase().includes(busca) || (d.contaBancaria && d.contaBancaria.toLowerCase().includes(busca))
   );
 
-  const totalPendenteGeral = recebimentos.filter(r => r.status === 'Pendente').reduce((acc, curr) => acc + curr.valorAgencia, 0);
+  // CÁLCULOS SEGUROS COM PARSESAFENUMBER
+  const totalPendenteGeral = recebimentos.filter(r => r.status === 'Pendente').reduce((acc, curr) => acc + parseSafeNumber(curr.valorAgencia), 0);
 
   const pendenteFiltrado = recebimentosFiltrados.reduce((acc, r) => {
-      if (r.desembolsos && r.desembolsos.length > 0) return acc + r.desembolsos.filter(x => x.status === 'Pendente').reduce((sum, x) => sum + x.valor, 0);
-      return acc + (r.status === 'Pendente' ? r.valorAgencia : 0);
+      if (r.desembolsos && r.desembolsos.length > 0) return acc + r.desembolsos.filter(x => x.status === 'Pendente').reduce((sum, x) => sum + parseSafeNumber(x.valor), 0);
+      return acc + (r.status === 'Pendente' ? parseSafeNumber(r.valorAgencia) : 0);
   }, 0);
   
   const pagoFiltrado = recebimentosFiltrados.reduce((acc, r) => {
-      if (r.desembolsos && r.desembolsos.length > 0) return acc + r.desembolsos.filter(x => x.status === 'Pago').reduce((sum, x) => sum + x.valor, 0);
-      return acc + (r.status === 'Pago' ? r.valorAgencia : 0);
+      if (r.desembolsos && r.desembolsos.length > 0) return acc + r.desembolsos.filter(x => x.status === 'Pago').reduce((sum, x) => sum + parseSafeNumber(x.valor), 0);
+      return acc + (r.status === 'Pago' ? parseSafeNumber(r.valorAgencia) : 0);
   }, 0);
   
   const despesasPendentesFiltradas = despesasFiltradas.reduce((acc, d) => {
-      if (d.desembolsos && d.desembolsos.length > 0) return acc + d.desembolsos.filter(x => x.status === 'Pendente').reduce((sum, x) => sum + x.valor, 0);
-      return acc + (d.status === 'Pendente' ? d.valor : 0);
+      // Se a despesa tiver parcelas (desembolsos), somamos o valor das parcelas que estão Pendentes
+      if (d.desembolsos && d.desembolsos.length > 0) {
+          const somaParcelasPendentes = d.desembolsos
+              .filter(x => x.status === 'Pendente')
+              .reduce((sum, x) => sum + parseSafeNumber(x.valor), 0);
+          return acc + somaParcelasPendentes;
+      }
+      return acc + (d.status === 'Pendente' ? parseSafeNumber(d.valor || d.valorBruto) : 0);
   }, 0);
   
   const despesasPagasFiltradas = despesasFiltradas.reduce((acc, d) => {
-      if (d.desembolsos && d.desembolsos.length > 0) return acc + d.desembolsos.filter(x => x.status === 'Pago').reduce((sum, x) => sum + x.valor, 0);
-      return acc + (d.status === 'Pago' ? d.valor : 0);
+      // Se a despesa tiver parcelas (desembolsos), somamos o valor das parcelas que estão Pagas
+      if (d.desembolsos && d.desembolsos.length > 0) {
+          const somaParcelasPagas = d.desembolsos
+              .filter(x => x.status === 'Pago')
+              .reduce((sum, x) => sum + parseSafeNumber(x.valor), 0);
+          return acc + somaParcelasPagas;
+      }
+      return acc + (d.status === 'Pago' ? parseSafeNumber(d.valor || d.valorBruto) : 0);
   }, 0);
 
   const dataAtual = new Date();
@@ -177,7 +196,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const folhaCalculada = useMemo(() => {
     if (!teamMembers) return [];
     return teamMembers.filter(m => m.paymentConfig).map(m => {
-        const calculo = calcularFolhaMembro(m, metricasFolha.faturamentoBruto, metricasFolha.custoOperacional, bonusManuais[m.email]);
+        const calculo = calcularFolhaMembro(m, metricasFolha.faturamentoBruto, metricasFolha.custoOperacional, parseSafeNumber(bonusManuais[m.email]));
         return { ...m, calculo };
     });
   }, [teamMembers, metricasFolha, bonusManuais]);
@@ -280,11 +299,11 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       if (r.desembolsos && r.desembolsos.length > 0) {
         r.desembolsos.forEach(x => {
             const dataBase = x.status === 'Pago' ? x.dataPagamentoRealizado : x.dataVencimento;
-            registrarLancamento(dataBase, x.valor, 'entrada', x.status);
+            registrarLancamento(dataBase, parseSafeNumber(x.valor), 'entrada', x.status);
         });
       } else {
         const dataBase = r.status === 'Pago' ? r.dataPagamentoRealizado : r.dataVencimento;
-        registrarLancamento(dataBase, r.valorAgencia, 'entrada', r.status);
+        registrarLancamento(dataBase, parseSafeNumber(r.valorAgencia), 'entrada', r.status);
       }
     });
 
@@ -292,27 +311,16 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       if (d.desembolsos && d.desembolsos.length > 0) {
         d.desembolsos.forEach(x => {
           const dataBase = x.status === 'Pago' ? x.dataPagamentoRealizado : x.dataVencimento;
-          registrarLancamento(dataBase, x.valor, 'saida', x.status);
+          registrarLancamento(dataBase, parseSafeNumber(x.valor), 'saida', x.status);
         });
       } else {
         const dataBase = d.status === 'Pago' ? d.dataPagamentoRealizado : d.dataVencimento;
-        registrarLancamento(dataBase, d.valor, 'saida', d.status);
+        registrarLancamento(dataBase, parseSafeNumber(d.valor), 'saida', d.status);
       }
     });
 
     return relatorio;
   }, [recebimentos, despesas]);
-
-  const renderGrowthBadge = (currentValue, pastValue) => {
-    if (pastValue === 0) return null;
-    const percent = ((currentValue - pastValue) / pastValue) * 100;
-    const isPositive = percent >= 0;
-    return (
-      <span className={`ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 w-max ${isPositive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-        {isPositive ? <TrendingUp size={10} /> : <TrendingDown size={10} />} {Math.abs(percent).toFixed(1)}%
-      </span>
-    );
-  };
 
   const iniciarEdicaoRecebimento = (r) => {
     const formElement = document.getElementById('form-recebimento');
@@ -336,14 +344,14 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     e.preventDefault();
     if (!canEdit) return toast.error("Sem permissão.");
     
-    const numValorBruto = Number(String(recebimentoForm.valorAgencia).replace(',', '.')) || 0;
-    const numDesconto = Number(String(recebimentoForm.desconto).replace(',', '.')) || 0;
+    const numValorBruto = parseSafeNumber(recebimentoForm.valorAgencia);
+    const numDesconto = parseSafeNumber(recebimentoForm.desconto);
     const numValorLiquido = numValorBruto - numDesconto;
 
     if (!recebimentoForm.cliente.trim() || numValorBruto <= 0) return toast.error("Preencha cliente e valor válidos.");
 
     const parsedDesembolsos = (recebimentoForm.desembolsos || []).map(d => ({
-      ...d, valor: Number(String(d.valor).replace(',', '.')) || 0
+      ...d, valor: parseSafeNumber(d.valor)
     }));
 
     if (parsedDesembolsos.length > 0) {
@@ -429,14 +437,14 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     e.preventDefault();
     if (!canEdit) return toast.error("Sem permissão.");
     
-    const numValorBruto = Number(String(despesaForm.valor).replace(',', '.')) || 0;
-    const numDesconto = Number(String(despesaForm.desconto).replace(',', '.')) || 0;
+    const numValorBruto = parseSafeNumber(despesaForm.valor);
+    const numDesconto = parseSafeNumber(despesaForm.desconto);
     const numValorLiquido = numValorBruto - numDesconto;
 
     if (!despesaForm.descricao.trim() || numValorBruto <= 0) return toast.error("Preencha descrição e valor bruto válidos.");
 
     const parsedDesembolsos = (despesaForm.desembolsos || []).map(d => ({
-      ...d, valor: Number(String(d.valor).replace(',', '.')) || 0
+      ...d, valor: parseSafeNumber(d.valor)
     }));
 
     if (parsedDesembolsos.length > 0) {
@@ -455,7 +463,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
           descricao: despesaForm.descricao.trim(), 
           valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: despesaForm.motivoDesconto.trim(), valor: numValorLiquido, 
           categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
-          chavePix: despesaForm.chavePix.trim() // 👉 NOVO: Atualiza a chave!
+          chavePix: despesaForm.chavePix.trim()
         });
         toast.success("Despesa atualizada!");
         setDespesaEmEdicao(null);
@@ -464,7 +472,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
           descricao: despesaForm.descricao.trim(), 
           valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: despesaForm.motivoDesconto.trim(), valor: numValorLiquido, 
           categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
-          chavePix: despesaForm.chavePix.trim(), // 👉 NOVO: Salva a chave nova!
+          chavePix: despesaForm.chavePix.trim(), 
           dataPagamentoRealizado: finalStatus === 'Pago' && parsedDesembolsos.length === 0 ? new Date().toISOString() : null,
           criadoEm: new Date().toISOString()
         });
@@ -489,7 +497,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       categoria: d.categoria, 
       contaBancaria: d.contaBancaria || 'AVANTE PJ',
       dataVencimento: d.dataVencimento, status: d.status,
-      desembolsos: d.desembolsos || []
+      desembolsos: d.desembolsos || [],
+      chavePix: d.chavePix || ''
     });
   };
 
@@ -516,7 +525,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     } catch (error) { toast.error("Erro ao alterar status."); }
   };
 
-  // 👉 NOVO: Função para exibir o PIX em Desembolso de Despesa
   const toggleDesembolsoDespesa = async (idDespesa, idDesembolso) => {
     if (!canEdit) return toast.error("Sem permissão.");
     try {
@@ -565,12 +573,12 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   };
 
   const renderAgencyProgressBar = () => {
-    const safeTarget = metaAgencia > 0 ? metaAgencia : 1;
-    const currentWidth = Math.min((totalReceitaAgencia / safeTarget) * 80, 100);
-    const projectedWidth = Math.min((projecaoReceitaAgencia / safeTarget) * 80, 100);
+    const safeTarget = parseSafeNumber(metaAgencia) > 0 ? parseSafeNumber(metaAgencia) : 1;
+    const currentWidth = Math.min((parseSafeNumber(totalReceitaAgencia) / safeTarget) * 80, 100);
+    const projectedWidth = Math.min((parseSafeNumber(projecaoReceitaAgencia) / safeTarget) * 80, 100);
     
-    const currentPercent = ((totalReceitaAgencia / safeTarget) * 100).toFixed(1);
-    const projectedPercent = ((projecaoReceitaAgencia / safeTarget) * 100).toFixed(1);
+    const currentPercent = ((parseSafeNumber(totalReceitaAgencia) / safeTarget) * 100).toFixed(1);
+    const projectedPercent = ((parseSafeNumber(projecaoReceitaAgencia) / safeTarget) * 100).toFixed(1);
 
     return (
       <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] w-full relative mb-8">
@@ -584,15 +592,15 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
           <div className="flex flex-wrap gap-4 md:gap-8 bg-black/20 p-3 rounded-2xl border border-white/5">
             <div className="flex flex-col">
               <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Hoje (Receita)</span>
-              <span className="text-xl font-bold text-blue-400">{formatCurrency(totalReceitaAgencia)} <span className="text-xs text-blue-400/70">({currentPercent}%)</span></span>
+              <span className="text-xl font-bold text-blue-400">{formatCurrency(parseSafeNumber(totalReceitaAgencia))} <span className="text-xs text-blue-400/70">({currentPercent}%)</span></span>
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Projeção</span>
-              <span className="text-xl font-bold text-indigo-400">{formatCurrency(projecaoReceitaAgencia)} <span className="text-xs text-indigo-400/70">({projectedPercent}%)</span></span>
+              <span className="text-xl font-bold text-indigo-400">{formatCurrency(parseSafeNumber(projecaoReceitaAgencia))} <span className="text-xs text-indigo-400/70">({projectedPercent}%)</span></span>
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Meta</span>
-              <span className="text-xl font-bold text-white">{formatCurrency(metaAgencia)}</span>
+              <span className="text-xl font-bold text-white">{formatCurrency(parseSafeNumber(metaAgencia))}</span>
             </div>
           </div>
         </div>
@@ -640,7 +648,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
           {isAtrasado && <span className="ml-2 text-[10px] bg-red-500/20 px-1 rounded text-red-400">Atrasado</span>}
         </td>
         <td className="p-4 font-bold text-white text-right">
-          {formatCurrency(valorParaExibir)}
+          {formatCurrency(parseSafeNumber(valorParaExibir))}
         </td>
         <td className="p-4 text-center">
           {item.status === 'Pago' ? <span className="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold border border-green-500/20">Pago</span> : 
@@ -829,8 +837,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                     </div>
                     
                     {recebimentoForm.desembolsos.length > 0 && (() => {
-                       const valorLiq = (Number(String(recebimentoForm.valorAgencia).replace(',', '.')) || 0) - (Number(String(recebimentoForm.desconto).replace(',', '.')) || 0);
-                       const somaDistr = recebimentoForm.desembolsos.reduce((acc, curr) => acc + (Number(String(curr.valor).replace(',', '.')) || 0), 0);
+                       const valorLiq = parseSafeNumber(recebimentoForm.valorAgencia) - parseSafeNumber(recebimentoForm.desconto);
+                       const somaDistr = recebimentoForm.desembolsos.reduce((acc, curr) => acc + parseSafeNumber(curr.valor), 0);
                        const faltaDistribuir = valorLiq - somaDistr;
 
                        return (
@@ -870,7 +878,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         </div>
       )}
 
-      {/* ABA 3: CONTAS A PAGAR E FOLHA DE PAGAMENTO */}
       {activeTab === 'pagar' && (
         <div className="space-y-6 animate-in fade-in">
           
@@ -887,7 +894,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* HISTÓRICO DE SAÍDAS AGRUPADO */}
             <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden h-max">
               <div className="p-5 border-b border-white/10 bg-white/5">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2"><Clock size={18} className="text-gray-400"/> Cronograma de Saídas</h3>
@@ -916,7 +922,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
             <div className="lg:col-span-1 flex flex-col gap-6">
               
-              {/* BLOCO: LANÇAR DESPESA MANUAL */}
               <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-6">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
                   <Plus size={18} className="text-rose-400" /> Lançamento de Despesa
@@ -990,8 +995,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                     </div>
                     
                     {despesaForm.desembolsos.length > 0 && (() => {
-                       const valorLiq = (Number(String(despesaForm.valor).replace(',', '.')) || 0) - (Number(String(despesaForm.desconto).replace(',', '.')) || 0);
-                       const somaDistr = despesaForm.desembolsos.reduce((acc, curr) => acc + (Number(String(curr.valor).replace(',', '.')) || 0), 0);
+                       const valorLiq = parseSafeNumber(despesaForm.valor) - parseSafeNumber(despesaForm.desconto);
+                       const somaDistr = despesaForm.desembolsos.reduce((acc, curr) => acc + parseSafeNumber(curr.valor), 0);
                        const faltaDistribuir = valorLiq - somaDistr;
 
                        return (
@@ -1048,7 +1053,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                   <div className="flex-1 bg-black/20 border border-white/10 rounded-xl p-3 shadow-inner flex flex-col justify-center">
                     <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Fat. Bruto (Base LT)</label>
                     <span className="font-bold text-white text-sm">
-                      {formatCurrency(metricasFolha.faturamentoBruto)}
+                      {formatCurrency(parseSafeNumber(metricasFolha.faturamentoBruto))}
                     </span>
                   </div>
                   <div className="col-span-1">
@@ -1210,41 +1215,41 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                         
                         <div className="border border-[#e0e0e0] rounded-xl p-4 mb-4 bg-white">
                           <span className="text-[10px] uppercase tracking-wide text-[#888888] font-bold mb-2 block">Performance</span>
-                          <div className="flex justify-between mb-2 text-[14px]"><span>Meta Estipulada:</span><span className="font-semibold">{formatCurrency(demonstrativoData.meta)}</span></div>
-                          <div className="flex justify-between mb-2 text-[14px]"><span>Faturamento da Agência:</span><span className="font-semibold text-[#e67e22]">{formatCurrency(demonstrativoData.fat)}</span></div>
+                          <div className="flex justify-between mb-2 text-[14px]"><span>Meta Estipulada:</span><span className="font-semibold">{formatCurrency(parseSafeNumber(demonstrativoData.meta))}</span></div>
+                          <div className="flex justify-between mb-2 text-[14px]"><span>Faturamento da Agência:</span><span className="font-semibold text-[#e67e22]">{formatCurrency(parseSafeNumber(demonstrativoData.fat))}</span></div>
                           <div className="text-right mt-3">
-                              <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold inline-block ${demonstrativoData.fat >= demonstrativoData.meta ? 'bg-[#ecfdf5] text-[#10b981]' : 'bg-[#fff0e6] text-[#e67e22]'}`}>
-                                  Meta {demonstrativoData.fat >= demonstrativoData.meta ? 'Batida' : 'Não Atingida'}
+                              <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold inline-block ${parseSafeNumber(demonstrativoData.fat) >= parseSafeNumber(demonstrativoData.meta) ? 'bg-[#ecfdf5] text-[#10b981]' : 'bg-[#fff0e6] text-[#e67e22]'}`}>
+                                  Meta {parseSafeNumber(demonstrativoData.fat) >= parseSafeNumber(demonstrativoData.meta) ? 'Batida' : 'Não Atingida'}
                               </span>
                           </div>
                         </div>
                         
                         <div className="border border-[#e0e0e0] rounded-xl p-4 mb-4 bg-white">
                           <span className="text-[10px] uppercase tracking-wide text-[#888888] font-bold mb-2 block">Detalhamento</span>
-                          <div className="flex justify-between mb-2 text-[14px]"><span>Salário Base:</span><span className="font-semibold">{formatCurrency(demonstrativoData.base)}</span></div>
+                          <div className="flex justify-between mb-2 text-[14px]"><span>Salário Base:</span><span className="font-semibold">{formatCurrency(parseSafeNumber(demonstrativoData.base))}</span></div>
                           
-                          <div className="flex justify-between mb-0.5 text-[14px]"><span>Comissão:</span><span className="font-semibold">{formatCurrency(demonstrativoData.comissao)}</span></div>
+                          <div className="flex justify-between mb-0.5 text-[14px]"><span>Comissão:</span><span className="font-semibold">{formatCurrency(parseSafeNumber(demonstrativoData.comissao))}</span></div>
                           {demonstrativoData.regra && <div className="text-[10px] text-[#888888] text-right mb-2 italic">({demonstrativoData.regra})</div>}
                           
-                          {demonstrativoData.bonus > 0 && (
-                              <div className="flex justify-between mb-2 text-[14px] text-[#10b981]"><span>Acréscimo (Bônus):</span><span className="font-semibold">+ {formatCurrency(demonstrativoData.bonus)}</span></div>
+                          {parseSafeNumber(demonstrativoData.bonus) > 0 && (
+                              <div className="flex justify-between mb-2 text-[14px] text-[#10b981]"><span>Acréscimo (Bônus):</span><span className="font-semibold">+ {formatCurrency(parseSafeNumber(demonstrativoData.bonus))}</span></div>
                           )}
                             
                           <div className="bg-[#eef4fc] p-4 rounded-xl mt-4">
                               <div className="flex justify-between items-center m-0">
                                   <span className="text-[#0f3c7a] font-bold text-[13px]">LÍQUIDO A RECEBER</span>
-                                  <span className="text-[#0f3c7a] font-extrabold text-[22px]">{formatCurrency(demonstrativoData.total)}</span>
+                                  <span className="text-[#0f3c7a] font-extrabold text-[22px]">{formatCurrency(parseSafeNumber(demonstrativoData.total))}</span>
                               </div>
                           </div>
                         </div>
-                        
+                        %
                         <div className="bg-[#fafafa] border border-[#e0e0e0] rounded-xl p-4 mt-2">
                             <span className="text-[10px] uppercase tracking-wide text-[#888888] font-bold mb-2 block">📅 Cronograma de Crédito</span>
                             <div className="flex justify-between text-[13px] mb-1.5 text-[#555555]">
-                                <span>• Pagamento Parte 1 ({formatCurrency(demonstrativoData.p1V)})</span><strong className="text-[#1a1a1a]">{demonstrativoData.p1D}</strong>
+                                <span>• Pagamento Parte 1 ({formatCurrency(parseSafeNumber(demonstrativoData.p1V))})</span><strong className="text-[#1a1a1a]">{demonstrativoData.p1D}</strong>
                             </div>
                             <div className="flex justify-between text-[13px] text-[#555555]">
-                                <span>• Pagamento Parte 2 ({formatCurrency(demonstrativoData.p2V)})</span><strong className="text-[#1a1a1a]">{demonstrativoData.p2D}</strong>
+                                <span>• Pagamento Parte 2 ({formatCurrency(parseSafeNumber(demonstrativoData.p2V))})</span><strong className="text-[#1a1a1a]">{demonstrativoData.p2D}</strong>
                             </div>
                         </div>
                     </div>

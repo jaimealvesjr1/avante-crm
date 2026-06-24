@@ -27,7 +27,11 @@ export const processTaskCompletion = (store, task, myName) => {
         
         if (task.recorrencia === 'daily') nextDateObj.setDate(nextDateObj.getDate() + 1);
         if (task.recorrencia === 'weekly') nextDateObj.setDate(nextDateObj.getDate() + 7);
-        if (task.recorrencia === 'monthly') nextDateObj.setMonth(nextDateObj.getMonth() + 1);
+        
+        if (task.recorrencia === '3days') nextDateObj.setDate(nextDateObj.getDate() + 3); // Oferta Relâmpago TikTok
+        if (task.recorrencia === '15days') nextDateObj.setDate(nextDateObj.getDate() + 15); // Quinzenal
+        if (task.recorrencia === 'monthly') nextDateObj.setMonth(nextDateObj.getMonth() + 1); // Mensal (30 dias)
+        if (task.recorrencia === '90days') nextDateObj.setDate(nextDateObj.getDate() + 90); // Promoção Padrão / Trimestre
 
         const nextDateStr = `${nextDateObj.getFullYear()}-${String(nextDateObj.getMonth() + 1).padStart(2, '0')}-${String(nextDateObj.getDate()).padStart(2, '0')}`;
         
