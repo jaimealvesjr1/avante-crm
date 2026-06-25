@@ -55,6 +55,12 @@ export const getVisualRole = (role) => {
 export default function App() {
   const CURRENT_VERSION = '3.0.1';
 
+  const parseSafeNumber = (val) => {
+      if (typeof val === 'number') return val;
+      if (!val) return 0;
+      return Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
+  };
+
   const safeFormatCurrency = (val) => showValues ? formatCurrency(val) : 'R$ •••••';
   const safeFormatNumber = (val) => showValues ? formatNumber(val) : '••••';
 
@@ -591,8 +597,7 @@ export default function App() {
   const handleStoreChange = (id, field, value) => {
     let finalValue = value;
     if (typeof value === 'string' && (field === 'currentRevenue' || field === 'adsInvestment' || field === 'gmvBase' || field === 'customGrowth')) {
-      // Removido o .replace(/\./g, '') que destruía as casas decimais ao editar
-      finalValue = value.trim().replace(',', '.');
+      finalValue = value.trim().replace(/\./g, '').replace(',', '.');
     }
     
     const numericValue = finalValue !== '' ? Number(finalValue) : 0;
@@ -696,10 +701,10 @@ export default function App() {
     const prevOrd = prevEntry ? prevEntry.orders : 0;
     const prevUni = prevEntry ? prevEntry.units : 0;
 
-    const diffRev = Math.max(0, cumRev - prevRev);
-    const diffAds = Math.max(0, cumAds - prevAds);
-    const diffOrd = Math.max(0, cumOrd - prevOrd);
-    const diffUni = Math.max(0, cumUni - prevUni);
+    const diffRev = Math.max(0, parseSafeNumber(cumRev) - prevRev);
+    const diffAds = Math.max(0, parseSafeNumber(cumAds) - prevAds);
+    const diffOrd = Math.max(0, parseSafeNumber(cumOrd) - prevOrd);
+    const diffUni = Math.max(0, parseSafeNumber(cumUni) - prevUni);
 
     const avgRev = diffRev / daysCount;
     const avgAds = diffAds / daysCount;
@@ -728,10 +733,10 @@ export default function App() {
     const updates = { history };
     
     if (targetDay >= maxDay) {
-        updates.currentRevenue = cumRev;
-        updates.adsInvestment = cumAds;
-        updates.orders = cumOrd;
-        updates.units = cumUni;
+        updates.currentRevenue = parseSafeNumber(cumRev);
+        updates.adsInvestment = parseSafeNumber(cumAds);
+        updates.orders = parseSafeNumber(cumOrd);
+        updates.units = parseSafeNumber(cumUni);
         updates.dataUltimoAcesso = new Date().toISOString();
     }
 
@@ -746,8 +751,8 @@ export default function App() {
     const store = stores.find(s => s.id === storeId);
     if (!store) return;
 
-    const numGmv = Number(String(gmv).replace(',', '.')) || 0;
-    const numAds = Number(String(ads).replace(',', '.')) || 0;
+    const numGmv = parseSafeNumber(gmv);
+    const numAds = parseSafeNumber(ads);
     const feePercent = Number(store.feePercent) || 0;
     const fixedFee = Number(store.fixedFee) || 0;
     
@@ -760,9 +765,9 @@ export default function App() {
     
     const snapshot = {
       id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-      month: padronizado, 
-      gmv: gmv,
-      adsInvestment: Number(store.adsInvestment) || 0,
+      month: standardMonth,
+      gmv: numGmv,
+      adsInvestment: numAds,
       orders: Number(store.orders) || 0,
       units: Number(store.units) || 0,
       agencyRevenue: agencyRevenue,
@@ -774,7 +779,6 @@ export default function App() {
 
     let newMonthlyHistory = [...(store.monthlyHistory || [])];
     
-    // Se estiver editando, busca pelo ID ou pelo próprio nome do mês (para dados legados)
     if (editId) {
         newMonthlyHistory = newMonthlyHistory.map(h => (h.id || h.month) === editId ? snapshot : h);
     } else {
@@ -923,7 +927,7 @@ export default function App() {
       stores.forEach(store => {
         const storeRef = doc(db, 'stores', store.id.toString());
         
-        const gmv = Number(store.currentRevenue) || 0;
+        const gmv = parseSafeNumber(store.currentRevenue);
         const feePercent = Number(store.feePercent) || 0;
         const fixedFee = Number(store.fixedFee) || 0;
         const isFixed = store.feeType === 'fixed' || fixedFee > 0;
@@ -940,11 +944,13 @@ export default function App() {
         }
         faturasPorCliente[store.client].valorTotalAgencia += agencyRevenue;
 
-        // Cria o snapshot histórico que será guardado para sempre na linha do tempo da loja
         const snapshot = {
           id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
           month: padronizado, 
           gmv: gmv,
+          adsInvestment: parseSafeNumber(store.adsInvestment),
+          orders: parseSafeNumber(store.orders),               
+          units: parseSafeNumber(store.units),
           agencyRevenue: agencyRevenue,
           feeType: store.feeType || 'percent',
           feePercent: feePercent,
@@ -1056,8 +1062,19 @@ export default function App() {
     // Agrupa as lojas para que cada cliente tenha seu próprio relatório
     const clientsGroup = {};
     
-    // Função auxiliar para garantir que os números não venham como texto
-    const parseSafeNumber = (val) => typeof val === 'number' ? val : (Number(String(val || 0).trim().replace(/\./g, '').replace(',', '.')) || 0);
+    const parseSafeNumber = (val) => {
+      if (typeof val === 'number') return val;
+      if (!val) return 0;
+      
+      const cleaned = String(val).replace(/[^\d.,-]/g, '');
+      if (!cleaned) return 0;
+      
+      if (cleaned.includes(',')) {
+          return Number(cleaned.replace(/\./g, '').replace(',', '.')) || 0;
+      }
+      
+      return Number(cleaned) || 0;
+  };
 
     // Varre todas as lojas e organiza dentro do objeto clientsGroup
     targetStores.forEach(store => {
@@ -1067,10 +1084,11 @@ export default function App() {
       const pastData = (store.monthlyHistory || []).find(h => h.month === targetMonth);
       let gmv = 0, ads = 0, orders = 0, units = 0, base = 0;
       
-      // Se for um mês passado, pega do histórico. Se for o mês atual, pega os dados atuais.
       if (pastData) {
           gmv = parseSafeNumber(pastData.gmv);
-          ads = parseSafeNumber(pastData.adsInvestment);
+          
+          ads = parseSafeNumber(pastData.adsInvestment || pastData.ads); 
+          
           orders = parseSafeNumber(pastData.orders);
           units = parseSafeNumber(pastData.units);
           const histArray = store.monthlyHistory || [];
@@ -1927,6 +1945,7 @@ export default function App() {
           currentDay={currentDay}
           formatCurrency={safeFormatCurrency}
           formatNumber={safeFormatNumber}
+          canEdit={canEdit}
         />
       )}
 

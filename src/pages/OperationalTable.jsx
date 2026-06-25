@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, MessageCircle, ShoppingBag, Edit2, Save, Trash2, X, TrendingUp, ArchiveRestore } from 'lucide-react';
+import { History, Plus, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronRight, MessageCircle, ShoppingBag, Edit2, Save, Trash2, X, TrendingUp, ArchiveRestore } from 'lucide-react';
 
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
 
@@ -107,6 +107,16 @@ export default function OperationalTable({
 
               <div className="flex items-center justify-between lg:justify-end gap-3 flex-[0.5]" onClick={e => e.stopPropagation()}>
                 <div className="flex gap-2">
+                  {canEdit && (
+                      <button 
+                          onClick={(e) => { e.stopPropagation(); addNewStoreToClient(group.client); }}
+                          className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-xl transition-all shadow-sm flex items-center justify-center"
+                          title="Adicionar Nova Loja"
+                      >
+                          <Plus size={16} />
+                      </button>
+                  )}
+                  
                   <a href={generateClientWhatsAppLink(group)} target="_blank" rel="noopener noreferrer" className={`p-2 rounded-xl transition-all border shadow-sm text-white flex items-center justify-center ${group.status === 'danger' ? 'bg-red-500/20 border-red-500/30 hover:bg-red-500/40 text-red-300' : group.status === 'warning' ? 'bg-amber-500/20 border-amber-500/30 hover:bg-amber-500/40 text-amber-300' : 'bg-emerald-500/20 border-emerald-500/30 hover:bg-emerald-500/40 text-emerald-300'}`} title="Gerar Relatório WhatsApp">
                     <MessageCircle size={16} />
                   </a>
@@ -235,17 +245,26 @@ export default function OperationalTable({
                                   </div>
                               </div>
                               <div className="flex gap-2">
-                                  {canEdit && (
-                                    <button 
-                                      onClick={() => startEditingStore(row)} 
-                                      className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 rounded-xl transition-all shadow-sm"
-                                      title="Editar Loja"
-                                    >
-                                      <Edit2 size={16} />
-                                    </button>
-                                  )}
-                                  <a href={generateStoreWhatsAppLink(row)} target="_blank" rel="noopener noreferrer" className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-xl transition-all shadow-sm"><MessageCircle size={16} /></a>
-                              </div>
+                                      {/* NOVO BOTÃO DE HISTÓRICO ADICIONADO AQUI */}
+                                      <button 
+                                        onClick={() => openHistoryModal(row)} 
+                                        className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-xl transition-all shadow-sm"
+                                        title="Ver Histórico Mensal e Diário"
+                                      >
+                                        <History size={16} />
+                                      </button>
+                                      
+                                      {canEdit && (
+                                        <button 
+                                          onClick={() => startEditingStore(row)} 
+                                          className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 rounded-xl transition-all shadow-sm"
+                                          title="Editar Loja"
+                                        >
+                                          <Edit2 size={16} />
+                                        </button>
+                                      )}
+                                      <a href={generateStoreWhatsAppLink(row)} target="_blank" rel="noopener noreferrer" className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-xl transition-all shadow-sm"><MessageCircle size={16} /></a>
+                                  </div>
                           </div>
 
                           {/* Progress Section */}

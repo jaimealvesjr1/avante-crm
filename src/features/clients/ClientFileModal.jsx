@@ -328,14 +328,26 @@ export default function ClientFileModal({
   }, [dashboardData, clientUnfilteredStats, lastMonthTotalGmv, mesPassadoExato]);
 
   const consolidatedHistory = useMemo(() => {
+    const parseSafeNumber = (val) => {
+        if (typeof val === 'number') return val;
+        if (!val) return 0;
+        const cleaned = String(val).replace(/[^\d.,-]/g, '');
+        if (!cleaned) return 0;
+        if (cleaned.includes(',')) {
+            return Number(cleaned.replace(/\./g, '').replace(',', '.')) || 0;
+        }
+        return Number(cleaned) || 0;
+    };
+
     const historyMap = {};
     liveStores.forEach(store => {
       (store.monthlyHistory || []).forEach(h => {
         if (!historyMap[h.month]) historyMap[h.month] = { month: h.month, gmv: 0, ads: 0, orders: 0, units: 0, agencyRevenue: 0 };
-        historyMap[h.month].gmv += Number(h.gmv) || 0;
-        historyMap[h.month].ads += Number(h.adsInvestment) || 0;
-        historyMap[h.month].orders += Number(h.orders) || 0;
-        historyMap[h.month].units += Number(h.units) || 0;
+        
+        historyMap[h.month].gmv += parseSafeNumber(h.gmv);
+        historyMap[h.month].ads += parseSafeNumber(h.adsInvestment || h.ads);
+        historyMap[h.month].orders += parseSafeNumber(h.orders);
+        historyMap[h.month].units += parseSafeNumber(h.units);
       });
     });
     const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
@@ -649,31 +661,6 @@ export default function ClientFileModal({
             {activeTab === 'historico' && (
               <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mt-4 animate-in fade-in">
                 <div className="xl:col-span-3 flex flex-col gap-6">
-                  <div className="bg-black/20 border border-white/10 rounded-2xl overflow-hidden shadow-sm">
-                    <div className="p-4 border-b border-white/5 bg-black/40 font-bold text-xs text-gray-400 uppercase tracking-widest">Fechamentos Mensais</div>
-                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                      <table className="w-full text-left border-collapse">
-                        <thead className="text-[10px] text-gray-500 uppercase">
-                          <tr>
-                            <th className="p-4 pl-6">Competência</th>
-                            <th className="p-4 text-emerald-400">GMV</th>
-                            <th className="p-4 text-amber-400">Ads</th>
-                            <th className="p-4 text-blue-400">ROAS</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5 text-xs text-gray-300">
-                          {consolidatedHistory.map(hist => (
-                              <tr key={hist.month} className="hover:bg-white/[0.02]">
-                                <td className="p-4 pl-6 font-bold text-white">{hist.month}</td>
-                                <td className="p-4 text-emerald-400 font-bold">{formatCurrency(hist.gmv)}</td>
-                                <td className="p-4 text-amber-500 font-bold">{formatCurrency(hist.ads)}</td>
-                                <td className="p-4 text-blue-400 font-bold">{hist.ads > 0 ? (hist.gmv / hist.ads).toFixed(2) : '-'}</td>
-                              </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
                   <div className="bg-white/[0.02] p-5 rounded-3xl border border-white/5 flex flex-col shadow-sm flex-1">
                     <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
                       <h4 className="text-sm font-bold text-white flex items-center gap-2"><History size={16} className="text-gray-400"/> Linha do Tempo</h4>

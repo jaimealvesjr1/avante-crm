@@ -72,7 +72,10 @@ export const generateMonthlyReportPDF = async (clientName, clientStores, periodo
 
     const storeEvolucao = store.reportBase > 0 ? (store.reportGmv - store.reportBase) / store.reportBase : 0;
     const storeRoas = store.reportAds > 0 ? store.reportGmv / store.reportAds : 0;
-    const cac = store.reportUnits > 0 ? store.reportAds / store.reportUnits : 0;
+    
+    // CORREÇÃO: Fallback Inteligente de Conversões
+    const conversoesLoja = store.reportUnits > 0 ? store.reportUnits : store.reportOrders;
+    const cac = conversoesLoja > 0 ? store.reportAds / conversoesLoja : 0;
 
     storeRows.push([ 
       `${idx + 1}º`, 
@@ -80,7 +83,7 @@ export const generateMonthlyReportPDF = async (clientName, clientStores, periodo
       store.store || '-', 
       formatCurrency(store.reportGmv), 
       (storeEvolucao > 0 ? '+' : '') + (storeEvolucao * 100).toFixed(2) + '%', 
-      `${store.reportOrders} ped.`, 
+      `${formatNumber(conversoesLoja)} conv.`, // Formatação adaptada
       formatCurrency(store.reportAds), 
       storeRoas > 0 ? storeRoas.toFixed(2) + 'x' : '-', 
       formatCurrency(cac) 
@@ -98,7 +101,7 @@ export const generateMonthlyReportPDF = async (clientName, clientStores, periodo
   // Tabela de Lojas
   autoTable(docPdf, {
     startY: 78,
-    head: [['Rk', 'Canal', 'Loja', 'Faturamento', 'Evolução', 'Volume', 'ADS', 'ROAS', 'Custo por Conversão']],
+    head: [['Rk', 'Canal', 'Loja', 'Faturamento', 'Evolução', 'Conversões', 'ADS', 'ROAS', 'Custo por Conversão']],
     body: storeRows,
     theme: 'grid',
     headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255], fontStyle: 'bold' },
@@ -120,14 +123,17 @@ export const generateMonthlyReportPDF = async (clientName, clientStores, periodo
   docPdf.setFontSize(9); docPdf.setTextColor(71, 85, 105); docPdf.setFont('helvetica', 'normal');
   const totalEvolucao = totalBase > 0 ? (totalGmv - totalBase) / totalBase : 0;
   const totalRoas = totalAds > 0 ? totalGmv / totalAds : 0;
+  
+  const totalConversoes = totalUnits > 0 ? totalUnits : totalOrders;
+  const cacGlobal = totalConversoes > 0 ? totalAds / totalConversoes : 0;
 
   docPdf.text(`Canais Ativados: ${Array.from(canaisAtendidos).join(', ')}`, 20, finalY + 18);
-  docPdf.text(`Crescimento do Faturamento (MoM): ${(totalEvolucao * 100).toFixed(2)}%`, 20, finalY + 26);
-  docPdf.text(`Total de Unidades Vendidas: ${formatNumber(totalUnits)} unidades`, 20, finalY + 34);
+  docPdf.text(`Crescimento do Faturamento (MoM): ${totalEvolucao > 0 ? '+' : ''}${(totalEvolucao * 100).toFixed(2)}%`, 20, finalY + 26);
+  docPdf.text(`Volume de Vendas: ${formatNumber(totalConversoes)} ${totalUnits > 0 ? 'unidades' : 'pedidos'}`, 20, finalY + 34);
   
   docPdf.text(`Investimento Total em ADS: ${formatCurrency(totalAds)}`, 110, finalY + 18);
   docPdf.text(`ROAS Médio Consolidado: ${totalRoas > 0 ? totalRoas.toFixed(2) + 'x' : '-'}`, 110, finalY + 26);
-  docPdf.text(`Custo por Conversão: ${formatCurrency(totalUnits > 0 ? totalAds / totalUnits : 0)}`, 110, finalY + 34);
+  docPdf.text(`Custo por Conversão: ${formatCurrency(cacGlobal)}`, 110, finalY + 34);
 
   // Destaques Sazonais de Eventos embutidos
   let clientEventGmv = 0;
@@ -193,8 +199,8 @@ export const generateEventReportPDF = async (eventName, clientName, clientStores
       s.store || '-',
       formatCurrency(gmv),
       vsMedia > 0 ? `+${vsMedia.toFixed(1)}%` : (vsMedia < 0 ? `${vsMedia.toFixed(1)}%` : '-'),
-      `${orders}`,
-      `${units}`
+      `${formatNumber(orders)}`,
+      `${formatNumber(units)}`
     ]);
   });
 
