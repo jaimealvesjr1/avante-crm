@@ -36,6 +36,7 @@ export default function TeamFeedView({
     const [showPausedTasks, setShowPausedTasks] = useState(false);
     const [rankingPeriod, setRankingPeriod] = useState('semana');
     const [animatingTasks, setAnimatingTasks] = useState([]);
+    const [pendingStartInfo, setPendingStartInfo] = useState(null);
 
     const minhasTarefasPausadas = useMemo(() => {
         const pausadas = [];
@@ -108,15 +109,20 @@ export default function TeamFeedView({
 
         if (!isPlaying) {
             const runningTask = stores
-                .flatMap(s => s.checklists || [])
+                .flatMap(s => (s.checklists || []).map(t => ({ ...t, storeObject: s })))
                 .find(t => t.executingStatus === 'playing' && t.startedBy === myName && !t.feita);
             
             if (runningTask) {
-                toast.error("⚠️ Operação bloqueada! Você já tem uma tarefa em andamento. Pause ou conclua a anterior primeiro.");
+                // Abre o popup mágico de resolução de conflitos
+                setPendingStartInfo({ currentStoreId: storeId, currentTaskId: taskId, currentTaskText: task.texto, runningTask });
                 return;
             }
         }
         
+        executeStartOrPause(store, task, isPlaying);
+    };
+
+    const executeStartOrPause = (store, task, isPlaying) => {
         const result = isPlaying 
             ? processTaskPause(store, task, myName)
             : processTaskStart(store, task, myName);
@@ -130,10 +136,78 @@ export default function TeamFeedView({
         
         if (broadcastTaskFocus) {
             const statusMsg = isPlaying ? `⏸️ Pausada: ${task.texto} | ${store.store}` : `▶️ Executando: ${task.texto} | ${store.store}`;
-            broadcastTaskFocus(statusMsg, 'set', store.id, task.id); // <-- Enviando o ID!
+            broadcastTaskFocus(statusMsg, 'set', store.id, task.id);
         }
         
         toast.success(isPlaying ? "Tarefa pausada." : "Tarefa iniciada!");
+    };
+
+    const resolveConflictAndStart = async (action) => {
+        if (!pendingStartInfo) return;
+        const { currentStoreId, currentTaskId, currentTaskText, runningTask } = pendingStartInfo;
+
+        const oldStore = stores.find(s => s.id === runningTask.storeObject.id);
+        const currentStore = stores.find(s => s.id === currentStoreId);
+        
+        if (!oldStore || !currentStore) {
+            setPendingStartInfo(null);
+            return;
+        }
+
+        const oldTask = oldStore.checklists.find(t => t.id === runningTask.id);
+        
+        // 1. Resolve a tarefa antiga (Pausa ou Completa)
+        const resultOld = action === 'complete' 
+            ? processTaskCompletion(oldStore, oldTask, myName)
+            : processTaskPause(oldStore, oldTask, myName);
+
+        const newNextAccessOld = calculateNextAccess(resultOld.updatedChecklists);
+        
+        // Vamos guardar a velha temporariamente na memória
+        const oldStoreToSave = { 
+            ...oldStore, 
+            checklists: resultOld.updatedChecklists, 
+            taskLogs: [...(oldStore.taskLogs || []), resultOld.newLog], 
+            dataUltimoAcesso: new Date().toISOString(),
+            dataProximoAcesso: newNextAccessOld || oldStore.dataProximoAcesso || ''
+        };
+
+        // 2. Resolve a matemática do Firebase para evitar bugs se for na mesma loja
+        if (oldStore.id === currentStore.id) {
+            // É a mesma loja! A "currentStore" agora tem que ser a "oldStoreToSave" para não apagar a edição anterior
+            const currentTask = oldStoreToSave.checklists.find(t => t.id === currentTaskId);
+            const resultNew = processTaskStart(oldStoreToSave, currentTask, myName);
+            const newNextAccessNew = calculateNextAccess(resultNew.updatedChecklists);
+            
+            updateStoreInCloud({
+                ...oldStoreToSave,
+                checklists: resultNew.updatedChecklists,
+                taskLogs: [...oldStoreToSave.taskLogs, resultNew.newLog],
+                dataProximoAcesso: newNextAccessNew || oldStoreToSave.dataProximoAcesso || ''
+            });
+        } else {
+            // São lojas diferentes, salvamos a velha e pegamos a nova fresca
+            updateStoreInCloud(oldStoreToSave);
+            
+            const currentTask = currentStore.checklists.find(t => t.id === currentTaskId);
+            const resultNew = processTaskStart(currentStore, currentTask, myName);
+            const newNextAccessNew = calculateNextAccess(resultNew.updatedChecklists);
+            
+            updateStoreInCloud({
+                ...currentStore,
+                checklists: resultNew.updatedChecklists,
+                taskLogs: [...(currentStore.taskLogs || []), resultNew.newLog],
+                dataUltimoAcesso: new Date().toISOString(),
+                dataProximoAcesso: newNextAccessNew || currentStore.dataProximoAcesso || ''
+            });
+        }
+
+        if (broadcastTaskFocus) {
+            broadcastTaskFocus(`▶️ Executando: ${currentTaskText} | ${currentStore.store}`, 'set', currentStore.id, currentTaskId);
+        }
+
+        setPendingStartInfo(null); // Esconde o Popup
+        toast.success(action === 'complete' ? "Anterior concluída e nova iniciada!" : "Anterior pausada e nova iniciada!");
     };
 
     const handleCompleteFromRadar = (e, storeId, userName) => {
@@ -1138,6 +1212,44 @@ export default function TeamFeedView({
                     </div>
                 </div>
             </div>
+            
+            {/* POPUP FICA AQUI, ANTES DE FECHAR O DIV PRINCIPAL */}
+            {pendingStartInfo && (
+                <div className="fixed inset-0 bg-[#0B0F19]/90 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+                <div className="bg-gray-900 border border-white/10 p-6 rounded-2xl max-w-md w-full shadow-2xl flex flex-col gap-4">
+                    <h4 className="text-base font-bold text-white flex items-center gap-2">
+                    ⚠️ Tarefa já em execução
+                    </h4>
+                    <p className="text-sm text-gray-300 leading-relaxed">
+                    Você já possui a tarefa <strong className="text-indigo-400">"{pendingStartInfo.runningTask.texto}"</strong> ativa na loja <strong className="text-white">{pendingStartInfo.runningTask.storeObject.store}</strong>.
+                    </p>
+                    <p className="text-xs text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                    Você deseja pausar ou concluir a tarefa anterior para poder iniciar esta nova?
+                    </p>
+                    <div className="flex gap-2 mt-2">
+                    <button 
+                        onClick={() => setPendingStartInfo(null)}
+                        className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 font-bold py-2.5 rounded-xl text-xs transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onClick={() => resolveConflictAndStart('pause')}
+                        className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1"
+                    >
+                        Pausar
+                    </button>
+                    <button 
+                        onClick={() => resolveConflictAndStart('complete')}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1"
+                    >
+                        Concluir
+                    </button>
+                    </div>
+                </div>
+                </div>
+            )}
+
         </div>
     );
 }

@@ -40,6 +40,11 @@ export default function TaskView({ stores, openTaskModal, openBulkTaskModal, cur
       updatedStore.dataUltimoAcesso = now.toISOString();
       updatedStore.dataProximoAcesso = todayStr; 
       toast.success("Acesso registrado e pendência limpa!");
+      
+      if (sendGlobalNotification) {
+         sendGlobalNotification(`Limpou as pendências diárias da loja ${store.store}.`, 'success');
+      }
+      
     } else if (action === 'delay') {
       const tomorrow = new Date();
       tomorrow.setDate(now.getDate() + 1);

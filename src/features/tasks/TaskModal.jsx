@@ -38,6 +38,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [selectedProduct, setSelectedProduct] = useState(null); 
   
   const [animatingTasks, setAnimatingTasks] = useState([]);
+  const [pendingStartInfo, setPendingStartInfo] = useState(null);
 
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
@@ -209,6 +210,22 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   };
 
   const handleStartTask = (taskId, taskText) => {
+    // 1. Procura em todo o banco se há uma tarefa sua rodando
+    const runningTask = stores
+      .flatMap(s => (s.checklists || []).map(t => ({ ...t, storeObject: s })))
+      .find(t => t.executingStatus === 'playing' && t.startedBy === username && !t.feita);
+
+    // 2. Se achou, abre o Popup e PARA aqui
+    if (runningTask) {
+      setPendingStartInfo({ currentTaskId: taskId, currentTaskText: taskText, runningTask });
+      return;
+    }
+
+    // 3. Se não achou, inicia normalmente
+    executeStart(taskId, taskText);
+  };
+
+  const executeStart = (taskId, taskText) => {
     const task = store.checklists?.find(t => t.id === taskId);
     if(!task) return;
 
@@ -217,8 +234,73 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), newLog], dataUltimoAcesso: new Date().toISOString() });
     
     if (broadcastTaskFocus) {
-      broadcastTaskFocus(`▶️ Executando: ${taskText} | ${store.store}`, 'set', store.id);
+      // Adicionamos o envio do 'taskId' no final para a animação global funcionar!
+      broadcastTaskFocus(`▶️ Executando: ${taskText} | ${store.store}`, 'set', store.id, taskId);
     }
+  };
+
+  const resolveConflictAndStart = async (action) => {
+    if (!pendingStartInfo) return;
+    const { currentTaskId, currentTaskText, runningTask } = pendingStartInfo;
+
+    // Se a tarefa que esquecemos rodando estiver em OUTRA loja
+    if (store.id !== runningTask.storeObject.id) {
+      const oldStore = stores.find(s => s.id === runningTask.storeObject.id);
+      if (oldStore) {
+        const oldTask = oldStore.checklists.find(t => t.id === runningTask.id);
+        
+        const result = action === 'complete' 
+          ? processTaskCompletion(oldStore, oldTask, username)
+          : processTaskPause(oldStore, oldTask, username);
+
+        const newNextAccess = calculateNextAccess(result.updatedChecklists);
+
+        const finalOldStore = { 
+          ...oldStore, 
+          checklists: result.updatedChecklists, 
+          taskLogs: [...(oldStore.taskLogs || []), result.newLog], 
+          dataUltimoAcesso: new Date().toISOString(),
+          dataProximoAcesso: newNextAccess || oldStore.dataProximoAcesso || ''
+        };
+        updateStoreInCloud(finalOldStore);
+      }
+      executeStart(currentTaskId, currentTaskText);
+      
+    } else {
+      // Se for na MESMA loja
+      const oldTask = store.checklists.find(t => t.id === runningTask.id);
+      
+      const resultOld = action === 'complete'
+        ? processTaskCompletion(store, oldTask, username)
+        : processTaskPause(store, oldTask, username);
+      
+      const tempStore = { ...store, checklists: resultOld.updatedChecklists };
+      const currentTask = tempStore.checklists.find(t => t.id === currentTaskId);
+      
+      const resultNew = processTaskStart(tempStore, currentTask, username);
+
+      const finalLogs = [
+        ...(store.taskLogs || []),
+        resultOld.newLog,
+        resultNew.newLog
+      ];
+
+      const newNextAccess = calculateNextAccess(resultNew.updatedChecklists);
+
+      const finalStoreObj = { 
+        ...store, 
+        checklists: resultNew.updatedChecklists, 
+        taskLogs: finalLogs, 
+        dataUltimoAcesso: new Date().toISOString(),
+        dataProximoAcesso: newNextAccess || store.dataProximoAcesso || ''
+      };
+      
+      updateStoreInCloud(finalStoreObj);
+      broadcastTaskFocus(`▶️ Executando: ${currentTaskText} | ${store.store}`, 'set', store.id, currentTaskId);
+    }
+    
+    setPendingStartInfo(null);
+    toast.success(action === 'complete' ? "Anterior concluída e nova iniciada!" : "Anterior pausada e nova iniciada!");
   };
 
   const handlePauseTask = (taskId, taskText) => {
@@ -230,7 +312,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), newLog], dataUltimoAcesso: new Date().toISOString() });
     
     if (broadcastTaskFocus) {
-      broadcastTaskFocus(`⏸️ Pausada: ${taskText} | ${store.store}`, 'set', store.id);
+      broadcastTaskFocus(`⏸️ Pausada: ${taskText} | ${store.store}`, 'set', store.id, taskId);
     }
     toast.success("Tarefa pausada.");
   };
@@ -988,6 +1070,42 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
             </div>
           </>
         )}
+
+      {pendingStartInfo && (
+        <div className="fixed inset-0 bg-[#0B0F19]/90 backdrop-blur-md flex items-center justify-center z-[200] p-4 animate-in fade-in duration-200">
+          <div className="bg-gray-900 border border-white/10 p-6 rounded-2xl max-w-md w-full shadow-2xl flex flex-col gap-4">
+            <h4 className="text-base font-bold text-white flex items-center gap-2">
+              ⚠️ Tarefa já em execução
+            </h4>
+            <p className="text-sm text-gray-300 leading-relaxed">
+              Você já possui a tarefa <strong className="text-indigo-400">"{pendingStartInfo.runningTask.texto}"</strong> ativa na loja <strong className="text-white">{pendingStartInfo.runningTask.storeObject.store}</strong>.
+            </p>
+            <p className="text-xs text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+              Você deseja pausar ou concluir a tarefa anterior para poder iniciar esta nova?
+            </p>
+            <div className="flex gap-2 mt-2">
+              <button 
+                onClick={() => setPendingStartInfo(null)}
+                className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 font-bold py-2.5 rounded-xl text-xs transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => resolveConflictAndStart('pause')}
+                className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1"
+              >
+                Pausar
+              </button>
+              <button 
+                onClick={() => resolveConflictAndStart('complete')}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
