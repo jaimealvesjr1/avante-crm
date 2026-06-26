@@ -497,8 +497,18 @@ export default function App() {
   };
 
   const openClientFile = (clientName) => {
-    const group = dashboardData.groupedClients.find(g => g.client === clientName);
-    if (group) { setActiveClientGroup(group); setClientFileOpen(true); }
+    const clientStores = stores.filter(s => s.client === clientName && !s.arquivada);
+    if (clientStores.length > 0) { 
+      const sampleStore = clientStores[0];
+      setActiveClientGroup({ 
+        client: clientName, 
+        feeType: sampleStore.feeType, 
+        feePercent: sampleStore.feePercent, 
+        fixedFee: sampleStore.fixedFee,
+        stores: clientStores
+      }); 
+      setClientFileOpen(true); 
+    }
   };
   
   // Atalho global para que componentes profundos (como TaskModal) consigam chamar
@@ -1938,7 +1948,7 @@ export default function App() {
       />
 
       {historyModalOpen && (
-        <StoreHistoryModal
+      <StoreHistoryModal
           isOpen={historyModalOpen}
           onClose={() => setHistoryModalOpen(false)}
           store={activeStore}
@@ -1994,6 +2004,7 @@ export default function App() {
           clientGroup={activeClientGroup} 
           onClose={() => setClientFileOpen(false)}
           openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
+          openHistoryModal={openHistoryModal}
           formatCurrency={formatCurrency}
           stores={stores}
           setStores={setStores}
@@ -2012,6 +2023,7 @@ export default function App() {
           globalGrowth={globalGrowth}
           clientGrowthMap={clientGrowthMap}
           marketplaceGrowthMap={marketplaceGrowthMap}
+          broadcastTaskFocus={broadcastTaskFocus}
         />
       )}
 

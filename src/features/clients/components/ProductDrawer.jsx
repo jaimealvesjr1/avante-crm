@@ -361,9 +361,32 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
             </div>
           </div>
 
+          {/* BLOCO 4: HISTÓRICO DE ALTERAÇÕES DO PRODUTO */}
+          {initialData && productForm.historico && productForm.historico.length > 0 && (
+            <div className="space-y-4 border-t border-white/5 pt-6 mt-4">
+              <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                4. Histórico de Edições
+              </h4>
+              <div className="bg-black/20 rounded-2xl p-4 border border-white/5 max-h-48 overflow-y-auto custom-scrollbar">
+                <div className="space-y-4 border-l-2 border-gray-800 ml-2 pl-3">
+                  {productForm.historico.map((log, idx) => (
+                    <div key={idx} className="relative">
+                      <div className="absolute -left-[17px] top-1.5 w-2 h-2 bg-gray-500 rounded-full border-2 border-gray-900"></div>
+                      <p className="text-[10px] text-indigo-400 font-bold mb-0.5">{log.author} <span className="text-gray-500 font-normal ml-1">{log.data}</span></p>
+                      <ul className="list-disc pl-3 text-xs text-gray-400 space-y-1">
+                        {log.mudancas.map((mudanca, mIdx) => (
+                          <li key={mIdx}>{mudanca}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
 
-        {/* Botão Salvar Fixo (Rodapé da Gaveta) */}
         <div className="absolute bottom-0 left-0 w-full p-4 border-t border-white/10 bg-gray-900/95 backdrop-blur-xl z-10">
           <button onClick={triggerSave} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm flex items-center justify-center gap-2">
             {initialData ? <Save size={18}/> : <Plus size={18}/>}

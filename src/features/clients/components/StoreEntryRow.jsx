@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
+import { History, Save } from 'lucide-react';
 
-export default function StoreEntryRow({ store, handleSaveIndividualEntry }) {
-    // Busca o último dia registrado no histórico para sugerir o próximo dia
+export default function StoreEntryRow({ store, handleSaveIndividualEntry, formatCurrency, openTaskModal, openHistoryModal }) {
     const lastDayRecorded = store.history && store.history.length > 0 
         ? Math.max(...store.history.map(h => h.day)) 
         : 0;
@@ -27,7 +27,6 @@ export default function StoreEntryRow({ store, handleSaveIndividualEntry }) {
 
         await handleSaveIndividualEntry(store.id, day, numRev, numAds, numOrd, numUni);
         
-        // Avança o dia automaticamente para agilizar a digitação
         setDay(prev => prev < 31 ? Number(prev) + 1 : 31);
         setIsSaving(false);
     };
@@ -37,7 +36,11 @@ export default function StoreEntryRow({ store, handleSaveIndividualEntry }) {
             <td className="p-4">
                 <div className="flex items-center gap-2">
                     <div>
-                        <div className="font-bold text-gray-200 truncate max-w-[150px]" title={store.store}>
+                        <div 
+                          onClick={() => { if(openTaskModal) openTaskModal(store); }}
+                          className="font-bold text-gray-200 hover:text-indigo-400 cursor-pointer transition-colors truncate max-w-[150px]" 
+                          title="Abrir Tarefas e Senhas"
+                        >
                             {store.store}
                         </div>
                         <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">
@@ -86,12 +89,23 @@ export default function StoreEntryRow({ store, handleSaveIndividualEntry }) {
                 />
             </td>
             <td className="p-4 text-right">
-                <button 
-                    onClick={onSave} disabled={isSaving} 
-                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-colors"
-                >
-                    {isSaving ? '⏳' : 'Salvar'}
-                </button>
+                <div className="flex justify-end gap-2 items-center">
+                    {openHistoryModal && (
+                        <button 
+                            onClick={() => openHistoryModal(store)} 
+                            className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-xl transition-all shadow-sm"
+                            title="Auditoria Diária e Mensal"
+                        >
+                            <History size={16} />
+                        </button>
+                    )}
+                    <button 
+                        onClick={onSave} disabled={isSaving} 
+                        className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-colors flex items-center gap-1.5"
+                    >
+                        <Save size={14} /> {isSaving ? '⏳' : 'Salvar'}
+                    </button>
+                </div>
             </td>
         </tr>
     );

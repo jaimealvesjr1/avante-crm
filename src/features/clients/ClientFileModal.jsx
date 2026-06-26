@@ -20,7 +20,8 @@ export default function ClientFileModal({
   clientGroup, onClose, formatCurrency, stores, setStores, updateStoreInCloud, currentDay, 
   currentUserData, user, canUseBatchEntry, canEdit, teamMembers, 
   addNewStoreToClient, handleSaveIndividualEntry, dashboardData, offboardClient,
-  daysInMonth, globalGrowth, clientGrowthMap, marketplaceGrowthMap, broadcastTaskFocus
+  daysInMonth, globalGrowth, clientGrowthMap, marketplaceGrowthMap, broadcastTaskFocus,
+  openTaskModal, openHistoryModal, splitMode = 'center'
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isBulkTaskModalOpen, setIsBulkTaskModalOpen] = useState(false);
@@ -427,8 +428,8 @@ export default function ClientFileModal({
   const INTERNAL_COLORS = ['#6366F1', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
   return (
-    <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
-      <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col relative">
+      <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+        <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col relative">
         
         {/* CABEÇALHO DO MODAL GERAL */}
         <div className="p-6 border-b border-white/10 bg-black/20 flex flex-col gap-5 shrink-0">
@@ -650,7 +651,14 @@ export default function ClientFileModal({
                     </thead>
                     <tbody className="divide-y divide-white/5">
                       {liveStores.map(store => (
-                        <StoreEntryRow key={store.id} store={store} handleSaveIndividualEntry={handleSaveIndividualEntry} formatCurrency={formatCurrency} />
+                        <StoreEntryRow 
+                          key={store.id} 
+                          store={store} 
+                          handleSaveIndividualEntry={handleSaveIndividualEntry} 
+                          formatCurrency={formatCurrency} 
+                          openTaskModal={openTaskModal}
+                          openHistoryModal={openHistoryModal}
+                        />
                       ))}
                     </tbody>
                   </table>
@@ -755,7 +763,6 @@ export default function ClientFileModal({
         initialData={editingProductData} 
         onSave={handleSaveProduct} 
       />
-
     </div>
   );
 }

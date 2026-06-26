@@ -385,8 +385,8 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const clientProducts = store.produtos || stores.find(s => s.client === store.client)?.produtos || [];
 
   return (
-    <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
-      <div className="relative bg-white/[0.02] backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-6xl overflow-hidden flex flex-col lg:flex-row h-[90vh]">
+  <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-md flex items-center justify-center z-[250] p-4 animate-in zoom-in-95 duration-200">
+        <div className="relative bg-[#0d1321]/95 backdrop-blur-3xl rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.7)] border border-white/15 w-full max-w-6xl overflow-hidden flex flex-col lg:flex-row h-[90vh]">
         
         {/* LADO ESQUERDO */}
         <div className="flex-1 flex flex-col md:border-r border-white/10 relative">
@@ -1072,7 +1072,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
         )}
 
       {pendingStartInfo && (
-        <div className="fixed inset-0 bg-[#0B0F19]/90 backdrop-blur-md flex items-center justify-center z-[200] p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-[#0B0F19]/90 backdrop-blur-md flex items-center justify-center z-[300] p-4 animate-in fade-in duration-200">
           <div className="bg-gray-900 border border-white/10 p-6 rounded-2xl max-w-md w-full shadow-2xl flex flex-col gap-4">
             <h4 className="text-base font-bold text-white flex items-center gap-2">
               ⚠️ Tarefa já em execução

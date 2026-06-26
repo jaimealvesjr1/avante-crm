@@ -234,7 +234,13 @@ export default function OperationalTable({
                           <div className="flex justify-between items-start mb-4 mt-1">
                               <div>
                                   <div className="flex items-center gap-2 mb-1.5">
-                                      <span className="font-bold text-gray-100 text-lg">{row.store}</span>
+                                      <span 
+                                        onClick={(e) => { e.stopPropagation(); if(openTaskModal) openTaskModal(row); }}
+                                        className="font-bold text-gray-100 hover:text-indigo-400 text-lg cursor-pointer transition-colors"
+                                        title="Abrir Tarefas e Senhas"
+                                      >
+                                        {row.store}
+                                      </span>
                                       {row.marketplace && <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded text-xs uppercase font-bold tracking-wider">{row.marketplace}</span>}
                                   </div>
                                   <div className="flex items-center gap-2">
