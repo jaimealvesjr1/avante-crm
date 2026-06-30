@@ -1001,6 +1001,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                                  <th className="pb-2 w-16">Pares</th>
                                  <th className="pb-2 w-20">P. Cheio</th>
                                  <th className="pb-2 w-20 text-emerald-400">Promo</th>
+                                 <th className="pb-2 w-20 text-orange-400">Spam</th>
                                  <th className="pb-2 text-right">Lucro Bruto</th>
                                </tr>
                              </thead>
@@ -1014,6 +1015,9 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                                        <td className="py-2.5 text-[11px] font-bold text-gray-300">{of.quantidade}</td>
                                        <td className="py-2.5 text-[11px] text-gray-500 line-through">R$ {of.precoDe}</td>
                                        <td className="py-2.5 text-[11px] font-black text-emerald-400">R$ {of.precoPor || of.precoDe || '0.00'}</td>
+                                       <td className="py-2.5 text-[11px] font-black text-orange-400">
+                                         {of.spam ? `R$ ${of.spam}` : '-'}
+                                       </td>
                                        <td className="py-2.5 text-right flex flex-col items-end">
                                             <span className={`text-[11px] font-black ${isNegativo ? 'text-red-400' : 'text-emerald-400'}`}>
                                               {isNegativo ? '' : '+'}R$ {lucro.valor.toFixed(2)}

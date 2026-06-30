@@ -103,6 +103,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
         quantidade: ultimaQtd + 1,
         precoDe: '',
         precoPor: '',
+        spam: '',
         lucro: ''
     });
     setProductForm({...productForm, canais: novosCanais});
@@ -299,14 +300,14 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
                      <div className="overflow-x-auto">
                        <table className="w-full text-left">
                          <thead>
-                           <tr className="text-[9px] text-gray-500 uppercase tracking-wider border-b border-white/10">
-                             <th className="pb-1.5 w-16">Pares</th>
-                             <th className="pb-1.5 w-24">P. Cheio</th>
-                             <th className="pb-1.5 w-24 text-emerald-400">P. Promo</th>
-                             <th className="pb-1.5 min-w-[80px] text-center text-indigo-400">Lucro (R$)</th>
-                             <th className="pb-1.5 w-8"></th>
-                           </tr>
-                         </thead>
+                          <tr className="text-[9px] text-gray-500 uppercase tracking-wider border-b border-white/10">
+                            <th className="pb-2 w-16">Pares</th>
+                            <th className="pb-2 w-20">P. Cheio</th>
+                            <th className="pb-2 w-20 text-emerald-400">Promo</th>
+                            <th className="pb-2 w-20 text-orange-400">SPAM</th>
+                            <th className="pb-2 text-right">Lucro Bruto</th>
+                          </tr>
+                        </thead>
                          <tbody>
                            {(c.ofertas || []).map((of, oIdx) => {
                               return (
@@ -320,6 +321,11 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
                                    <td className="py-2 pr-2">
                                       <input type="number" step="0.01" value={of.precoPor} onChange={e => handleUpdateOferta(idx, oIdx, 'precoPor', e.target.value)} className="w-full bg-emerald-500/10 border border-emerald-500/30 text-white font-bold rounded p-1.5 text-xs outline-none focus:border-emerald-500 placeholder:text-emerald-500/30" placeholder="R$" />
                                    </td>
+                                   
+                                   <td className="py-2 pr-2">
+                                      <input type="number" step="0.01" value={of.spam || ''} onChange={e => handleUpdateOferta(idx, oIdx, 'spam', e.target.value)} className="w-full bg-orange-500/10 border border-orange-500/30 text-orange-300 font-bold rounded p-1.5 text-xs outline-none focus:border-orange-500 placeholder:text-orange-500/30 text-center" placeholder="0.00" />
+                                   </td>
+
                                    <td className="py-2 pr-2">
                                       <input type="number" step="0.01" value={of.lucro || ''} onChange={e => handleUpdateOferta(idx, oIdx, 'lucro', e.target.value)} className="w-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-bold rounded p-1.5 text-xs outline-none focus:border-indigo-500 placeholder:text-indigo-500/30 text-center" placeholder="R$" />
                                    </td>

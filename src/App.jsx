@@ -23,7 +23,6 @@ const OperationalTable = lazy(() => import('./pages/OperationalTable'));
 const FinanceDashboard = lazy(() => import('./pages/FinanceDashboard'));
 const WarRoom = lazy(() => import('./pages/WarRoom'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
-const TaskView = lazy(() => import('./pages/TaskView'));
 const TeamFeedView = lazy(() => import('./pages/TeamFeedView'));
 
 import ClientFileModal from './features/clients/ClientFileModal';
@@ -53,7 +52,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.0.1';
+  const CURRENT_VERSION = '3.0.2';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -99,7 +98,6 @@ export default function App() {
   const [sortBy, setSortBy] = useState(() => localStorage.getItem('avante_sync_sort') || 'name');
   const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('avante_sync_status') || 'all');
   const [mktFilter, setMktFilter] = useState(() => localStorage.getItem('avante_sync_mkt') || 'all');
-  const [respFilter, setRespFilter] = useState(() => localStorage.getItem('avante_sync_resp') || 'all');
 
   const {
     activeView, setActiveView,
@@ -112,8 +110,7 @@ export default function App() {
     localStorage.setItem('avante_sync_sort', sortBy);
     localStorage.setItem('avante_sync_status', statusFilter);
     localStorage.setItem('avante_sync_mkt', mktFilter);
-    localStorage.setItem('avante_sync_resp', respFilter);
-  }, [sortBy, statusFilter, mktFilter, respFilter]);
+  }, [sortBy, statusFilter, mktFilter]);
 
   useEffect(() => {
     const handleStorageChange = (e) => {
@@ -121,7 +118,6 @@ export default function App() {
       if (e.key === 'avante_sync_sort') setSortBy(e.newValue || 'name');
       if (e.key === 'avante_sync_status') setStatusFilter(e.newValue || 'all');
       if (e.key === 'avante_sync_mkt') setMktFilter(e.newValue || 'all');
-      if (e.key === 'avante_sync_resp') setRespFilter(e.newValue || 'all');
     };
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
@@ -223,7 +219,7 @@ export default function App() {
 
   useEffect(() => {
     if (isVisitante && ['dashboard', 'operacional', 'admin'].includes(activeView)) {
-      setActiveView('rotinas');
+      setActiveView('feed_equipe');
     }
   }, [isVisitante, activeView]);
 
@@ -1352,9 +1348,16 @@ export default function App() {
 
     const filteredStores = processedStores.filter(store => {
       if (store.arquivada) return false;
-      const matchSearch = !searchTerm || store.client.toLowerCase().includes(searchTerm.toLowerCase()) || store.store.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const term = searchTerm ? searchTerm.toLowerCase() : '';
+      const matchSearch = !term || 
+        store.client.toLowerCase().includes(term) || 
+        store.store.toLowerCase().includes(term) ||
+        (store.checklists || []).some(task => task.texto.toLowerCase().includes(term)); // <-- BUSCA NAS TAREFAS!
+
       const matchStatus = statusFilter === 'all' || store.status === statusFilter;
       const matchMkt = mktFilter === 'all' || (store.marketplace && store.marketplace.toUpperCase() === mktFilter);
+      
       return matchSearch && matchStatus && matchMkt; 
     });
 
@@ -1469,7 +1472,7 @@ export default function App() {
       rankingMarketplaces: Object.values(mktPerformance).sort((a, b) => b.atual - a.atual),
       historicalChartData
     };
-  }, [stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, respFilter, myName]);
+  }, [stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, myName]);
 
   const pieData = useMemo(() => dashboardData.groupedClients.map(g => ({ name: g.client, value: g.totalProjectedGmv })).filter(g => g.value > 0), [dashboardData]);
   const roasData = useMemo(() => dashboardData.groupedClients.filter(g => g.totalAds > 0).map(g => ({ name: g.client, roas: Number(g.roas) })).sort((a, b) => b.roas - a.roas), [dashboardData]);
@@ -1568,11 +1571,7 @@ export default function App() {
             <button onClick={() => setActiveView('feed_equipe')} className={`relative p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'feed_equipe' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`} title="Feed da Equipe">
               <Activity size={18} className="shrink-0" /> <span className="hidden xl:inline">Feed</span>
             </button>
-            
-            <button onClick={() => setActiveView('rotinas')} className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'rotinas' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`} title="Workflow e Rotinas">
-              <CalendarDays size={18} className="shrink-0" /> <span className="hidden xl:inline">Workflow</span>
-            </button>
-            
+
             {!isVisitante && (
               <>
                 <button onClick={() => setActiveView('operacional')} className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'operacional' ? 'bg-blue-950 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`} title="Portfólio de Lojas">
@@ -1684,7 +1683,7 @@ export default function App() {
 
       <main className="flex-1 w-full px-4 md:px-8 2xl:px-12 pt-6 relative mx-auto">
         <ErrorBoundary>
-          {['dashboard', 'operacional', 'rotinas', 'feed_equipe', 'financeiro', 'war_room'].includes(activeView) && (
+          {['dashboard', 'operacional', 'feed_equipe', 'financeiro', 'war_room'].includes(activeView) && (
             <div className="sticky top-[70px] md:top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-3 xl:p-5 rounded-2xl xl:rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
               <div className="flex items-center gap-3 justify-between w-full flex-nowrap overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 
@@ -1723,7 +1722,7 @@ export default function App() {
                 
                 <div className="flex gap-2 items-center shrink-0">
                   <button 
-                    onClick={() => { setSearchTerm(''); setSortBy('name'); setStatusFilter('all'); setMktFilter('all'); setRespFilter('all'); toast.success('Filtros resetados!'); }} 
+                    onClick={() => { setSearchTerm(''); setSortBy('name'); setStatusFilter('all'); setMktFilter('all'); toast.success('Filtros resetados!'); }} 
                     className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2 rounded-xl transition-colors shrink-0"
                     title="Limpar todos os filtros"
                   >
@@ -1752,7 +1751,7 @@ export default function App() {
               <TeamFeedView 
                 currentUserData={currentUserData} 
                 user={user} 
-                stores={stores.filter(store => !store.arquivada)}
+                stores={dashboardData.flatFilteredStores}
                 teamMembers={teamMembers}
                 searchTerm={searchTerm}
                 openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }}
@@ -1856,29 +1855,6 @@ export default function App() {
                 canAccessWarRoom={canAccessWarRoom}
                 sortBy={sortBy}
                 currentDay={currentDay}
-              />
-            )}
-
-            {activeView === 'rotinas' && (
-              <TaskView 
-                stores={
-                  isVisitante 
-                    ? dashboardData.flatFilteredStores.map(store => ({
-                        ...store,
-                        checklists: (store.checklists || []).filter(task => task.responsavel === myName)
-                      })).filter(store => store.checklists?.length > 0)
-                    : dashboardData.flatFilteredStores
-                } 
-                openTaskModal={(store) => { setActiveTaskStoreId(store.id); setTaskModalOpen(true); }} 
-                openBulkTaskModal={() => setBulkTaskModalOpen(true)}
-                currentUserData={currentUserData}
-                user={user}
-                updateStoreInCloud={updateStoreInCloud}
-                setStores={setStores}
-                openClientFile={openClientFile}
-                teamMembers={teamMembers}
-                broadcastTaskFocus={broadcastTaskFocus}
-                sendGlobalNotification={sendGlobalNotification}
               />
             )}
             
