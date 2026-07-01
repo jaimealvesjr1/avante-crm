@@ -362,8 +362,25 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                         <linearGradient id="colorAgency" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10B981" stopOpacity={0}/></linearGradient>
                       </defs>
                       <XAxis dataKey="month" stroke="#6B7280" fontSize={10} tickLine={false} axisLine={false} />
-                      <YAxis yAxisId="left" hide />
-                      <YAxis yAxisId="right" orientation="right" hide />
+                      <YAxis 
+                        yAxisId="left" 
+                        stroke="#3B82F6" 
+                        fontSize={10} 
+                        tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} 
+                        domain={[0, dataMax => dataMax * 1.1]} 
+                        axisLine={false} 
+                        tickLine={false} 
+                      />
+                      <YAxis 
+                        yAxisId="right" 
+                        orientation="right" 
+                        stroke="#10B981" 
+                        fontSize={10} 
+                        tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} 
+                        domain={[0, dataMax => dataMax * 1.2]} 
+                        axisLine={false} 
+                        tickLine={false} 
+                      />
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                       <Tooltip 
                         content={({ active, payload, label }) => {

@@ -52,7 +52,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.0.2';
+  const CURRENT_VERSION = '3.0.3';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -98,6 +98,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState(() => localStorage.getItem('avante_sync_sort') || 'name');
   const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('avante_sync_status') || 'all');
   const [mktFilter, setMktFilter] = useState(() => localStorage.getItem('avante_sync_mkt') || 'all');
+  const [showArchived, setShowArchived] = useState(false);
 
   const {
     activeView, setActiveView,
@@ -848,14 +849,15 @@ export default function App() {
       let totalAllTimeOrders = 0;
 
       clientStores.forEach(s => {
-        totalAllTimeGmv += Number(s.currentRevenue) || 0;
-        totalAllTimeAds += Number(s.adsInvestment) || 0;
-        totalAllTimeOrders += Number(s.orders) || 0;
+        totalAllTimeGmv += parseSafeNumber(s.currentRevenue);
+        totalAllTimeAds += parseSafeNumber(s.adsInvestment);
+        totalAllTimeOrders += parseSafeNumber(s.orders);
+        
         if (s.monthlyHistory) {
           s.monthlyHistory.forEach(h => {
-            totalAllTimeGmv += Number(h.gmv) || 0;
-            totalAllTimeAds += Number(h.adsInvestment) || 0;
-            totalAllTimeOrders += Number(h.orders) || 0;
+            totalAllTimeGmv += parseSafeNumber(h.gmv);
+            totalAllTimeAds += parseSafeNumber(h.adsInvestment || h.ads);
+            totalAllTimeOrders += parseSafeNumber(h.orders);
           });
         }
       });
@@ -900,37 +902,53 @@ export default function App() {
     }
   };
 
+  const handleRestoreClient = async (clientName) => {
+    if (!window.confirm(`Deseja reativar o cliente ${clientName}? Ele voltará para a operação ativa.`)) return;
+
+    try {
+      const batch = writeBatch(db);
+      stores.forEach(s => {
+        if (s.client === clientName && s.arquivada) {
+          const storeRef = doc(db, 'stores', s.id.toString());
+          batch.update(storeRef, {
+            arquivada: false,
+            statusAtendimento: 'ativo'
+          });
+        }
+      });
+      await batch.commit();
+      toast.success(`Cliente ${clientName} restaurado para a operação ativa!`);
+    } catch (error) {
+      toast.error("Erro ao restaurar cliente: " + error.message);
+    }
+  };
+
   const closeMonth = () => {
-    setCloseMonthValue('');
     setIsCloseMonthModalOpen(true);
   };
 
   const executeCloseMonth = async (selectedMonthValue) => {
     const padronizado = normalizeMonthYear(selectedMonthValue);
 
-    // 1. Confirmação de segurança com o usuário
     if (!window.confirm(`ATENÇÃO! Tem certeza que deseja FECHAR O MÊS de ${padronizado}?\n\n1. Os relatórios em PDF e Excel serão baixados.\n2. O histórico financeiro será salvo.\n3. O faturamento será zerado.\n4. As faturas de cobrança da agência serão geradas.`)) return;
 
-    setIsCloseMonthModalOpen(false); // Fecha o modal de seleção
+    setIsCloseMonthModalOpen(false);
     toast.loading("Processando fechamento do mês, gravando histórico e gerando faturas...", { id: 'close-month' });
 
     try {
-      // 2. Dispara a geração de relatórios consolidados
-      await generateReports(stores, padronizado, { pdf: true, excel: true });
+      const lojasParaFechar = stores.filter(s => !s.arquivada || (s.arquivada && Number(s.currentRevenue) > 0));
+
+      await generateReports(lojasParaFechar, padronizado, { pdf: true, excel: true });
       
       const batch = writeBatch(db);
       const faturasPorCliente = {};
 
-      // ⚡ OTIMIZAÇÃO: Pré-calcula o número de lojas ativas por cliente para evitar loops aninhados
       const lojasAtivasPorCliente = {};
-      stores.forEach(s => {
-        if (!s.arquivada) {
+      lojasParaFechar.forEach(s => {
           lojasAtivasPorCliente[s.client] = (lojasAtivasPorCliente[s.client] || 0) + 1;
-        }
       });
       
-      // 3. Processamento individual de cada loja cadastrada
-      stores.forEach(store => {
+      lojasParaFechar.forEach(store => {
         const storeRef = doc(db, 'stores', store.id.toString());
         
         const gmv = parseSafeNumber(store.currentRevenue);
@@ -938,13 +956,9 @@ export default function App() {
         const fixedFee = Number(store.fixedFee) || 0;
         const isFixed = store.feeType === 'fixed' || fixedFee > 0;
         
-        // Busca o valor pré-calculado no nosso mapa de otimização
         const clientStoresCount = lojasAtivasPorCliente[store.client] || 1;
-        
-        // Calcula a receita gerada para a agência por esta loja específica
         const agencyRevenue = isFixed ? (fixedFee / clientStoresCount) : gmv * (feePercent / 100);
 
-        // Agrupa os valores para gerar uma única Fatura consolidada por Cliente
         if (!faturasPorCliente[store.client]) {
             faturasPorCliente[store.client] = { valorTotalAgencia: 0 };
         }
@@ -968,7 +982,6 @@ export default function App() {
         const currentHistory = store.monthlyHistory || [];
         const newMonthlyHistory = [...currentHistory, snapshot];
 
-        // Atualiza a loja zerando os acumulados mensais para iniciar o próximo ciclo
         batch.update(storeRef, {
           monthlyHistory: newMonthlyHistory, 
           gmvBase: gmv, 
@@ -977,23 +990,18 @@ export default function App() {
           units: 0,
           adsInvestment: 0,
           history: [], 
-          eventLogs: deleteField(), // Limpa os logs de eventos sazonais do War Room
+          eventLogs: deleteField(),
           updatedAt: new Date().toISOString()
         });
       });
 
-      // 4. Configuração de cobrança e vencimento das faturas (Padrão: 10 dias de prazo)
       const vencimentoPadrao = new Date();
       vencimentoPadrao.setDate(vencimentoPadrao.getDate() + 10); 
 
-      // 5. Criação das faturas na coleção de recebimentos financeiros
       Object.keys(faturasPorCliente).forEach(clienteNome => {
           const valorFatura = faturasPorCliente[clienteNome].valorTotalAgencia;
-          
           if (valorFatura > 0) {
-              // Certifique-se de que 'collection' foi importado do firestore no topo do arquivo
               const faturaRef = doc(collection(db, 'financeiro_recebimentos'));
-              
               batch.set(faturaRef, {
                   id: faturaRef.id,
                   cliente: clienteNome,
@@ -1006,7 +1014,6 @@ export default function App() {
           }
       });
 
-      // 6. Envia o pacote de atualizações de forma atômica para o Firebase Firestore
       await batch.commit();
       toast.success("Mês fechado com sucesso! Relatórios baixados, histórico atualizado e Faturas geradas.", { id: 'close-month' });
       sendGlobalNotification(`Acaba de fechar o mês de ${padronizado} com sucesso! 🏆`, 'success');
@@ -1082,40 +1089,56 @@ export default function App() {
       return Number(cleaned) || 0;
   };
 
+    const currentMonthBankFormat = normalizeMonthYear(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
+    const isCurrentMonth = targetMonth === currentMonthBankFormat;
+
     // Varre todas as lojas e organiza dentro do objeto clientsGroup
     targetStores.forEach(store => {
-      const cName = store.client || 'Sem Cliente';
-      if (!clientsGroup[cName]) clientsGroup[cName] = [];
-      
       const pastData = (store.monthlyHistory || []).find(h => h.month === targetMonth);
       let gmv = 0, ads = 0, orders = 0, units = 0, base = 0;
+      let shouldInclude = false; // Flag para ignorar lojas fantasmas
       
       if (pastData) {
+          // Cenário A: O mês pedido está salvo no histórico
           gmv = parseSafeNumber(pastData.gmv);
-          
           ads = parseSafeNumber(pastData.adsInvestment || pastData.ads); 
-          
           orders = parseSafeNumber(pastData.orders);
           units = parseSafeNumber(pastData.units);
           const histArray = store.monthlyHistory || [];
           const currentIndex = histArray.findIndex(h => h.id === pastData.id);
           base = currentIndex > 0 ? parseSafeNumber(histArray[currentIndex - 1].gmv) : 0;
-      } else {
+          
+          if (gmv > 0) shouldInclude = true; // Teve faturamento, vai pro PDF
+
+      } else if (isCurrentMonth && !store.arquivada) {
+          // Cenário B: Pediram o mês ATUAL. Lemos os dados em tempo real (apenas de lojas não arquivadas)
           gmv = parseSafeNumber(store.currentRevenue);
           ads = parseSafeNumber(store.adsInvestment);
           orders = parseSafeNumber(store.orders);
           units = parseSafeNumber(store.units);
           base = parseSafeNumber(store.gmvBase);
+          
+          if (gmv > 0) shouldInclude = true; // Tem faturamento no painel hoje, vai pro PDF
       }
+      // Cenário C: Pediram um mês do passado onde a loja não existia. 'shouldInclude' fica false e ela é ignorada.
 
-      clientsGroup[cName].push({
-         ...store, reportGmv: gmv, reportAds: ads, reportOrders: orders, reportUnits: units, reportBase: base
-      });
+      if (shouldInclude) {
+          const cName = store.client || 'Sem Cliente';
+          if (!clientsGroup[cName]) clientsGroup[cName] = [];
+          
+          clientsGroup[cName].push({
+             ...store, reportGmv: gmv, reportAds: ads, reportOrders: orders, reportUnits: units, reportBase: base
+          });
+      }
     });
 
     const clientNames = Object.keys(clientsGroup).sort();
 
-    // Se o pedido for de PDF, gera um por cliente
+    if (clientNames.length === 0) {
+        toast.error(`Nenhuma loja registrou faturamento finalizado em ${targetMonth}.`);
+        return;
+    }
+
     if (formats.pdf) {
       for (const clientName of clientNames) {
         // Ordena as lojas do cliente da que mais faturou para a que menos faturou
@@ -1140,31 +1163,29 @@ export default function App() {
   const handleCustomExport = async ({ json, pdf, excel, monthInput, showAgencyFee }) => {
     toast.loading("Gerando arquivos solicitados...", { id: 'custom-export' });
     try {
-      const dataToExport = dashboardData.flatFilteredStores;
-
       if (json) {
         const customBackupData = {
           metadata: {
             version: "4.0",
             exportDate: new Date().toISOString(),
-            type: "partial_export"
+            type: "full_backup_ondemand"
           },
           data: {
-            stores: dataToExport.map(cleanStoreData) 
+            stores: stores.map(cleanStoreData)
           }
         };
 
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(customBackupData));
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", `Avante_Export_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.json`);
+        downloadAnchorNode.setAttribute("download", `Avante_Backup_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.json`);
         document.body.appendChild(downloadAnchorNode);
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
       }
 
       if (pdf || excel) {
-        await generateReports(dataToExport, monthInput, { pdf, excel }, { showAgencyFee });
+        await generateReports(stores, monthInput, { pdf, excel }, { showAgencyFee });
       }
       
       toast.success("Arquivos gerados com sucesso!", { id: 'custom-export' });
@@ -1347,7 +1368,7 @@ export default function App() {
     });
 
     const filteredStores = processedStores.filter(store => {
-      if (store.arquivada) return false;
+      if (showArchived ? !store.arquivada : store.arquivada) return false;
       
       const term = searchTerm ? searchTerm.toLowerCase() : '';
       const matchSearch = !term || 
@@ -1361,7 +1382,39 @@ export default function App() {
       return matchSearch && matchStatus && matchMkt; 
     });
 
+    let absoluteCurrentRevenue = 0;
+    let absoluteAgencyRevenue = 0;
+
     const groups = {};
+    stores.forEach(s => {
+      absoluteCurrentRevenue += Number(s.currentRevenue) || 0;
+      const clientStoresCount = stores.filter(x => x.client === s.client).length || 1;
+      const isFixed = s.feeType === 'fixed' || (Number(s.fixedFee) > 0);
+      absoluteAgencyRevenue += isFixed ? (Number(s.fixedFee) / clientStoresCount) : (Number(s.currentRevenue) * (Number(s.feePercent) / 100));
+
+      if (s.monthlyHistory) {
+          s.monthlyHistory.forEach(hist => {
+              let stdMonth = normalizeMonthYear(hist.month);
+              
+              if (!stdMonth.includes('/')) {
+                  stdMonth = `${stdMonth}/${String(new Date().getFullYear()).slice(-2)}`;
+              }
+
+              if (!monthlyByClient[stdMonth]) monthlyByClient[stdMonth] = {};
+              
+              if (!monthlyByClient[stdMonth][s.client]) {
+                  monthlyByClient[stdMonth][s.client] = { 
+                      gmv: 0, 
+                      isFixed: s.feeType === 'fixed' || (Number(s.fixedFee) > 0), 
+                      fixedFee: Number(s.fixedFee) || 0, 
+                      feePercent: Number(s.feePercent) || 0 
+                  };
+              }
+              monthlyByClient[stdMonth][s.client].gmv += Number(hist.gmv) || 0;
+          });
+      }
+    });
+
     filteredStores.forEach(s => {
       totalTarget += s.gmvTarget; 
       totalProjected += s.projectedGmv; 
@@ -1377,23 +1430,6 @@ export default function App() {
       if (s.monthlyHistory && s.monthlyHistory.length > 0) {
           const prevData = s.monthlyHistory.find(h => h.month === mesPassadoExato);
           if (prevData) mktPerformance[mktName].passado += Number(prevData.gmv) || 0;
-      }
-
-      if (s.monthlyHistory) {
-          s.monthlyHistory.forEach(hist => {
-              const stdMonth = normalizeMonthYear(hist.month);
-              if (!monthlyByClient[stdMonth]) monthlyByClient[stdMonth] = {};
-              
-              if (!monthlyByClient[stdMonth][s.client]) {
-                  monthlyByClient[stdMonth][s.client] = { 
-                      gmv: 0, 
-                      isFixed: s.feeType === 'fixed' || (Number(s.fixedFee) > 0), 
-                      fixedFee: Number(s.fixedFee) || 0, 
-                      feePercent: Number(s.feePercent) || 0 
-                  };
-              }
-              monthlyByClient[stdMonth][s.client].gmv += Number(hist.gmv) || 0;
-          });
       }
 
       if (!groups[s.client]) groups[s.client] = { client: s.client, stores: [], totalGmvBase: 0, totalGmvTarget: 0, totalCurrentRevenue: 0, totalProjectedGmv: 0, totalAds: 0, totalOrders: 0, totalUnits: 0 };
@@ -1443,7 +1479,11 @@ export default function App() {
     let historicalChartData = Object.values(globalHistoryAggregation).sort((a, b) => {
         const [mA, yA] = a.month.split('/');
         const [mB, yB] = b.month.split('/');
-        return (parseInt(yA, 10) * 100 + monthsOrder.indexOf(mA)) - (parseInt(yB, 10) * 100 + monthsOrder.indexOf(mB));
+        
+        const yearA = parseInt(yA || String(new Date().getFullYear()).slice(-2), 10);
+        const yearB = parseInt(yB || String(new Date().getFullYear()).slice(-2), 10);
+        
+        return (yearA * 100 + monthsOrder.indexOf(mA)) - (yearB * 100 + monthsOrder.indexOf(mB));
     });
 
     if (historicalChartData.length > 0) {
@@ -1456,8 +1496,8 @@ export default function App() {
 
     historicalChartData.push({
       month: 'Atual',
-      ReceitaGlobal: totalCurrentRevenue,
-      ReceitaAgencia: totalAgencyRevenueActual,
+      ReceitaGlobal: absoluteCurrentRevenue, // Usa o valor absoluto imune ao arquivamento
+      ReceitaAgencia: absoluteAgencyRevenue, // Usa o valor absoluto imune ao arquivamento
       ProjecaoGlobal: totalProjected,
       MetaGlobal: totalTarget,
       ProjecaoAgencia: totalAgencyRevenue,
@@ -1805,6 +1845,9 @@ export default function App() {
                 dashboardData={dashboardData} 
                 expandedClients={expandedClients} 
                 toggleClientExpansion={toggleClientExpansion}
+                showArchived={showArchived}
+                setShowArchived={setShowArchived}
+                handleRestoreClient={handleRestoreClient}
                 formatCurrency={safeFormatCurrency}
                 formatNumber={safeFormatNumber}
                 showValues={showValues} 

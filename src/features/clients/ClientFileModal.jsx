@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Flame, Clock, X, CheckSquare, History, StickyNote,
   PieChart as PieChartIcon, Zap, Target, Save, CopyPlus, TrendingUp, 
   TrendingDown, Edit2, Briefcase, Plus, LogOut, Activity, Package, 
-  Image, Trash2, Copy, Eraser, Loader2, AlertCircle, FileText, Eye, EyeOff, Lock } from 'lucide-react';
+  Image, Trash2, Copy, Eraser, Loader2, AlertCircle, FileText, Eye, EyeOff, Lock, ArchiveRestore 
+} from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, 
   YAxis, CartesianGrid, LineChart, Line, ReferenceLine, ComposedChart, Area, Legend } from 'recharts';
 import { toast } from 'react-hot-toast';
@@ -492,9 +493,23 @@ export default function ClientFileModal({
                 </div>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-full transition-colors ml-4 shrink-0">
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-3 shrink-0 ml-4">
+              
+              {canEdit && (
+                <button 
+                  onClick={() => offboardClient(clientGroup.client)}
+                  className="flex items-center gap-2 px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-lg transition-colors border border-red-500/20 text-xs font-bold shadow-sm"
+                  title="Encerrar Contrato e Arquivar Cliente"
+                >
+                  <ArchiveRestore size={16} /> 
+                  <span className="hidden sm:inline">Encerrar Cliente</span>
+                </button>
+              )}
+
+              <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar">

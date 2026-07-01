@@ -21,7 +21,7 @@ export default function AdminPanel({
   handleDeleteUser,
   handleUpdateUser,
   handleToggleRole,
-  stores, closeMonth,
+  closeMonth,
   startSimulation, 
   isSimulating
 }) {
@@ -55,7 +55,7 @@ export default function AdminPanel({
     if (!name) return AVATAR_COLORS[6];
     let hash = 0;
     for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return AVATAR_COLORS[Math.abs(hash) % (AVATAR_COLORS.length - 1)];
+    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
   };
 
   // Carrega os dados atuais do usuário para os inputs
@@ -77,21 +77,21 @@ export default function AdminPanel({
   };
 
   const saveEdit = (email) => {
-    if(editName.trim()) {
-      // Montamos o objeto de configuração financeira que será salvo no Firebase
-      const paymentConfig = {
-        salarioFixo: Number(editSalarioFixo),
-        diaFixo: editDiaFixo,
-        percentual: Number(editPercentual),
-        baseCalculo: editBaseCalculo,
-        gatilho: Number(editGatilho),
-        diaVariavel: editDiaVariavel,
-        frequencia: editFrequencia
-      };
-
-      // ATENÇÃO: Adicionamos paymentConfig como o 5º parâmetro da função
-      handleUpdateUser(email, editName, editColor, editAvatarUrl, paymentConfig);
+    if (!editName.trim()) {
+      return toast.error("O nome do usuário não pode ficar em branco.");
     }
+
+    const paymentConfig = {
+      salarioFixo: Number(editSalarioFixo),
+      diaFixo: editDiaFixo,
+      percentual: Number(editPercentual),
+      baseCalculo: editBaseCalculo,
+      gatilho: Number(editGatilho),
+      diaVariavel: editDiaVariavel,
+      frequencia: editFrequencia
+    };
+
+    handleUpdateUser(email, editName, editColor, editAvatarUrl, paymentConfig);
     setEditingUser(null);
   };
 
