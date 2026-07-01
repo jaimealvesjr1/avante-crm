@@ -382,7 +382,15 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     return { valor: lucro, margem: margem };
   };
 
-  const clientProducts = store.produtos || stores.find(s => s.client === store.client)?.produtos || [];
+  const clientProducts = useMemo(() => {
+      const productsMap = new Map();
+      stores.filter(s => s.client === store.client).forEach(s => {
+          (s.produtos || []).forEach(p => {
+              if (!productsMap.has(p.id)) productsMap.set(p.id, p);
+          });
+      });
+      return Array.from(productsMap.values());
+  }, [stores, store.client]);
 
   return (
   <div className="fixed inset-0 bg-[#0B0F19]/80 backdrop-blur-md flex items-center justify-center z-[250] p-4 animate-in zoom-in-95 duration-200">

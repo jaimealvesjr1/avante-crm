@@ -53,11 +53,18 @@ export default function ClientFileModal({
   const username = currentUserData?.nomeCompleto || currentUserData?.nome || currentUserData?.email?.split('@')[0] || 'Usuário';
   const teamNames = teamMembers?.map(m => m.nomeCompleto || m.nome || m.email.split('@')[0]).filter(Boolean) || [];
 
-  // Consideramos a primeira loja como a "âncora" para gravar dados do cliente inteiro
   const masterStore = useMemo(() => stores.find(s => s.client === clientGroup.client), [stores, clientGroup.client]);
-  const clientProducts = useMemo(() => masterStore?.produtos || [], [masterStore]);
+  
+  const clientProducts = useMemo(() => {
+      const productsMap = new Map();
+      stores.filter(s => s.client === clientGroup.client).forEach(s => {
+          (s.produtos || []).forEach(p => {
+              if (!productsMap.has(p.id)) productsMap.set(p.id, p);
+          });
+      });
+      return Array.from(productsMap.values());
+  }, [stores, clientGroup.client]);
 
-  // Função Auxiliar de Lucro (Para exibição no Cartão)
   const calcularLucroOferta = (precoVenda, custoBase, quantidade) => {
     const venda = Number(precoVenda) || 0;
     const custoUnico = Number(custoBase) || 0;
@@ -93,9 +100,13 @@ export default function ClientFileModal({
       toast.success("Produto cadastrado com sucesso!");
     }
 
-    const updatedMaster = { ...masterStore, produtos: updatedProducts };
-    updateStoreInCloud(updatedMaster);
+    // NOVA LÓGICA DE GRAVAÇÃO: Atualiza TODAS as lojas do cliente para manter a sincronia perfeita no banco
+    const clientStores = stores.filter(s => s.client === clientGroup.client);
+    clientStores.forEach(s => {
+        updateStoreInCloud({ ...s, produtos: updatedProducts });
+    });
     setStores(stores.map(s => s.client === clientGroup.client ? { ...s, produtos: updatedProducts } : s));
+    
     setProductModalOpen(false);
     setEditingProductData(null);
   };
@@ -103,9 +114,13 @@ export default function ClientFileModal({
   const handleDeleteProduct = (productId) => {
     if (!window.confirm("Deseja realmente excluir este produto do catálogo?")) return;
     const updatedProducts = clientProducts.filter(p => p.id !== productId);
-    const updatedMaster = { ...masterStore, produtos: updatedProducts };
-    updateStoreInCloud(updatedMaster);
+    
+    const clientStores = stores.filter(s => s.client === clientGroup.client);
+    clientStores.forEach(s => {
+        updateStoreInCloud({ ...s, produtos: updatedProducts });
+    });
     setStores(stores.map(s => s.client === clientGroup.client ? { ...s, produtos: updatedProducts } : s));
+    
     toast.success("Produto removido.");
   };
 
@@ -120,9 +135,13 @@ export default function ClientFileModal({
     const historyLog = { data: new Date().toLocaleString('pt-BR'), author: username, mudancas: [`Produto duplicado a partir de "${prod.descricao}"`] };
     const newProduct = { ...prod, id: Date.now() + Math.random(), descricao: copyName, historico: [historyLog] };
     const updatedProducts = [...clientProducts, newProduct];
-    const updatedMaster = { ...masterStore, produtos: updatedProducts };
-    updateStoreInCloud(updatedMaster);
+    
+    const clientStores = stores.filter(s => s.client === clientGroup.client);
+    clientStores.forEach(s => {
+        updateStoreInCloud({ ...s, produtos: updatedProducts });
+    });
     setStores(stores.map(s => s.client === clientGroup.client ? { ...s, produtos: updatedProducts } : s));
+    
     toast.success("Produto duplicado!");
   };
 
