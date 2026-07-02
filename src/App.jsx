@@ -52,7 +52,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.0.3';
+  const CURRENT_VERSION = '3.0.4';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -951,6 +951,9 @@ export default function App() {
       lojasParaFechar.forEach(store => {
         const storeRef = doc(db, 'stores', store.id.toString());
         
+        const lojaComMetas = enrichStoreMetrics(store, currentDay, daysInMonth, globalGrowth, clientGrowthMap, marketplaceGrowthMap);
+        const metaDoMes = lojaComMetas.gmvTarget || 0;
+
         const gmv = parseSafeNumber(store.currentRevenue);
         const feePercent = Number(store.feePercent) || 0;
         const fixedFee = Number(store.fixedFee) || 0;
@@ -968,6 +971,7 @@ export default function App() {
           id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
           month: padronizado, 
           gmv: gmv,
+          targetGmv: metaDoMes,
           adsInvestment: parseSafeNumber(store.adsInvestment),
           orders: parseSafeNumber(store.orders),               
           units: parseSafeNumber(store.units),

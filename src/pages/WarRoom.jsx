@@ -6,7 +6,7 @@ import autoTable from 'jspdf-autotable';
 import { generateEventReportPDF } from '../utils/pdfGenerator';
 
 const EventEntryRow = ({ store, activeEvent, onSaveDelta, canAccessWarRoom }) => {
-    const pastEventData = (store.eventLogs && store.eventLogs[activeEvent.name]) || { gmv: '', orders: '', units: '' };
+    const pastEventData = (store.eventLogs && store.eventLogs[activeEvent.name]) || { gmv: '', orders: '', units: '', target: activeEvent.target };
     
     const [rev, setRev] = useState(pastEventData.gmv);
     const [ord, setOrd] = useState(pastEventData.orders);
@@ -18,8 +18,10 @@ const EventEntryRow = ({ store, activeEvent, onSaveDelta, canAccessWarRoom }) =>
         const numRev = Number(String(rev).replace(',', '.')) || 0;
         const numOrd = Number(ord) || 0;
         const numUni = Number(uni) || 0;
+        
+        const targetValue = pastEventData.target || activeEvent.target;
 
-        await onSaveDelta(store.id, activeEvent.name, numRev, 0, numOrd, numUni); // 0 no lugar do Ads
+        await onSaveDelta(store.id, activeEvent.name, numRev, 0, numOrd, numUni, targetValue);
         setIsSaving(false);
     };
 
@@ -106,7 +108,7 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
         }
     }, [isGoalHit, goalHitTime, activeEvent.name]);
 
-    const handleSaveDelta = async (storeId, eName, newGmv, newAds, newOrders, newUnits) => {
+    const handleSaveDelta = async (storeId, eName, newGmv, newAds, newOrders, newUnits, targetValue) => {
         if (!canAccessWarRoom) return toast.error("Você não tem permissão para esta ação.");
 
         const store = stores.find(s => s.id === storeId);
@@ -126,7 +128,7 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
             units: (Number(store.units) || 0) + deltaUnits,
             eventLogs: {
                 ...eventLogs,
-                [eName]: { gmv: newGmv, orders: newOrders, units: newUnits, updatedAt: new Date().toISOString() }
+                [eName]: { gmv: newGmv, orders: newOrders, units: newUnits, target: targetValue, updatedAt: new Date().toISOString() }
             }
         };
 

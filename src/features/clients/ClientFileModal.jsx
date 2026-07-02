@@ -206,7 +206,17 @@ export default function ClientFileModal({
     if (!newChecklist.trim()) return;
     setIsAddingTask(true);
     setShowSuggestions(false);
-    const item = { id: Date.now(), texto: newChecklist, feita: false, responsavel: newChecklistResp.trim(), criadoPor: username, data: newTaskDate, hora: newTaskTime, recorrencia: newTaskRecurrence, peso: newTaskWeight };
+    const item = { 
+       id: Date.now(), 
+       texto: newChecklist, 
+       feita: false, 
+       responsavel: newChecklistResp.trim(), 
+       criadoPor: username, 
+       data: newTaskDate, 
+       hora: newTaskTime, 
+       recorrencia: newTaskRecurrence, 
+       peso: newTaskWeight,
+       escopo: 'cliente' };
     const updatedChecklists = [...(masterStore.checklists || []), item];
     const newNextAccess = calculateNextAccess(updatedChecklists);
 
@@ -281,7 +291,6 @@ export default function ClientFileModal({
     setIsDuplicating(false); setDuplicateTargetId('');
   };
 
-  // --- Funções de Acesso da Conta ---
   const saveAcesso = () => {
     setIsSavingAcesso(true);
     updateStoreInCloud({ ...masterStore, acessoEmail, acessoSenha });
@@ -295,10 +304,11 @@ export default function ClientFileModal({
     toast.success(`${type} copiado para a área de transferência!`);
   };
 
-  // --- CÁLCULOS DO DASHBOARD ---
   const liveStores = useMemo(() => {
     const rawClientStores = stores.filter(s => s.client === clientGroup.client && !s.arquivada);
-    return rawClientStores.map(s => enrichStoreMetrics(s, currentDay, daysInMonth || 30, globalGrowth || 10, clientGrowthMap, marketplaceGrowthMap));
+    return rawClientStores
+      .map(s => enrichStoreMetrics(s, currentDay, daysInMonth || 30, globalGrowth || 10, clientGrowthMap, marketplaceGrowthMap))
+      .sort((a, b) => (a.store || '').localeCompare(b.store || ''));
   }, [stores, clientGroup.client, currentDay, daysInMonth, globalGrowth, clientGrowthMap, marketplaceGrowthMap]);
 
   const clientUnfilteredStats = useMemo(() => {
@@ -730,7 +740,16 @@ export default function ClientFileModal({
                           {suggestions.map((sug, idx) => <li key={idx} onMouseDown={() => { setNewChecklist(sug); setShowSuggestions(false); }} className="px-4 py-2 text-sm text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer">{sug}</li>)}
                         </ul>
                       )}
-                      <button onClick={addChecklist} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl shadow-md flex items-center justify-center gap-2"><Plus size={16}/> Adicionar Tarefa</button>
+                      
+                      <div className="flex gap-2">
+                        <select value={newChecklistResp} onChange={e => setNewChecklistResp(e.target.value)} className="flex-1 bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-gray-300 outline-none focus:border-indigo-500 cursor-pointer">
+                          <option value="">Sem responsável</option>
+                          {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
+                        </select>
+                        <input type="date" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} className="flex-1 bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" />
+                      </div>
+
+                      <button onClick={addChecklist} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl shadow-md flex items-center justify-center gap-2 mt-1"><Plus size={16}/> Adicionar Tarefa</button>
                     </div>
                   </div>
                   
@@ -742,7 +761,10 @@ export default function ClientFileModal({
                         </button>
                         <div className="flex-1">
                           <p className="text-xs text-gray-300 mb-1 leading-snug">{task.texto}</p>
-                          {task.responsavel && <p className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Para: <span className="text-indigo-400">{task.responsavel}</span></p>}
+                          <div className="flex items-center gap-3">
+                            {task.responsavel && <p className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Para: <span className="text-indigo-400">{task.responsavel}</span></p>}
+                            {task.data && <p className="text-[9px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1"><Clock size={10}/> {task.data}</p>}
+                          </div>
                         </div>
                         <button onClick={() => deleteChecklist(task.id)} className="text-gray-600 hover:text-red-400"><Trash2 size={14}/></button>
                       </div>

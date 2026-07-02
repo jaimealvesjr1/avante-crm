@@ -92,17 +92,37 @@ export default function GoalsSettingsModal({
 
   const pastEventsStats = useMemo(() => {
     const events = {};
+
     stores.forEach(s => {
       if (s.eventLogs) {
         Object.entries(s.eventLogs).forEach(([eName, data]) => {
           if (activeEvent && activeEvent.name === eName) return; 
 
-          if (!events[eName]) events[eName] = { name: eName, gmv: 0, ads: 0, orders: 0, units: 0 };
+          if (!events[eName]) events[eName] = { name: eName, gmv: 0, target: 0, ads: 0, orders: 0, units: 0 };
+          
+          events[eName].target = Math.max(events[eName].target, Number(data.target) || 0);
           events[eName].gmv += Number(data.gmv) || 0;
           events[eName].ads += Number(data.ads) || 0;
           events[eName].orders += Number(data.orders) || 0;
           events[eName].units += Number(data.units) || 0;
-        });
+        });}
+
+      if (s.monthlyHistory) {
+         s.monthlyHistory.forEach(mes => {
+            if (mes.events) {
+               Object.entries(mes.events).forEach(([eName, data]) => {
+                  if (activeEvent && activeEvent.name === eName) return; 
+                  
+                  if (!events[eName]) events[eName] = { name: eName, gmv: 0, target: 0, ads: 0, orders: 0, units: 0 };
+                  
+                  events[eName].target = Math.max(events[eName].target, Number(data.target) || 0);
+                  events[eName].gmv += Number(data.gmv) || 0;
+                  events[eName].ads += Number(data.ads) || 0;
+                  events[eName].orders += Number(data.orders) || 0;
+                  events[eName].units += Number(data.units) || 0;
+               });
+            }
+         });
       }
     });
     return Object.values(events).sort((a, b) => b.gmv - a.gmv);
@@ -115,10 +135,22 @@ export default function GoalsSettingsModal({
           const clientsGroup = {};
           
           stores.forEach(store => {
+              let eventData = null;
+
               if (store.eventLogs && store.eventLogs[eventName]) {
+                  eventData = store.eventLogs[eventName];
+              } else if (store.monthlyHistory) {
+                  store.monthlyHistory.forEach(mes => {
+                      if (mes.events && mes.events[eventName]) {
+                          eventData = mes.events[eventName];
+                      }
+                  });
+              }
+
+              if (eventData) {
                   const cName = store.client || 'Sem Cliente';
                   if (!clientsGroup[cName]) clientsGroup[cName] = [];
-                  clientsGroup[cName].push(store);
+                  clientsGroup[cName].push({ ...store, reportEventData: eventData });
               }
           });
 
@@ -129,14 +161,14 @@ export default function GoalsSettingsModal({
               if (index > 0) docPdf.addPage();
               
               const clientStores = clientsGroup[clientName].sort((a, b) => {
-                  return (Number(b.eventLogs[eventName].gmv) || 0) - (Number(a.eventLogs[eventName].gmv) || 0);
+                  return (Number(b.reportEventData.gmv) || 0) - (Number(a.reportEventData.gmv) || 0);
               });
 
               let totalGmv = 0, totalOrders = 0, totalUnits = 0;
               const storeRows = [];
 
               clientStores.forEach((s, idx) => {
-                  const ev = s.eventLogs[eventName];
+                  const ev = s.reportEventData;
                   const gmv = Number(ev.gmv) || 0;
                   const orders = Number(ev.orders) || 0;
                   const units = Number(ev.units) || 0;
@@ -438,6 +470,7 @@ export default function GoalsSettingsModal({
                       <thead className="bg-black/40 text-gray-400 text-[10px] uppercase tracking-wider">
                         <tr>
                           <th className="p-4 pl-6">Nome do Evento</th>
+                          <th className="p-4 text-blue-400">Meta Estipulada</th>
                           <th className="p-4 text-emerald-400">GMV Consolidado</th>
                           <th className="p-4 text-amber-400">Pedidos Entregues</th>
                           <th className="p-4 text-purple-400">Volume Físico</th>
@@ -448,6 +481,7 @@ export default function GoalsSettingsModal({
                         {pastEventsStats.map((ev, i) => (
                           <tr key={i} className="hover:bg-white/[0.02] transition-colors text-sm">
                             <td className="p-4 pl-6 font-bold text-white">{ev.name}</td>
+                            <td className="p-4 font-bold text-blue-400">{ev.target > 0 ? formatCurrency(ev.target) : '-'}</td>
                             <td className="p-4 font-black text-emerald-400">{formatCurrency(ev.gmv)}</td>
                             <td className="p-4 text-gray-300 font-bold">{formatNumber(ev.orders)} <span className="text-[10px] text-gray-500 font-normal">pedidos</span></td>
                             <td className="p-4 text-gray-300 font-bold">{formatNumber(ev.units)} <span className="text-[10px] text-gray-500 font-normal">unidades</span></td>
@@ -456,7 +490,7 @@ export default function GoalsSettingsModal({
                                 onClick={() => exportPastEventReport(ev.name)} 
                                 className="bg-white/5 hover:bg-white/10 text-gray-300 px-4 py-2 rounded-lg text-xs font-bold transition-colors border border-white/10 inline-flex items-center gap-2"
                               >
-                                <Download size={14} /> Relatório Final
+                                <Download size={14} /> Relatório
                               </button>
                             </td>
                           </tr>

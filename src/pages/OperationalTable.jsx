@@ -129,8 +129,8 @@ export default function OperationalTable({
 
             {/* LOJAS DO CLIENTE EM GRID COM NOVOS CARDS (E EDIÇÃO INLINE) */}
             {isExpanded && (
-              <div className="bg-black/20 border-t border-white/5 p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                {group.stores.map((row) => {
+              <div className="bg-black/20 border-t border-white/5 p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
+                {[...group.stores].sort((a, b) => a.store.localeCompare(b.store, undefined, { numeric: true, sensitivity: 'base' })).map((row) => {
                   const isEditing = editingStoreId === row.id;
 
                   return (

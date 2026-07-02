@@ -1242,7 +1242,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                               </div>
                           </div>
                         </div>
-                        %
+
                         <div className="bg-[#fafafa] border border-[#e0e0e0] rounded-xl p-4 mt-2">
                             <span className="text-[10px] uppercase tracking-wide text-[#888888] font-bold mb-2 block">📅 Cronograma de Crédito</span>
                             <div className="flex justify-between text-[13px] mb-1.5 text-[#555555]">

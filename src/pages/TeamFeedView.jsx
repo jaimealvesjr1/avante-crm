@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Flame, CalendarDays, Activity, Clock, CheckCircle, AlertCircle, 
     Search, CalendarClock, X, Briefcase, AlertTriangle, 
-    ChevronDown, ChevronUp, Play, Pause } from 'lucide-react';
+    ChevronDown, ChevronUp, Play, Pause, Target } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from "firebase/firestore";
 import { db } from '../services/firebase';
 import { toast } from 'react-hot-toast';
@@ -51,6 +51,51 @@ export default function TeamFeedView({
         });
         return pausadas;
     }, [stores, myName]);
+
+    const [showClientTaskForm, setShowClientTaskForm] = useState(false);
+    const [clientTaskForm, setClientTaskForm] = useState({ client: '', texto: '', data: '', hora: '', responsavel: '' });
+
+    const submitClientTask = (e) => {
+        e.preventDefault();
+        if (!clientTaskForm.client || !clientTaskForm.texto) {
+            toast.error("Preencha o cliente e a descrição da tarefa.");
+            return;
+        }
+
+        const masterStore = stores.find(s => s.client === clientTaskForm.client && !s.arquivada);
+        if (!masterStore) {
+            toast.error("Nenhuma loja ativa encontrada para este cliente.");
+            return;
+        }
+
+        const newTask = { 
+            id: Date.now(), 
+            texto: clientTaskForm.texto, 
+            feita: false, 
+            responsavel: clientTaskForm.responsavel.trim(), 
+            criadoPor: myName, 
+            dataCriacao: new Date().toLocaleDateString('pt-BR'), 
+            data: clientTaskForm.data || '',
+            hora: clientTaskForm.hora || '', 
+            recorrencia: 'none',
+            peso: 'media',
+            escopo: 'cliente' // 🚨 O crachá da tarefa de cliente!
+        };
+
+        const updatedChecklists = [...(masterStore.checklists || []), newTask];
+        const nextAccess = calculateNextAccess(updatedChecklists);
+
+        updateStoreInCloud({ 
+            ...masterStore, 
+            checklists: updatedChecklists, 
+            dataProximoAcesso: nextAccess || masterStore.dataProximoAcesso || '',
+            dataUltimoAcesso: new Date().toISOString()
+        });
+
+        toast.success("Tarefa do cliente delegada com sucesso!");
+        setShowClientTaskForm(false);
+        setClientTaskForm({ client: '', texto: '', data: '', hora: '', responsavel: '' });
+    };
 
     const uniqueClients = useMemo(() => {
         return [...new Set(stores.map(s => s.client))].filter(Boolean).sort();
@@ -528,7 +573,8 @@ export default function TeamFeedView({
                         timeLabel,
                         timeDiff: timeDiff !== null ? timeDiff : Infinity,
                         isBeingWorkedOn,
-                        executingStatus: task.executingStatus || 'none'
+                        executingStatus: task.executingStatus || 'none',
+                        escopo: task.escopo || 'loja'
                     });
                 });
             }
@@ -627,12 +673,20 @@ export default function TeamFeedView({
                             
                             <div className="flex w-full sm:w-auto items-center gap-3">
                                 {canEdit && (
+                                <>
+                                <button 
+                                    onClick={() => setShowClientTaskForm(!showClientTaskForm)} 
+                                    className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 transition-all font-bold shrink-0 border ${showClientTaskForm ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border-blue-500/30'}`}
+                                >
+                                    {showClientTaskForm ? '✕ Cancelar' : '+ Tarefa Cliente'}
+                                </button>
                                 <button 
                                     onClick={openBulkTaskModal} 
-                                    className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 transition-all font-bold shrink-0"
+                                    className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 text-xs px-3 py-1.5 rounded-lg items-center gap-2 transition-all font-bold shrink-0 hidden sm:flex"
                                 >
                                     + Tarefa em Massa
                                 </button>
+                                </>
                                 )}         
 
                                 <select
@@ -654,61 +708,110 @@ export default function TeamFeedView({
                             </div>
                         </div>
 
+                        {showClientTaskForm && canEdit && (
+                            <form onSubmit={submitClientTask} className="bg-black/40 border border-blue-500/30 p-4 rounded-xl mb-4 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 mx-5">
+                                <div className="flex flex-col sm:flex-row gap-3 w-full">
+                                    <div className="flex flex-col gap-1 flex-1">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase">Cliente Geral</label>
+                                        <select 
+                                            value={clientTaskForm.client} 
+                                            onChange={e => setClientTaskForm({...clientTaskForm, client: e.target.value})}
+                                            className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Selecione...</option>
+                                            {uniqueClients.map(client => (
+                                                <option key={client} value={client}>{client}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1 flex-[2]">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição da Tarefa</label>
+                                        <input 
+                                            type="text" 
+                                            value={clientTaskForm.texto} 
+                                            onChange={e => setClientTaskForm({...clientTaskForm, texto: e.target.value})}
+                                            placeholder="O que precisa ser feito para o cliente?"
+                                            className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex flex-col sm:flex-row gap-3 w-full">
+                                    <div className="flex flex-col gap-1 flex-1">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase">Delegar Para</label>
+                                        <select 
+                                            value={clientTaskForm.responsavel} 
+                                            onChange={e => setClientTaskForm({...clientTaskForm, responsavel: e.target.value})}
+                                            className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Sem responsável</option>
+                                            {teamMembers.map(m => (
+                                                <option key={m.email} value={m.nomeCompleto || m.nome}>{m.nomeCompleto || m.nome}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1 flex-1">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase">Prazo (Data)</label>
+                                        <input 
+                                            type="date" 
+                                            value={clientTaskForm.data} 
+                                            onChange={e => setClientTaskForm({...clientTaskForm, data: e.target.value})}
+                                            className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col gap-1 flex-1">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase">Hora Máx</label>
+                                        <input 
+                                            type="time" 
+                                            value={clientTaskForm.hora} 
+                                            onChange={e => setClientTaskForm({...clientTaskForm, hora: e.target.value})}
+                                            className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="w-full flex justify-end mt-1">
+                                    <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-5 py-2.5 rounded-lg shadow-md transition-colors flex items-center gap-2">
+                                        <Target size={14} /> Criar Tarefa
+                                    </button>
+                                </div>
+                            </form>
+                        )}
+
                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2">
                             <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
                                 {deadlinesData.map(item => {
                                     const isOverdue = item.statusColor === 'red';
                                     const isWarning = item.statusColor === 'orange';
                                     const isRoutine = item.type === 'routine';
+                                    const isClientTask = item.escopo === 'cliente';
+
+                                    let cardClasses = isOverdue ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50' : 
+                                                      isWarning ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20 hover:border-orange-500/50' : 
+                                                      'bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40';
+
+                                    // Se for tarefa de cliente, o fundo ganha um tom Indigo (roxo/azul), a menos que esteja atrasado/em risco.
+                                    if (isClientTask && !isOverdue && !isWarning) {
+                                        cardClasses = 'bg-indigo-500/10 border-indigo-500/40 hover:bg-indigo-500/20 hover:border-indigo-500/60 shadow-[0_0_15px_rgba(99,102,241,0.15)]';
+                                    }
 
                                     return (
                                         <div 
                                             key={item.id} 
                                             onClick={() => handleOpenStore(item.storeName)}
-                                            className={`group relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${
-                                                isOverdue ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50' : 
-                                                isWarning ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20 hover:border-orange-500/50' : 
-                                                'bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40'
-                                            }`}
+                                            className={`group relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${cardClasses}`}
                                         >
                                             <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 z-10 transition-opacity">
                                                 {!isRoutine && (
                                                     <div className="flex items-center bg-black/60 rounded-md border border-white/10 overflow-hidden shadow-sm mr-1">
-                                                        <button 
-                                                            onClick={(e) => { 
-                                                                e.stopPropagation(); 
-                                                                const s = stores.find(x => x.id === item.storeId);
-                                                                const t = s?.checklists?.find(x => x.id === item.originalTaskId);
-                                                                if (s && t) handlePostponeTask(s, t, 3); 
-                                                            }} 
-                                                            className="text-[9px] font-bold text-gray-300 hover:text-amber-400 hover:bg-white/10 px-1.5 py-1 border-r border-white/10 transition-colors" title="Adiar 3 horas">+3h</button>
-                                                        <button 
-                                                            onClick={(e) => { 
-                                                                e.stopPropagation(); 
-                                                                const s = stores.find(x => x.id === item.storeId);
-                                                                const t = s?.checklists?.find(x => x.id === item.originalTaskId);
-                                                                if (s && t) handlePostponeTask(s, t, 6); 
-                                                            }} 
-                                                            className="text-[9px] font-bold text-gray-300 hover:text-amber-400 hover:bg-white/10 px-1.5 py-1 border-r border-white/10 transition-colors" title="Adiar 6 horas">+6h</button>
-                                                        <button 
-                                                            onClick={(e) => { 
-                                                                e.stopPropagation(); 
-                                                                const s = stores.find(x => x.id === item.storeId);
-                                                                const t = s?.checklists?.find(x => x.id === item.originalTaskId);
-                                                                if (s && t) handlePostponeTask(s, t, 24); 
-                                                            }} 
-                                                            className="text-[9px] font-bold text-gray-300 hover:text-indigo-400 hover:bg-white/10 px-1.5 py-1 transition-colors" title="Adiar para amanhã">+24h</button>
+                                                        <button onClick={(e) => { e.stopPropagation(); const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 3); }} className="text-[9px] font-bold text-gray-300 hover:text-amber-400 hover:bg-white/10 px-1.5 py-1 border-r border-white/10 transition-colors" title="Adiar 3 horas">+3h</button>
+                                                        <button onClick={(e) => { e.stopPropagation(); const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 6); }} className="text-[9px] font-bold text-gray-300 hover:text-amber-400 hover:bg-white/10 px-1.5 py-1 border-r border-white/10 transition-colors" title="Adiar 6 horas">+6h</button>
+                                                        <button onClick={(e) => { e.stopPropagation(); const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 24); }} className="text-[9px] font-bold text-gray-300 hover:text-indigo-400 hover:bg-white/10 px-1.5 py-1 transition-colors" title="Adiar para amanhã">+24h</button>
                                                     </div>
                                                 )}
                                                 
                                                 {!isRoutine && (
                                                 <button
                                                     onClick={(e) => handleToggleTimer(e, item.storeId, item.originalTaskId)}
-                                                    className={`p-1 mr-1 rounded-md border shadow-sm transition-colors ${
-                                                        item.executingStatus === 'playing' 
-                                                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30' 
-                                                        : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
-                                                    }`}
+                                                    className={`p-1 mr-1 rounded-md border shadow-sm transition-colors ${item.executingStatus === 'playing' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'}`}
                                                     title={item.executingStatus === 'playing' ? "Pausar Tarefa" : "Iniciar Tarefa"}
                                                 >
                                                     {item.executingStatus === 'playing' ? <Pause size={14} /> : <Play size={14} />}
@@ -716,11 +819,7 @@ export default function TeamFeedView({
                                                 )}
 
                                                 {isAdmin && (
-                                                    <button 
-                                                        onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, isRoutine)}
-                                                        className="text-gray-400 hover:text-red-400 bg-black/60 hover:bg-red-500/20 p-1 rounded-md border border-white/10 hover:border-red-500/30 transition-colors"
-                                                        title="Forçar exclusão desta tarefa"
-                                                    >
+                                                    <button onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, isRoutine)} className="text-gray-400 hover:text-red-400 bg-black/60 hover:bg-red-500/20 p-1 rounded-md border border-white/10 hover:border-red-500/30 transition-colors" title="Forçar exclusão desta tarefa">
                                                         <X size={14} />
                                                     </button>
                                                 )}
@@ -737,20 +836,29 @@ export default function TeamFeedView({
                                                 <div className={`p-1.5 rounded-md shrink-0 ${
                                                     isOverdue ? 'bg-red-500/20 text-red-400' : 
                                                     isWarning ? 'bg-orange-500/20 text-orange-400' : 
+                                                    isClientTask ? 'bg-indigo-500/20 text-indigo-400' :
                                                     'bg-blue-500/20 text-blue-400'
                                                 }`}>
-                                                    {isRoutine ? <CalendarClock size={14} /> : <AlertCircle size={14} />}
+                                                    {isRoutine ? <CalendarClock size={14} /> : isClientTask ? <Target size={14} /> : <AlertCircle size={14} />}
                                                 </div>
                                                 <div className="flex-1 overflow-hidden">
-                                                    <h4 className="font-bold text-white text-xs truncate" title={item.storeName}>{item.storeName}</h4>
+                                                    {isClientTask ? (
+                                                        <h4 className="font-bold text-indigo-400 text-xs truncate flex items-center gap-1" title="Tarefa Geral do Cliente">
+                                                            🎯 TAREFA DE CLIENTE
+                                                        </h4>
+                                                    ) : (
+                                                        <h4 className="font-bold text-white text-xs truncate" title={item.storeName}>{item.storeName}</h4>
+                                                    )}
                                                     <span className="text-[9px] text-gray-500 font-medium uppercase tracking-wider truncate block" title={item.clientName}>{item.clientName}</span>
                                                 </div>
                                             </div>
 
+                                            {/* Descrição Principal da Tarefa */}
                                             <p className={`text-[11px] font-medium leading-tight line-clamp-2 ${isRoutine ? 'italic text-gray-400' : 'text-gray-300'}`} title={item.title}>
                                                 {item.title}
                                             </p>
 
+                                            {/* Rodapé (Prazo e Responsável) */}
                                             <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-auto">
                                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shadow-sm truncate max-w-[60%] ${
                                                     isOverdue ? 'bg-red-500/20 text-red-400 border-red-500/30' : 
