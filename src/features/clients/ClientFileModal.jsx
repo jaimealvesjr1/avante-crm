@@ -732,7 +732,7 @@ export default function ClientFileModal({
 
                 <div className="xl:col-span-2 bg-white/[0.02] p-5 rounded-3xl border border-white/5 flex flex-col shadow-sm max-h-[900px]">
                   <div className="flex flex-col gap-4 mb-4 border-b border-white/5 pb-4">
-                    <h4 className="text-sm font-bold text-white tracking-wide flex items-center gap-3"><CheckSquare size={16} className="text-amber-400"/> Tarefas Pendentes</h4>
+                    <h4 className="text-sm font-bold text-white tracking-wide flex items-center gap-3"><CheckSquare size={16} className="text-amber-400"/> Tarefas do Cliente</h4>
                     <div className="flex flex-col gap-2 relative">
                       <input type="text" value={newChecklist} onChange={handleChecklistChange} onKeyDown={e => { if(e.key==='Enter') addChecklist(); }} onFocus={() => { if(suggestions.length) setShowSuggestions(true); }} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} placeholder="O que precisa ser feito?" className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-white outline-none focus:border-indigo-500" />
                       {showSuggestions && suggestions.length > 0 && (

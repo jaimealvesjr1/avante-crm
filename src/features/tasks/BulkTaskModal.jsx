@@ -11,6 +11,33 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
   const [taskRecurrence, setTaskRecurrence] = useState('none');
   const [bulkWeight, setBulkWeight] = useState('media');
 
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const allUniqueTasks = useMemo(() => {
+    const taskSet = new Set();
+    stores.forEach(s => {
+      if (s.checklists) {
+        s.checklists.forEach(t => {
+          if (t.texto && t.texto.trim().length > 3) taskSet.add(t.texto.trim());
+        });
+      }
+    });
+    return Array.from(taskSet);
+  }, [stores]);
+
+  const handleTaskTextChange = (e) => {
+    const val = e.target.value;
+    setTaskText(val);
+    if (val.trim().length >= 2) {
+      const filtered = allUniqueTasks.filter(t => t.toLowerCase().includes(val.toLowerCase()) && t.toLowerCase() !== val.toLowerCase());
+      setSuggestions(filtered.slice(0, 6)); 
+      setShowSuggestions(filtered.length > 0);
+    } else {
+      setShowSuggestions(false);
+    }
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [clientFilter, setClientFilter] = useState('');
   const [mktFilter, setMktFilter] = useState(''); 
@@ -29,10 +56,11 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
       setTaskRecurrence(initialData.recorrencia || 'none');
       setBulkWeight(initialData.peso || 'media');
     } else if (isOpen && !initialData) {
+      const now = new Date();
       setTaskText('');
       setTaskResp('');
-      setTaskDate('');
-      setTaskTime('');
+      setTaskDate(new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0]);
+      setTaskTime(now.toTimeString().substring(0, 5));
       setTaskRecurrence('none');
       setBulkWeight('media');
     }
@@ -83,10 +111,11 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
       peso: bulkWeight
     });
     
+    const now = new Date();
     setTaskText('');
     setTaskResp('');
-    setTaskDate('');
-    setTaskTime('');
+    setTaskDate(new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0]);
+    setTaskTime(now.toTimeString().substring(0, 5));
     setTaskRecurrence('none');
     setBulkWeight('media');
     setSelectedStores([]);
@@ -116,14 +145,31 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
             <h4 className="text-xs font-bold text-gray-400 uppercase">1. Configurações da Tarefa</h4>
             
             <div className="flex flex-col md:flex-row gap-3">
-              <input 
-                type="text" 
-                value={taskText} 
-                onChange={e => setTaskText(e.target.value)} 
-                placeholder="Ex: Atualizar banners da campanha..." 
-                className="flex-[2] bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-indigo-500 font-medium" 
-              />
-              <select 
+              <div className="relative flex-[2]">
+                <input 
+                  type="text" 
+                  value={taskText} 
+                  onChange={handleTaskTextChange}
+                  onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                  placeholder="Ex: Atualizar banners da campanha..." 
+                  className="w-full bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-indigo-500 font-medium" 
+                />
+                {showSuggestions && suggestions.length > 0 && (
+                  <ul className="absolute top-full left-0 w-full mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
+                    {suggestions.map((sug, idx) => (
+                      <li 
+                        key={idx} 
+                        onMouseDown={(e) => { e.preventDefault(); setTaskText(sug); setShowSuggestions(false); }} 
+                        className="px-4 py-2.5 text-sm text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer transition-colors border-b border-gray-800 last:border-0 truncate"
+                      >
+                        {sug}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <select
                 value={taskResp} 
                 onChange={e => setTaskResp(e.target.value)} 
                 className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer"
@@ -178,8 +224,14 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               </select>
               
               <button 
-                onClick={() => { setTaskDate(''); setTaskTime(''); setTaskRecurrence('none'); setBulkWeight('media'); }} 
-                className="bg-gray-800 hover:bg-gray-700 text-gray-400 p-2.5 rounded-lg transition-colors border border-gray-600 flex items-center justify-center gap-2 md:w-auto px-4 w-full md:flex-none shrink-0" 
+                onClick={() => { 
+                  const now = new Date();
+                  setTaskDate(new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0]); 
+                  setTaskTime(now.toTimeString().substring(0, 5)); 
+                  setTaskRecurrence('none'); 
+                  setBulkWeight('media'); 
+                }} 
+                className="bg-gray-800 hover:bg-gray-700 text-gray-400 p-2.5 rounded-lg transition-colors border border-gray-600 flex items-center justify-center gap-2 md:w-auto px-4 w-full md:flex-none shrink-0"
                 title="Restaurar Configurações Padrão"
               >
                 <Eraser size={16}/> <span className="text-xs font-bold md:hidden">Limpar Configurações</span>

@@ -7,8 +7,11 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   const [newLog, setNewLog] = useState('');
   const [newChecklist, setNewChecklist] = useState('');
   const [newChecklistResp, setNewChecklistResp] = useState('');
-  const [newTaskDate, setNewTaskDate] = useState('');
-  const [newTaskTime, setNewTaskTime] = useState('');
+  const [newTaskDate, setNewTaskDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+  });
+  const [newTaskTime, setNewTaskTime] = useState(() => new Date().toTimeString().substring(0, 5));
   const [newTaskRecurrence, setNewTaskRecurrence] = useState('none');
   const [newTaskWeight, setNewTaskWeight] = useState('media');
 
@@ -115,7 +118,11 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     saveChanges({ ...store, checklists: updatedChecklists, taskLogs: updatedLogs, dataProximoAcesso: newNextAccess || store.dataProximoAcesso || '' });
     
     setTimeout(() => {
-      setNewChecklist(''); setNewChecklistResp(''); setNewTaskDate(''); setNewTaskTime(''); setNewTaskRecurrence('none');
+      const now = new Date();
+      setNewChecklist(''); setNewChecklistResp(''); 
+      setNewTaskDate(new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0]); 
+      setNewTaskTime(now.toTimeString().substring(0, 5)); 
+      setNewTaskRecurrence('none');
       setIsAddingTask(false);
       toast.success('Tarefa adicionada com sucesso!');
     }, 500);
@@ -708,7 +715,12 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                     <option value="90days">🔁 90 Dias (Promo)</option>
                   </select>
 
-                  <button onClick={() => {setNewTaskDate(''); setNewTaskTime(''); setNewTaskRecurrence('none');}} className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2 rounded-xl transition-colors"><Eraser size={14}/></button>
+                  <button onClick={() => {
+                    const now = new Date();
+                    setNewTaskDate(new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0]);
+                    setNewTaskTime(now.toTimeString().substring(0, 5));
+                    setNewTaskRecurrence('none');
+                  }} className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2 rounded-xl transition-colors" title="Redefinir Data/Hora"><Eraser size={14}/></button>
                   <button onClick={addChecklist} disabled={isAddingTask} className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white px-5 py-2 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-xs shrink-0 shadow-md ml-auto">
                     {isAddingTask ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14}/> Add Tarefa</>}
                   </button>
