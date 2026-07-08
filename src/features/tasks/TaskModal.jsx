@@ -641,89 +641,130 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 })()}
               </div>
               
-              <div className="flex flex-col gap-3 bg-black/20 p-4 rounded-2xl border border-white/5 shadow-inner">
-                <div className="flex flex-col lg:flex-row gap-2 relative z-20">
-                  <div className="relative flex-1">
-                    <input 
-                      type="text" 
-                      value={newChecklist} 
-                      onChange={handleChecklistChange} 
-                      onKeyDown={e => {
-                         if (e.key === 'Enter') {
-                            setShowSuggestions(false);
-                            addChecklist();
-                         }
-                      }}
-                      onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }}
-                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                      placeholder="O que precisa ser feito?" 
-                      className="w-full bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" 
-                    />
+              {/* FORMULÁRIO DE CRIAÇÃO (PADRÃO LINHA DE PRODUÇÃO) */}
+              <div className="bg-black/20 border border-white/5 p-3 rounded-xl shadow-inner mt-2">
+                <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_2fr_1fr_1fr_auto] gap-3 w-full">
                     
-                    {showSuggestions && suggestions.length > 0 && (
-                      <ul className="absolute top-full left-0 w-full mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
-                        {suggestions.map((sug, idx) => (
-                          <li 
-                            key={idx} 
-                            onMouseDown={(e) => { 
-                              e.preventDefault(); 
-                              setNewChecklist(sug); 
-                              setShowSuggestions(false); 
-                            }} 
-                            className="px-4 py-2.5 text-sm text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer transition-colors border-b border-gray-800 last:border-0 truncate"
-                          >
-                            {sug}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  
-                  <select value={newChecklistResp} onChange={e => setNewChecklistResp(e.target.value)} className="w-full md:w-36 bg-white/5 border border-white/10 rounded-xl p-2.5 text-sm text-gray-300 outline-none focus:border-indigo-500 cursor-pointer transition-colors shrink-0">
-                    <option value="">Sem Resp.</option>
-                    {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </div>
-                
-                <div className="w-full flex items-center gap-1.5 mt-1">
-                    <AlertCircle size={12} className="text-amber-500" />
-                    <span className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Atenção: Defina a data e o horário limite para concluir a tarefa</span>
-                </div>
+                    {/* COLUNA 1: Responsável e Peso */}
+                    <div className="flex flex-col justify-between gap-2">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Delegar Para:</label>
+                            <select 
+                                value={newChecklistResp} 
+                                onChange={e => setNewChecklistResp(e.target.value)}
+                                className="w-full bg-gray-900 border border-gray-700 rounded-md p-1.5 text-xs text-white outline-none focus:border-indigo-500 h-8"
+                            >
+                                <option value="">Sem Resp.</option>
+                                {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Peso:</label>
+                            <select 
+                                value={newTaskWeight} 
+                                onChange={e => setNewTaskWeight(e.target.value)} 
+                                className="w-full bg-gray-900 border border-gray-700 rounded-md p-1.5 text-xs text-white outline-none focus:border-indigo-500 h-8"
+                            >
+                                <option value="baixa">🟢 Rápido</option>
+                                <option value="media">🟡 Médio</option>
+                                <option value="alta">🔴 Demorado</option>
+                            </select>
+                        </div>
+                    </div>
 
-                <div className="flex flex-wrap gap-2 items-center relative z-10">
-                  <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Data Limite para Conclusão" />
-                  <input type="time" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-gray-300 outline-none focus:border-indigo-500 cursor-pointer" title="Horário Limite" />
+                    {/* COLUNA 2: Descrição da Tarefa (Esticada) */}
+                    <div className="flex flex-col gap-1 relative h-full">
+                        <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Descrição da Tarefa:</label>
+                        <textarea 
+                            value={newChecklist} 
+                            onChange={handleChecklistChange}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    setShowSuggestions(false);
+                                    addChecklist();
+                                }
+                            }}
+                            onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }}
+                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                            placeholder="O que precisa ser feito nesta loja?"
+                            className="w-full h-full min-h-[44px] bg-gray-900 border border-gray-700 rounded-md p-2 text-xs text-white outline-none focus:border-indigo-500 resize-none custom-scrollbar"
+                        />
+                        {showSuggestions && suggestions.length > 0 && (
+                            <ul className="absolute top-full left-0 w-full bg-gray-800 border border-gray-600 rounded-lg shadow-2xl overflow-hidden z-50 mt-1">
+                                {suggestions.map((sug, idx) => (
+                                    <li 
+                                        key={idx} 
+                                        onMouseDown={(e) => { e.preventDefault(); setNewChecklist(sug); setShowSuggestions(false); }} 
+                                        className="px-3 py-2 text-xs text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer transition-colors border-b border-gray-700 last:border-0 truncate"
+                                    >
+                                        {sug}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
 
-                  <select 
-                    value={newTaskWeight} 
-                    onChange={e => setNewTaskWeight(e.target.value)} 
-                    className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
-                    title="Tempo Médio Estimado da Tarefa"
-                  >
-                    <option value="baixa">🟢 Tarefa Rápida</option>
-                    <option value="media">🟡 Tarefa Média</option>
-                    <option value="alta">🔴 Tarefa Demorada</option>
-                  </select>
+                    {/* COLUNA 3: Prazo e Hora */}
+                    <div className="flex flex-col justify-between gap-2">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Data limite:</label>
+                            <input 
+                                type="date" 
+                                value={newTaskDate} 
+                                onChange={e => setNewTaskDate(e.target.value)}
+                                className="w-full bg-gray-900 border border-gray-700 rounded-md p-1.5 text-xs text-white outline-none focus:border-indigo-500 h-8 cursor-pointer"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Hora Limite:</label>
+                            <input 
+                                type="time" 
+                                value={newTaskTime} 
+                                onChange={e => setNewTaskTime(e.target.value)}
+                                className="w-full bg-gray-900 border border-gray-700 rounded-md p-1.5 text-xs text-white outline-none focus:border-indigo-500 h-8 cursor-pointer"
+                            />
+                        </div>
+                    </div>
 
-                  <select value={newTaskRecurrence} onChange={e => setNewTaskRecurrence(e.target.value)} className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer">
-                    <option value="none">Sem Repetição</option>
-                    <option value="daily">🔁 Diária</option>
-                    <option value="3days">🔁 3 Dias (Relâmpago)</option>
-                    <option value="weekly">🔁 Semanal</option>
-                    <option value="15days">🔁 Quinzenal</option>
-                    <option value="monthly">🔁 Mensal</option>
-                    <option value="90days">🔁 90 Dias (Promo)</option>
-                  </select>
+                    {/* COLUNA 4: Recorrência e Botão Limpar */}
+                    <div className="flex flex-col justify-between gap-2">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Repetição:</label>
+                            <select 
+                                value={newTaskRecurrence} 
+                                onChange={e => setNewTaskRecurrence(e.target.value)} 
+                                className="w-full bg-gray-900 border border-gray-700 rounded-md p-1.5 text-xs text-white outline-none focus:border-indigo-500 h-8 cursor-pointer"
+                            >
+                                <option value="none">Nenhuma</option>
+                                <option value="daily">🔁 Diária</option>
+                                <option value="3days">🔁 3 Dias</option>
+                                <option value="weekly">🔁 Semanal</option>
+                                <option value="15days">🔁 15 Dias</option>
+                                <option value="monthly">🔁 Mensal</option>
+                                <option value="90days">🔁 90 Dias</option>
+                            </select>
+                        </div>
+                        <button 
+                            onClick={() => {setNewTaskDate(''); setNewTaskTime(''); setNewTaskRecurrence('none'); setNewTaskWeight('media');}} 
+                            className="h-8 w-full bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-400 rounded-md transition-colors flex items-center justify-center"
+                            title="Limpar configurações de prazo e repetição"
+                        >
+                            <Eraser size={14}/>
+                        </button>
+                    </div>
 
-                  <button onClick={() => {
-                    const now = new Date();
-                    setNewTaskDate(new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0]);
-                    setNewTaskTime(now.toTimeString().substring(0, 5));
-                    setNewTaskRecurrence('none');
-                  }} className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 p-2 rounded-xl transition-colors" title="Redefinir Data/Hora"><Eraser size={14}/></button>
-                  <button onClick={addChecklist} disabled={isAddingTask} className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white px-5 py-2 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-xs shrink-0 shadow-md ml-auto">
-                    {isAddingTask ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14}/> Add Tarefa</>}
-                  </button>
+                    {/* COLUNA 5: Botão Criar alinhado na altura */}
+                    <div className="flex flex-col h-full pt-[14px]">
+                        <button 
+                            onClick={addChecklist} 
+                            disabled={isAddingTask} 
+                            className="h-full w-full lg:w-24 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white text-xs font-bold rounded-md shadow-md transition-colors flex flex-col justify-center items-center gap-1 border border-indigo-500/50"
+                        >
+                            {isAddingTask ? <Loader2 size={18} className="animate-spin text-indigo-300" /> : <Plus size={18} className="text-indigo-300"/>}
+                            Criar
+                        </button>
+                    </div>
                 </div>
               </div>
             </div>
@@ -732,10 +773,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
             {!isVisitante && (
               <div>
                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Timeline de Ações</h4>
-                <div className="flex gap-2">
-                  <textarea value={newLog} onChange={e => setNewLog(e.target.value)} placeholder="Descreva o que você fez hoje nesta conta..." className="flex-1 bg-black/20 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-indigo-500 min-h-[60px] max-h-[120px] custom-scrollbar resize-none" />
-                  <button onClick={addLog} className="bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-300 px-4 rounded-xl flex flex-col items-center justify-center gap-1 transition-all shadow-sm"><Send size={16}/> <span className="text-[10px] font-bold uppercase tracking-wider">Lançar</span></button>
-                </div>
                 
                 <div className="space-y-4 relative mt-6 px-2">
                   {store.taskLogs?.slice().reverse().map((log, i) => {

@@ -52,7 +52,15 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
       if (!val) return 0;
-      return Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
+      
+      const cleaned = String(val).replace(/[^\d.,-]/g, '');
+      if (!cleaned) return 0;
+      
+      if (cleaned.includes(',')) {
+          return Number(cleaned.replace(/\./g, '').replace(',', '.')) || 0;
+      }
+      
+      return Number(cleaned) || 0;
   };
 
   useEffect(() => {

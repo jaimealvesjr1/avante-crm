@@ -786,7 +786,7 @@ export default function TeamFeedView({
 
                                     {/* COLUNA 2: Descrição ocupando a altura total */}
                                     <div className="flex flex-col gap-1 relative h-full">
-                                        <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Descrição da Tarefa</label>
+                                        <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Descrição da Tarefa:</label>
                                         <textarea 
                                             value={clientTaskForm.texto} 
                                             onChange={handleClientTaskChange}

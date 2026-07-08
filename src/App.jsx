@@ -52,7 +52,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.0.5';
+  const CURRENT_VERSION = '3.0.6';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;

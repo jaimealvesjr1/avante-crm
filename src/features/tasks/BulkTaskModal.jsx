@@ -79,6 +79,17 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
         if (!matchStore && !matchClient && !matchMkt) return false;
       }
       return true;
+    }).sort((a, b) => {
+      // 1. Ordem por Cliente
+      const clientCompare = (a.client || '').localeCompare(b.client || '');
+      if (clientCompare !== 0) return clientCompare;
+
+      // 2. Ordem por Marketplace (Desempate 1)
+      const mktCompare = (a.marketplace || '').localeCompare(b.marketplace || '');
+      if (mktCompare !== 0) return mktCompare;
+
+      // 3. Ordem por Nome/Número da Loja (Desempate 2)
+      return (a.store || '').localeCompare(b.store || '');
     });
   }, [stores, clientFilter, mktFilter, searchTerm]);
 
@@ -128,7 +139,7 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
 
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 animate-in fade-in">
-      <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
         
         {/* CABEÇALHO */}
         <div className="bg-gray-900 p-4 border-b border-gray-700 flex justify-between items-center shrink-0">
@@ -141,101 +152,119 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
         <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
           
           {/* CONFIGURAÇÃO DA TAREFA */}
-          <div className="mb-6 bg-gray-900/50 p-4 rounded-xl border border-gray-700 space-y-3">
-            <h4 className="text-xs font-bold text-gray-400 uppercase">1. Configurações da Tarefa</h4>
-            
-            <div className="flex flex-col md:flex-row gap-3">
-              <div className="relative flex-[2]">
-                <input 
-                  type="text" 
-                  value={taskText} 
-                  onChange={handleTaskTextChange}
-                  onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }}
-                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                  placeholder="Ex: Atualizar banners da campanha..." 
-                  className="w-full bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-indigo-500 font-medium" 
-                />
-                {showSuggestions && suggestions.length > 0 && (
-                  <ul className="absolute top-full left-0 w-full mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
-                    {suggestions.map((sug, idx) => (
-                      <li 
-                        key={idx} 
-                        onMouseDown={(e) => { e.preventDefault(); setTaskText(sug); setShowSuggestions(false); }} 
-                        className="px-4 py-2.5 text-sm text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer transition-colors border-b border-gray-800 last:border-0 truncate"
-                      >
-                        {sug}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <select
-                value={taskResp} 
-                onChange={e => setTaskResp(e.target.value)} 
-                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer"
-              >
-                <option value="">Sem Responsável</option>
-                {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
-              </select>
-            </div>
+          <div className="mb-6">
+            <h4 className="text-xs font-bold text-gray-400 uppercase mb-2 ml-1">1. Configurações Base da Tarefa</h4>
+            <div className="bg-gray-900/50 border border-gray-700 p-3 rounded-xl shadow-inner">
+                <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_2fr_1fr_1fr_auto] gap-3 w-full">
+                    
+                    {/* COLUNA 1: Responsável e Peso */}
+                    <div className="flex flex-col justify-between gap-2">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Delegar Para:</label>
+                            <select 
+                                value={taskResp} 
+                                onChange={e => setTaskResp(e.target.value)}
+                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-1.5 text-xs text-white outline-none focus:border-indigo-500 h-8"
+                            >
+                                <option value="">Sem Responsável</option>
+                                {teamNames.map(name => <option key={name} value={name}>{name}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Tamanho (Peso):</label>
+                            <select 
+                                value={bulkWeight} 
+                                onChange={e => setBulkWeight(e.target.value)} 
+                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-1.5 text-xs text-white outline-none focus:border-indigo-500 h-8"
+                            >
+                                <option value="baixa">🟢 Rápida</option>
+                                <option value="media">🟡 Média</option>
+                                <option value="alta">🔴 Demorada</option>
+                            </select>
+                        </div>
+                    </div>
 
-            <div className="flex items-center gap-1.5 mt-2 mb-1">
-                <AlertCircle size={12} className="text-amber-500" />
-                <span className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Atenção: A Data e Hora definem o Prazo Limite (SLA)</span>
-            </div>
+                    {/* COLUNA 2: Descrição da Tarefa (Esticada) */}
+                    <div className="flex flex-col gap-1 relative h-full">
+                        <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Descrição da Tarefa:</label>
+                        <textarea 
+                            value={taskText} 
+                            onChange={handleTaskTextChange}
+                            onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }}
+                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                            placeholder="Ex: Atualizar banners da campanha..." 
+                            className="w-full h-full min-h-[44px] bg-gray-800 border border-gray-600 rounded-md p-2 text-xs text-white outline-none focus:border-indigo-500 resize-none custom-scrollbar"
+                        />
+                        {showSuggestions && suggestions.length > 0 && (
+                            <ul className="absolute top-full left-0 w-full bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden z-50 mt-1">
+                                {suggestions.map((sug, idx) => (
+                                    <li 
+                                        key={idx} 
+                                        onMouseDown={(e) => { e.preventDefault(); setTaskText(sug); setShowSuggestions(false); }} 
+                                        className="px-3 py-2 text-xs text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer transition-colors border-b border-gray-700 last:border-0 truncate"
+                                    >
+                                        {sug}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
 
-            <div className="flex flex-col md:flex-row gap-3">
-              <input 
-                type="date" 
-                value={taskDate} 
-                onChange={(e) => setTaskDate(e.target.value)} 
-                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" 
-                title="Data Limite para Conclusão" 
-              />
-              <input 
-                type="time" 
-                value={taskTime} 
-                onChange={(e) => setTaskTime(e.target.value)} 
-                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer" 
-                title="Horário Limite" 
-              />
-              <select 
-                value={taskRecurrence} 
-                onChange={(e) => setTaskRecurrence(e.target.value)} 
-                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
-              >
-                <option value="none">S/ Repetição</option>
-                <option value="daily">🔁 Diário</option>
-                <option value="weekly">🔁 Semanal</option>
-                <option value="monthly">🔁 Mensal</option>
-              </select>
-            </div>
+                    {/* COLUNA 3: Prazo e Hora */}
+                    <div className="flex flex-col justify-between gap-2">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Data limite:</label>
+                            <input 
+                                type="date" 
+                                value={taskDate} 
+                                onChange={e => setTaskDate(e.target.value)}
+                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-1.5 text-xs text-white outline-none focus:border-indigo-500 h-8 cursor-pointer"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Hora Limite:</label>
+                            <input 
+                                type="time" 
+                                value={taskTime} 
+                                onChange={e => setTaskTime(e.target.value)}
+                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-1.5 text-xs text-white outline-none focus:border-indigo-500 h-8 cursor-pointer"
+                            />
+                        </div>
+                    </div>
 
-            <div className="flex flex-col md:flex-row gap-3">
-              <select 
-                value={bulkWeight} 
-                onChange={e => setBulkWeight(e.target.value)} 
-                className="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
-                title="Tempo Médio Estimado da Tarefa"
-              >
-                <option value="baixa">🟢 Tarefa Rápida</option>
-                <option value="media">🟡 Tarefa Média</option>
-                <option value="alta">🔴 Tarefa Demorada</option>
-              </select>
-              
-              <button 
-                onClick={() => { 
-                  const now = new Date();
-                  setTaskDate(new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0]); 
-                  setTaskTime(now.toTimeString().substring(0, 5)); 
-                  setTaskRecurrence('none'); 
-                  setBulkWeight('media'); 
-                }} 
-                className="bg-gray-800 hover:bg-gray-700 text-gray-400 p-2.5 rounded-lg transition-colors border border-gray-600 flex items-center justify-center gap-2 md:w-auto px-4 w-full md:flex-none shrink-0"
-                title="Restaurar Configurações Padrão"
-              >
-                <Eraser size={16}/> <span className="text-xs font-bold md:hidden">Limpar Configurações</span>
-              </button>
+                    {/* COLUNA 4: Recorrência */}
+                    <div className="flex flex-col justify-between gap-2">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase leading-none">Repetição:</label>
+                            <select 
+                                value={taskRecurrence} 
+                                onChange={e => setTaskRecurrence(e.target.value)} 
+                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-1.5 text-xs text-white outline-none focus:border-indigo-500 h-8 cursor-pointer"
+                            >
+                                <option value="none">Nenhuma</option>
+                                <option value="daily">🔁 Diária</option>
+                                <option value="weekly">🔁 Semanal</option>
+                                <option value="monthly">🔁 Mensal</option>
+                            </select>
+                        </div>
+                        <div className="h-8 w-full flex items-end">
+                            <span className="text-[9px] text-amber-500 font-bold uppercase tracking-wider flex items-center gap-1 leading-none pb-1.5">
+                                <AlertCircle size={10} /> O SLA define o prazo!
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* COLUNA 5: Botão Limpar alinhado na altura */}
+                    <div className="flex flex-col h-full pt-[14px]">
+                        <button 
+                            onClick={() => { setTaskDate(''); setTaskTime(''); setTaskRecurrence('none'); setBulkWeight('media'); }} 
+                            className="h-full w-full lg:w-16 bg-gray-800 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30 text-gray-400 font-bold rounded-md shadow-sm transition-colors flex flex-col justify-center items-center gap-1 border border-gray-600"
+                            title="Limpar Prazos e Configurações"
+                        >
+                            <Eraser size={16}/>
+                        </button>
+                    </div>
+                </div>
             </div>
           </div>
 
@@ -271,19 +300,27 @@ export default function BulkTaskModal({ isOpen, onClose, stores, onSave, teamMem
               </select>
             </div>
 
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-2 max-h-60 overflow-y-auto custom-scrollbar space-y-1">
-              {filteredStores.map(store => {
-                const isSelected = selectedStores.includes(store.id);
-                return (
-                  <div key={store.id} onClick={() => toggleStore(store.id)} className={`flex items-center gap-3 p-2 rounded cursor-pointer border transition-all ${isSelected ? 'bg-indigo-900/30 border-indigo-500/50' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'}`}>
-                    {isSelected ? <CheckSquare className="text-indigo-400" size={18}/> : <Square className="text-gray-500" size={18}/>}
-                    <div className="flex flex-col">
-                      <span className={`text-sm font-bold ${isSelected ? 'text-indigo-100' : 'text-gray-300'}`}>{store.store}</span>
-                      <span className="text-[10px] text-gray-500">{store.client} {store.marketplace && `• ${store.marketplace}`}</span>
+            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 max-h-72 overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {filteredStores.map(store => {
+                  const isSelected = selectedStores.includes(store.id);
+                  return (
+                    <div key={store.id} onClick={() => toggleStore(store.id)} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer border transition-all overflow-hidden ${isSelected ? 'bg-indigo-900/30 border-indigo-500/50 shadow-[0_0_10px_rgba(99,102,241,0.1)]' : 'bg-gray-800 border-gray-700 hover:bg-gray-700 hover:border-gray-500'}`}>
+                      <div className="shrink-0">
+                        {isSelected ? <CheckSquare className="text-indigo-400" size={18}/> : <Square className="text-gray-500" size={18}/>}
+                      </div>
+                      <div className="flex flex-col overflow-hidden w-full">
+                        <span className={`text-sm font-bold truncate w-full ${isSelected ? 'text-indigo-100' : 'text-gray-300'}`} title={store.store}>
+                          {store.store}
+                        </span>
+                        <span className="text-[10px] text-gray-500 truncate w-full" title={`${store.client} ${store.marketplace ? `• ${store.marketplace}` : ''}`}>
+                          {store.client} {store.marketplace && `• ${store.marketplace}`}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
               {filteredStores.length === 0 && <div className="text-center p-4 text-gray-500 text-sm">Nenhuma loja encontrada com estes filtros.</div>}
             </div>
           </div>

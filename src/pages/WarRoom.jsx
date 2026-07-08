@@ -40,13 +40,13 @@ const EventEntryRow = ({ store, activeEvent, onSaveDelta, canAccessWarRoom }) =>
                 </div>
             </td>
             <td className="p-3">
-                <input disabled={!canAccessWarRoom} type="number" placeholder="0.00" value={rev} onChange={e => setRev(e.target.value)} className="w-28 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner disabled:opacity-50" />
+                <input disabled={!canAccessWarRoom} type="number" placeholder="0.00" value={rev} onChange={e => setRev(e.target.value)} className="w-full min-w-[90px] max-w-[120px] bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-blue-400 font-bold outline-none focus:border-blue-500 shadow-inner disabled:opacity-50" />
             </td>
             <td className="p-3">
-                <input disabled={!canAccessWarRoom} type="number" placeholder="0" value={ord} onChange={e => setOrd(e.target.value)} className="w-20 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner disabled:opacity-50" />
+                <input disabled={!canAccessWarRoom} type="number" placeholder="0" value={ord} onChange={e => setOrd(e.target.value)} className="w-full min-w-[70px] max-w-[90px] bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-500 shadow-inner disabled:opacity-50" />
             </td>
             <td className="p-3">
-                <input disabled={!canAccessWarRoom} type="number" placeholder="0" value={uni} onChange={e => setUni(e.target.value)} className="w-20 bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner disabled:opacity-50" />
+                <input disabled={!canAccessWarRoom} type="number" placeholder="0" value={uni} onChange={e => setUni(e.target.value)} className="w-full min-w-[70px] max-w-[90px] bg-black/40 border border-white/10 rounded-xl p-2 text-xs text-purple-400 font-bold outline-none focus:border-purple-500 shadow-inner disabled:opacity-50" />
             </td>
             <td className="p-4 text-right">
                 <button onClick={handleSave} disabled={isSaving || !isUpdated} className={`px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-colors ${!isUpdated ? 'bg-white/5 text-gray-600' : 'bg-orange-600 hover:bg-orange-500 text-white'}`}>
@@ -94,9 +94,24 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
     const isGoalHit = progressPercent >= 100;
     
     const getColorTheme = () => {
-        if (progressPercent >= 100) return { main: 'emerald-500', light: 'emerald-400', bg: 'emerald', text: 'text-emerald-400' };
-        if (progressPercent >= 80) return { main: 'amber-500', light: 'yellow-400', bg: 'amber', text: 'text-amber-400' };
-        return { main: 'orange-600', light: 'amber-400', bg: 'orange', text: 'text-orange-400' };
+        if (progressPercent >= 100) return { 
+            barGradient: 'from-emerald-500 to-emerald-400', 
+            headerBg: 'from-emerald-600/20',
+            headerBorder: 'border-emerald-500/30',
+            text: 'text-emerald-400' 
+        };
+        if (progressPercent >= 80) return { 
+            barGradient: 'from-amber-500 to-yellow-400', 
+            headerBg: 'from-amber-600/20',
+            headerBorder: 'border-amber-500/30',
+            text: 'text-amber-400' 
+        };
+        return { 
+            barGradient: 'from-orange-600 to-amber-400', 
+            headerBg: 'from-orange-600/20',
+            headerBorder: 'border-orange-500/30',
+            text: 'text-orange-400' 
+        };
     };
     const theme = getColorTheme();
 
@@ -169,7 +184,6 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
         docPdf.save(`B2X_WarRoom_${activeEvent.name}.pdf`);
     };
 
-    // NOVA LÓGICA DE FECHAMENTO: Baixa relatório automaticamente
     const handleCloseWarRoom = async () => {
         if(window.confirm("Deseja encerrar este evento? Um relatório consolidado em PDF será gerado automaticamente para todos os clientes.")) {
             await exportEventReport();
@@ -178,7 +192,7 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
     };
 
     const renderProgressBar = () => {
-        const currentWidth = Math.min(progressPercent, 100);
+        const currentWidth = Math.min(progressPercent * 0.8, 100);
         return (
             <div className={`p-6 rounded-3xl border mb-6 relative transition-all duration-1000 ${isGoalHit ? 'bg-gradient-to-br from-emerald-900/40 to-black/60 border-emerald-500/50 shadow-[0_0_40px_rgba(16,185,129,0.3)]' : 'bg-black/30 border-white/5'}`}>
                 {isGoalHit && <div className="absolute inset-0 bg-emerald-500/10 rounded-3xl blur-xl z-0 animate-pulse pointer-events-none"></div>}
@@ -207,7 +221,7 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
                 
                 <div className="relative z-10 pt-6 pb-2">
                     <div className="h-6 bg-black/60 rounded-full border border-white/10 shadow-inner overflow-hidden relative">
-                        <div className={`absolute top-0 left-0 h-full transition-all duration-1000 ease-out bg-gradient-to-r from-${theme.main} to-${theme.light} shadow-[0_0_20px_rgba(255,255,255,0.4)]`} style={{ width: `${currentWidth}%` }}></div>
+                        <div className={`absolute top-0 left-0 h-full transition-all duration-1000 ease-out bg-gradient-to-r ${theme.barGradient} shadow-[0_0_20px_rgba(255,255,255,0.4)]`} style={{ width: `${currentWidth}%` }}></div>
                     </div>
                     <div className={`absolute top-0 bottom-0 w-0.5 z-10 transition-colors duration-1000 ${isGoalHit ? 'bg-emerald-300 shadow-[0_0_15px_rgba(16,185,129,1)]' : 'bg-gradient-to-b from-white to-gray-300'}`} style={{ left: '80%' }}>
                         <div className={`absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg transition-colors ${isGoalHit ? 'bg-emerald-500 text-white' : 'bg-white text-black'}`}>META</div>
@@ -220,8 +234,7 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* CABEÇALHO */}
-            <div className={`bg-gradient-to-r from-${theme.bg}-600/20 to-black/20 p-6 rounded-3xl border border-${theme.bg}-500/30 flex flex-col md:flex-row gap-6 justify-between items-start md:items-center transition-colors duration-500`}>
+            <div className={`bg-gradient-to-r ${theme.headerBg} to-black/20 p-6 rounded-3xl border ${theme.headerBorder} flex flex-col xl:flex-row gap-6 justify-between items-start xl:items-center transition-colors duration-500`}>
                 <div>
                     <div className="flex flex-wrap items-center gap-3">
                         <h2 className="text-3xl font-black text-white flex items-center gap-2">
@@ -232,11 +245,11 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
                         </span>
                     </div>
                 </div>
-                <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
-                    <button onClick={exportEventReport} className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 px-5 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-colors justify-center">
+                <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
+                    <button onClick={exportEventReport} className="w-full sm:w-auto bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 px-5 py-2.5 rounded-xl font-bold shadow-sm flex items-center justify-center gap-2 transition-colors">
                         <Download size={18} /> Baixar Resumo
                     </button>
-                    <button onClick={handleCloseWarRoom} className="bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-md flex items-center gap-2 transition-colors justify-center">
+                    <button onClick={handleCloseWarRoom} className="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-md flex items-center justify-center gap-2 transition-colors">
                         <XCircle size={18} /> Encerrar Evento
                     </button>
                 </div>
@@ -244,8 +257,8 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
 
             {renderProgressBar()}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm">
+            <div className="grid grid-cols-3 gap-3 md:gap-4 overflow-x-auto custom-scrollbar">
+                <div className="bg-white/[0.02] p-4 md:p-5 rounded-2xl border border-white/5 shadow-sm min-w-[200px]">
                     <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Volume do Evento</span>
                     <p className="text-2xl font-black text-emerald-400 mt-1">{formatNumber(eventStats.totalOrders)} <span className="text-sm font-medium text-gray-500">pedidos</span></p>
                 </div>
@@ -277,9 +290,9 @@ export default function WarRoom({ stores, setStores, updateStoreInCloud, formatC
 
             {/* TABELA */}
             <div className="bg-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden">
-                <div className="p-5 border-b border-white/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-black/20">
+                <div className="p-5 border-b border-white/10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-black/20">
                     <h3 className="text-lg font-bold text-white flex items-center gap-2"><Target className={theme.text} size={18}/> Lançamento Dinâmico</h3>
-                    <div className="relative w-full sm:w-64">
+                    <div className="relative w-full md:w-64 shrink-0">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
                         <input type="text" placeholder="Buscar loja ou cliente..." value={search} onChange={e => setSearch(e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 pl-9 pr-4 text-xs outline-none focus:border-indigo-500 transition-colors" />
                     </div>
