@@ -7,22 +7,41 @@ const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'am
 export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) {
   const [productForm, setProductForm] = useState({
     fotoUrl: '', descricao: '', custo: '', variacoes: [], 
-    canais: [{ id: Date.now(), canal: 'Shopee', modalidade: '', observacoes: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] }]
+    canais: [{ id: Date.now(), canal: 'Shopee', modalidade: '', observacoes: '', ofertas: [{ id: Date.now()+1, quantidade: '1', precoDe: '', precoPor: '', lucro: '' }] }]
   });
 
-  // Carrega os dados sempre que a gaveta for aberta
+  const [isDirty, setIsDirty] = useState(false);
+
+  const updateForm = (newData) => {
+    setProductForm(newData);
+    setIsDirty(true);
+  };
+
   useEffect(() => {
     if (isOpen) {
+      setIsDirty(false); // Reseta a trava de segurança ao abrir
       if (initialData) {
         setProductForm(initialData);
       } else {
         setProductForm({
           fotoUrl: '', descricao: '', custo: '', observacoes: '', variacoes: [], 
-          canais: [{ id: Date.now(), canal: 'Shopee', modalidade: '', observacoes: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] }]
+          canais: [{ id: Date.now(), canal: 'Shopee', modalidade: '', observacoes: '', ofertas: [{ id: Date.now()+1, quantidade: '1', precoDe: '', precoPor: '', lucro: '' }] }]
         });
       }
     }
   }, [isOpen, initialData]);
+
+  // Função segura para fechar o modal
+  const handleClose = () => {
+    if (isDirty) {
+      if (window.confirm("⚠️ Você tem alterações não salvas! Tem certeza que deseja sair e perder os dados digitados?")) {
+        onClose();
+        setIsDirty(false);
+      }
+    } else {
+      onClose();
+    }
+  };
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -43,7 +62,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
-        setProductForm({...productForm, fotoUrl: compressedBase64});
+        updateForm({...productForm, fotoUrl: compressedBase64});
       };
       img.src = event.target.result;
     };
@@ -51,7 +70,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
   };
 
   const handleAddVariacao = () => {
-    setProductForm({
+    updateForm({
       ...productForm,
       variacoes: [...(productForm.variacoes || []), { id: Date.now(), cor: '', tamanhos: [] }]
     });
@@ -59,11 +78,11 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
 
   const handleUpdateCor = (id, novaCor) => {
     const novasVariacoes = productForm.variacoes.map(v => v.id === id ? { ...v, cor: novaCor } : v);
-    setProductForm({ ...productForm, variacoes: novasVariacoes });
+    updateForm({ ...productForm, variacoes: novasVariacoes });
   };
 
   const handleRemoveVariacao = (id) => {
-    setProductForm({ ...productForm, variacoes: productForm.variacoes.filter(v => v.id !== id) });
+    updateForm({ ...productForm, variacoes: productForm.variacoes.filter(v => v.id !== id) });
   };
 
   const handleAddTamanho = (e, variacaoId) => {
@@ -77,7 +96,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
           }
           return v;
         });
-        setProductForm({ ...productForm, variacoes: novasVariacoes });
+        updateForm({ ...productForm, variacoes: novasVariacoes });
         e.target.value = ''; 
       }
     }
@@ -90,41 +109,50 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
       }
       return v;
     });
-    setProductForm({ ...productForm, variacoes: novasVariacoes });
+    updateForm({ ...productForm, variacoes: novasVariacoes });
   };
 
   const handleAddOferta = (canalIdx) => {
     const novosCanais = [...productForm.canais];
     const ofertasAtuais = novosCanais[canalIdx].ofertas || [];
-    const ultimaQtd = ofertasAtuais.length > 0 ? Math.max(...ofertasAtuais.map(o => Number(o.quantidade) || 0)) : 0;
+    
+    // Procura o último número usado para somar +1 (ex: se era "2 dif", pega o 2 e vira 3)
+    const ultimaQtdNum = ofertasAtuais.length > 0 ? Math.max(...ofertasAtuais.map(o => {
+      const match = String(o.quantidade).match(/\d+/);
+      return match ? Number(match[0]) : 0;
+    })) : 0;
     
     novosCanais[canalIdx].ofertas.push({
         id: Date.now() + Math.random(),
-        quantidade: ultimaQtd + 1,
+        quantidade: String(ultimaQtdNum + 1),
         precoDe: '',
         precoPor: '',
         spam: '',
         lucro: ''
     });
-    setProductForm({...productForm, canais: novosCanais});
+    updateForm({...productForm, canais: novosCanais});
   };
 
   const handleUpdateOferta = (canalIdx, ofertaIdx, field, value) => {
     const novosCanais = [...productForm.canais];
     novosCanais[canalIdx].ofertas[ofertaIdx][field] = value;
-    setProductForm({...productForm, canais: novosCanais});
+    updateForm({...productForm, canais: novosCanais});
   };
 
   const handleRemoveOferta = (canalIdx, ofertaIdx) => {
     const novosCanais = [...productForm.canais];
     novosCanais[canalIdx].ofertas = novosCanais[canalIdx].ofertas.filter((_, i) => i !== ofertaIdx);
-    setProductForm({...productForm, canais: novosCanais});
+    updateForm({...productForm, canais: novosCanais});
   };
 
+  // Melhorado para entender texto no campo quantidade (ex: "2 pares dif" -> entende como 2)
   const calcularLucroOferta = (precoVenda, custoBase, quantidade) => {
     const venda = Number(precoVenda) || 0;
     const custoUnico = Number(custoBase) || 0;
-    const qtdPares = Number(quantidade) || 1;
+    
+    const matchNumeros = String(quantidade).match(/\d+/);
+    const qtdPares = matchNumeros ? Number(matchNumeros[0]) : 1;
+
     if (venda === 0) return { valor: 0, margem: 0 };
     const custoTotal = custoUnico * qtdPares;
     const lucro = venda - custoTotal;
@@ -134,6 +162,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
 
   const triggerSave = () => {
     if (!productForm.descricao.trim()) return toast.error("A descrição do produto é obrigatória.");
+    setIsDirty(false); // Desativa a trava pois o usuário está salvando de propósito
     onSave(productForm, !!initialData);
   };
 
@@ -141,7 +170,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
 
   return (
     <div className="fixed inset-0 bg-[#0B0F19]/60 backdrop-blur-sm flex justify-end z-[9999]">
-      <div className="absolute inset-0" onClick={onClose}></div>
+      <div className="absolute inset-0" onClick={handleClose}></div>
       <div className="relative bg-gray-900 border-l border-white/10 w-full max-w-xl h-full shadow-[-10px_0_30px_rgba(0,0,0,0.5)] flex flex-col animate-in slide-in-from-right duration-300">
         
         {/* Cabeçalho */}
@@ -150,7 +179,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
             <Package size={20} className="text-indigo-400"/> 
             {initialData ? 'Editar Produto' : 'Novo Produto'}
           </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-white/5 rounded-lg">
+          <button onClick={handleClose} className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-white/5 rounded-lg" title="Fechar aba">
             <X size={20}/>
           </button>
         </div>
@@ -165,11 +194,11 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="sm:col-span-2">
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição / Nome do Produto</label>
-                <input type="text" value={productForm.descricao} onChange={e => setProductForm({...productForm, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 shadow-inner text-sm transition-colors" placeholder="Ex: Tênis Esportivo Runner X" />
+                <input type="text" value={productForm.descricao} onChange={e => updateForm({...productForm, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 shadow-inner text-sm transition-colors" placeholder="Ex: Tênis Esportivo Runner X" />
               </div>
               <div>
                 <label className="text-[10px] font-bold text-emerald-400 uppercase flex items-center gap-1"><DollarSign size={10}/> Custo Fixo Unitário</label>
-                <input type="number" step="0.01" value={productForm.custo} onChange={e => setProductForm({...productForm, custo: e.target.value})} className="w-full bg-black/40 border border-emerald-500/30 text-emerald-400 rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm transition-colors placeholder:text-emerald-500/20" placeholder="R$ 0,00" />
+                <input type="number" step="0.01" value={productForm.custo} onChange={e => updateForm({...productForm, custo: e.target.value})} className="w-full bg-black/40 border border-emerald-500/30 text-emerald-400 rounded-xl p-3 outline-none focus:border-emerald-500 mt-1 shadow-inner text-sm transition-colors placeholder:text-emerald-500/20" placeholder="R$ 0,00" />
               </div>
             </div>
 
@@ -239,9 +268,9 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
             <div className="flex justify-between items-center">
               <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest">3. Tabela de Preços e Lucros</h4>
               <button 
-                onClick={() => setProductForm({
+                onClick={() => updateForm({
                   ...productForm, 
-                  canais: [...productForm.canais, { id: Date.now(), canal: 'Novo Canal', modalidade: '', observacoes: '', ofertas: [{ id: Date.now()+1, quantidade: 1, precoDe: '', precoPor: '', lucro: '' }] }] 
+                  canais: [...productForm.canais, { id: Date.now(), canal: 'Novo Canal', modalidade: '', observacoes: '', ofertas: [{ id: Date.now()+1, quantidade: '1', precoDe: '', precoPor: '', lucro: '' }] }] 
                 })} 
                 className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-lg hover:bg-emerald-500/30 transition-colors flex items-center gap-1"
               >
@@ -256,7 +285,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
                   <button 
                     onClick={() => {
                       const novosCanais = productForm.canais.filter((_, i) => i !== idx);
-                      setProductForm({...productForm, canais: novosCanais});
+                      updateForm({...productForm, canais: novosCanais});
                     }} 
                     className="absolute top-4 right-4 text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 p-1.5 rounded-lg transition-colors"
                     title="Remover este canal"
@@ -270,7 +299,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
                       <select value={c.canal || 'Shopee'} onChange={e => {
                         const novosCanais = [...productForm.canais];
                         novosCanais[idx].canal = e.target.value;
-                        setProductForm({...productForm, canais: novosCanais});
+                        updateForm({...productForm, canais: novosCanais});
                       }} className="w-full bg-white/5 border border-white/10 text-white font-bold rounded-lg p-2 text-xs outline-none focus:border-indigo-500 transition-colors cursor-pointer">
                         {ALL_MARKETPLACES.map(m => <option key={m} value={m} className="bg-gray-900">{m.toUpperCase()}</option>)}
                       </select>
@@ -280,7 +309,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
                       <input type="text" value={c.modalidade || ''} onChange={e => {
                         const novosCanais = [...productForm.canais];
                         novosCanais[idx].modalidade = e.target.value;
-                        setProductForm({...productForm, canais: novosCanais});
+                        updateForm({...productForm, canais: novosCanais});
                       }} placeholder="Ex: CPF, Premium, Full" className="w-full bg-black/40 border border-white/10 text-white rounded-lg p-2.5 text-xs outline-none focus:border-indigo-500 transition-colors" />
                     </div>
                   </div>
@@ -301,7 +330,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
                        <table className="w-full text-left">
                          <thead>
                           <tr className="text-[9px] text-gray-500 uppercase tracking-wider border-b border-white/10">
-                            <th className="pb-2 w-16">Pares</th>
+                            <th className="pb-2 w-24">Pares</th> {/* Ajustado o width para caber o texto livre */}
                             <th className="pb-2 w-20">P. Cheio</th>
                             <th className="pb-2 w-20 text-emerald-400">Promo</th>
                             <th className="pb-2 w-20 text-orange-400">SPAM</th>
@@ -313,7 +342,8 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
                               return (
                                 <tr key={of.id} className="border-b border-white/5 last:border-0">
                                    <td className="py-2 pr-2">
-                                      <input type="number" min="1" value={of.quantidade} onChange={e => handleUpdateOferta(idx, oIdx, 'quantidade', e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded p-1.5 text-xs outline-none focus:border-indigo-500 text-center" />
+                                      {/* Transformado para type="text" para suportar "2 dif" */}
+                                      <input type="text" value={of.quantidade} onChange={e => handleUpdateOferta(idx, oIdx, 'quantidade', e.target.value)} className="w-full bg-black/40 border border-white/10 text-white rounded p-1.5 text-xs outline-none focus:border-indigo-500 text-center" placeholder="Ex: 2 dif" />
                                    </td>
                                    <td className="py-2 pr-2">
                                       <input type="number" step="0.01" value={of.precoDe} onChange={e => handleUpdateOferta(idx, oIdx, 'precoDe', e.target.value)} className="w-full bg-black/40 border border-white/10 text-gray-300 rounded p-1.5 text-xs outline-none focus:border-indigo-500" placeholder="R$" />
@@ -349,7 +379,7 @@ export default function ProductDrawer({ isOpen, onClose, initialData, onSave }) 
                           onChange={e => {
                             const novosCanais = [...productForm.canais];
                             novosCanais[idx].observacoes = e.target.value;
-                            setProductForm({...productForm, canais: novosCanais});
+                            updateForm({...productForm, canais: novosCanais});
                           }}
                           placeholder="Cole aqui links dos anúncios ou regras de separação para este canal..."
                           className="w-full h-16 bg-black/40 border border-white/10 text-gray-300 rounded-xl p-2 outline-none focus:border-indigo-500 shadow-inner text-xs transition-colors resize-none custom-scrollbar"

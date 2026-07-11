@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package, FileText, Eye, EyeOff, Lock } from 'lucide-react';
+import { X, Plus, CalendarDays, CheckCircle2, Trash2, Send, StickyNote, Save, Copy, Eraser, Loader2, TrendingUp, Edit2, Check, Play, Pause, AlertCircle, Package, FileText, Lock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../../utils/taskEngine';
 
@@ -20,7 +20,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
   const [acessoEmail, setAcessoEmail] = useState(store.acessoEmail || '');
   const [acessoSenha, setAcessoSenha] = useState(store.acessoSenha || '');
-  const [showPassword, setShowPassword] = useState(false);
   const [isSavingAcesso, setIsSavingAcesso] = useState(false);
 
   const myName = currentUserData?.nomeCompleto || currentUserData?.nome;
@@ -217,18 +216,15 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
   };
 
   const handleStartTask = (taskId, taskText) => {
-    // 1. Procura em todo o banco se há uma tarefa sua rodando
     const runningTask = stores
       .flatMap(s => (s.checklists || []).map(t => ({ ...t, storeObject: s })))
       .find(t => t.executingStatus === 'playing' && t.startedBy === username && !t.feita);
 
-    // 2. Se achou, abre o Popup e PARA aqui
     if (runningTask) {
       setPendingStartInfo({ currentTaskId: taskId, currentTaskText: taskText, runningTask });
       return;
     }
 
-    // 3. Se não achou, inicia normalmente
     executeStart(taskId, taskText);
   };
 
@@ -241,7 +237,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     saveChanges({ ...store, checklists: updatedChecklists, taskLogs: [...(store.taskLogs || []), newLog], dataUltimoAcesso: new Date().toISOString() });
     
     if (broadcastTaskFocus) {
-      // Adicionamos o envio do 'taskId' no final para a animação global funcionar!
       broadcastTaskFocus(`▶️ Executando: ${taskText} | ${store.store}`, 'set', store.id, taskId);
     }
   };
@@ -250,7 +245,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     if (!pendingStartInfo) return;
     const { currentTaskId, currentTaskText, runningTask } = pendingStartInfo;
 
-    // Se a tarefa que esquecemos rodando estiver em OUTRA loja
     if (store.id !== runningTask.storeObject.id) {
       const oldStore = stores.find(s => s.id === runningTask.storeObject.id);
       if (oldStore) {
@@ -274,7 +268,6 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
       executeStart(currentTaskId, currentTaskText);
       
     } else {
-      // Se for na MESMA loja
       const oldTask = store.checklists.find(t => t.id === runningTask.id);
       
       const resultOld = action === 'complete'
@@ -862,21 +855,13 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                 </div>
                 
                 <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input 
-                      type={showPassword ? "text" : "password"} 
-                      value={acessoSenha} 
-                      onChange={(e) => setAcessoSenha(e.target.value)} 
-                      placeholder="Senha de Acesso"
-                      className="w-full bg-black/20 border border-white/10 rounded-xl p-2.5 pr-10 text-xs text-gray-300 outline-none focus:border-blue-500 transition-colors"
-                    />
-                    <button 
-                      onClick={() => setShowPassword(!showPassword)} 
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
-                    >
-                      {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                  </div>
+                  <input 
+                    type="text" 
+                    value={acessoSenha} 
+                    onChange={(e) => setAcessoSenha(e.target.value)} 
+                    placeholder="Senha de Acesso"
+                    className="flex-1 bg-black/20 border border-white/10 rounded-xl p-2.5 text-xs text-gray-300 outline-none focus:border-blue-500 transition-colors"
+                  />
                   <button onClick={() => handleCopy(acessoSenha, 'Senha')} className="p-2.5 bg-black/20 border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-colors" title="Copiar Senha">
                     <Copy size={14}/>
                   </button>
@@ -1027,94 +1012,113 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   </div>
                 )}
 
-                <div className="flex items-center justify-between mb-2">
-                   <div className="flex items-center gap-2">
-                     <TrendingUp size={16} className="text-indigo-400" />
-                     <h5 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Oportunidades de Canal</h5>
-                   </div>
-                   <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/20 font-bold">
-                     {selectedProduct.canais?.length || 0} Ativos
-                   </span>
-                </div>
-                
-                <div className="space-y-4">
-                  {(selectedProduct.canais || []).map((c, i) => (
-                    <div key={c.id || i} className="bg-white/[0.04] border border-white/10 rounded-2xl p-5 flex flex-col gap-4 relative group transition-all hover:bg-white/[0.06] hover:border-indigo-500/40">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-3">
-                          <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-black text-white uppercase tracking-wider">{c.canal}</span>
-                            {c.modalidade && <span className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">{c.modalidade}</span>}
-                          </div>
-                        </div>
+                {/* FILTRO DE CANAIS */}
+                {(() => {
+                  const canaisFiltrados = (selectedProduct.canais || []).filter(c => 
+                    !store.marketplace || c.canal?.toLowerCase() === store.marketplace.toLowerCase()
+                  );
+
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-2">
+                         <div className="flex items-center gap-2">
+                           <TrendingUp size={16} className="text-indigo-400" />
+                           <h5 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">
+                             {store.marketplace ? `Ofertas em ${store.marketplace}` : 'Oportunidades de Canal'}
+                           </h5>
+                         </div>
+                         <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/20 font-bold">
+                           {canaisFiltrados.length} {canaisFiltrados.length === 1 ? 'Ativa' : 'Ativas'}
+                         </span>
                       </div>
                       
-                      {(c.ofertas && c.ofertas.length > 0) && (
-                        <div className="mt-2 bg-black/30 rounded-xl p-3 border border-white/5">
-                           <table className="w-full text-left">
-                             <thead>
-                               <tr className="text-[9px] text-gray-500 uppercase tracking-wider border-b border-white/10">
-                                 <th className="pb-2 w-16">Pares</th>
-                                 <th className="pb-2 w-20">P. Cheio</th>
-                                 <th className="pb-2 w-20 text-emerald-400">Promo</th>
-                                 <th className="pb-2 w-20 text-orange-400">Spam</th>
-                                 <th className="pb-2 text-right">Lucro Bruto</th>
-                               </tr>
-                             </thead>
-                             <tbody className="divide-y divide-white/5">
-                               {c.ofertas.map(of => {
-                                  const lucro = calcularLucroOferta(of.precoPor || of.precoDe, selectedProduct.custo, of.quantidade);
-                                  const isNegativo = lucro.valor < 0;
-
-                                  return (
-                                    <tr key={of.id} className="group/row">
-                                       <td className="py-2.5 text-[11px] font-bold text-gray-300">{of.quantidade}</td>
-                                       <td className="py-2.5 text-[11px] text-gray-500 line-through">R$ {of.precoDe}</td>
-                                       <td className="py-2.5 text-[11px] font-black text-emerald-400">R$ {of.precoPor || of.precoDe || '0.00'}</td>
-                                       <td className="py-2.5 text-[11px] font-black text-orange-400">
-                                         {of.spam ? `R$ ${of.spam}` : '-'}
-                                       </td>
-                                       <td className="py-2.5 text-right flex flex-col items-end">
-                                            <span className={`text-[11px] font-black ${isNegativo ? 'text-red-400' : 'text-emerald-400'}`}>
-                                              {isNegativo ? '' : '+'}R$ {lucro.valor.toFixed(2)}
-                                            </span>
-                                            {selectedProduct.custo && (
-                                                <span className={`text-[9px] font-bold ${isNegativo ? 'text-red-500' : 'text-emerald-500/60'}`}>
-                                                  {lucro.margem.toFixed(1)}%
-                                                </span>
-                                            )}
-                                       </td>
-                                    </tr>
-                                  )
-                               })}
-                             </tbody>
-                           </table>
-                        </div>
-                      )}
-
-                      {c.kits && c.kits.length > 0 && (
-                        <div className="space-y-2 mt-2 border-t border-white/5 pt-3">
-                          <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Kits Legados</p>
-                          {(c.kits || []).map((kit, kIdx) => (
-                            <div key={kit.id || kIdx} className="flex justify-between items-center bg-black/30 p-2.5 rounded-xl border border-white/5">
-                              <div className="flex items-center gap-2">
-                                <Package size={12} className="text-indigo-400"/>
-                                <span className="text-[10px] font-bold text-indigo-100 uppercase tracking-wide truncate max-w-[150px]">
-                                  {kit.descricao || 'Kit'}
-                                </span>
+                      <div className="space-y-4">
+                        {canaisFiltrados.length > 0 ? (
+                          canaisFiltrados.map((c, i) => (
+                            <div key={c.id || i} className="bg-white/[0.04] border border-white/10 rounded-2xl p-5 flex flex-col gap-4 relative group transition-all hover:bg-white/[0.06] hover:border-indigo-500/40">
+                              <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div>
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-black text-white uppercase tracking-wider">{c.canal}</span>
+                                    {c.modalidade && <span className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">{c.modalidade}</span>}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                {kit.precoDe && <span className="text-[9px] text-gray-600 line-through font-bold">R$ {kit.precoDe}</span>}
-                                <span className="text-[11px] font-black text-indigo-300">R$ {kit.precoPor || '0.00'}</span>
-                              </div>
+                              
+                              {(c.ofertas && c.ofertas.length > 0) && (
+                                <div className="mt-2 bg-black/30 rounded-xl p-3 border border-white/5">
+                                   <table className="w-full text-left">
+                                     <thead>
+                                       <tr className="text-[9px] text-gray-500 uppercase tracking-wider border-b border-white/10">
+                                         <th className="pb-2 w-16">Pares</th>
+                                         <th className="pb-2 w-20">P. Cheio</th>
+                                         <th className="pb-2 w-20 text-emerald-400">Promo</th>
+                                         <th className="pb-2 w-20 text-orange-400">Spam</th>
+                                         <th className="pb-2 text-right">Lucro Bruto</th>
+                                       </tr>
+                                     </thead>
+                                     <tbody className="divide-y divide-white/5">
+                                       {c.ofertas.map(of => {
+                                          const lucro = calcularLucroOferta(of.precoPor || of.precoDe, selectedProduct.custo, of.quantidade);
+                                          const isNegativo = lucro.valor < 0;
+
+                                          return (
+                                            <tr key={of.id} className="group/row">
+                                               <td className="py-2.5 text-[11px] font-bold text-gray-300">{of.quantidade}</td>
+                                               <td className="py-2.5 text-[11px] text-gray-500">R$ {of.precoDe}</td>
+                                               <td className="py-2.5 text-[11px] font-black text-emerald-400">R$ {of.precoPor || of.precoDe || '0.00'}</td>
+                                               <td className="py-2.5 text-[11px] font-black text-orange-400">
+                                                 {of.spam ? `R$ ${of.spam}` : '-'}
+                                               </td>
+                                               <td className="py-2.5 text-right flex flex-col items-end">
+                                                    <span className={`text-[11px] font-black ${isNegativo ? 'text-red-400' : 'text-emerald-400'}`}>
+                                                      {isNegativo ? '' : '+'}R$ {lucro.valor.toFixed(2)}
+                                                    </span>
+                                                    {selectedProduct.custo && (
+                                                        <span className={`text-[9px] font-bold ${isNegativo ? 'text-red-500' : 'text-emerald-500/60'}`}>
+                                                          {lucro.margem.toFixed(1)}%
+                                                        </span>
+                                                    )}
+                                               </td>
+                                            </tr>
+                                          )
+                                       })}
+                                     </tbody>
+                                   </table>
+                                </div>
+                              )}
+
+                              {c.kits && c.kits.length > 0 && (
+                                <div className="space-y-2 mt-2 border-t border-white/5 pt-3">
+                                  <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Kits Legados</p>
+                                  {(c.kits || []).map((kit, kIdx) => (
+                                    <div key={kit.id || kIdx} className="flex justify-between items-center bg-black/30 p-2.5 rounded-xl border border-white/5">
+                                      <div className="flex items-center gap-2">
+                                        <Package size={12} className="text-indigo-400"/>
+                                        <span className="text-[10px] font-bold text-indigo-100 uppercase tracking-wide truncate max-w-[150px]">
+                                          {kit.descricao || 'Kit'}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {kit.precoDe && <span className="text-[9px] text-gray-600 line-through font-bold">R$ {kit.precoDe}</span>}
+                                        <span className="text-[11px] font-black text-indigo-300">R$ {kit.precoPor || '0.00'}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                          ))
+                        ) : (
+                          <div className="text-center p-6 border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
+                              <p className="text-xs text-gray-500">Nenhuma oferta cadastrada para o canal <strong className="text-indigo-400">{store.marketplace || 'desta loja'}</strong>.</p>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {selectedProduct.observacoes && (
                    <div className="mt-4 bg-indigo-500/5 border border-indigo-500/10 rounded-xl p-4 flex flex-col gap-2 relative">
