@@ -52,7 +52,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.0.6';
+  const CURRENT_VERSION = '3.1';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -1601,7 +1601,7 @@ export default function App() {
             <img src="/logo.jpg" alt="Avante HUB" className="h-8 md:h-9 w-auto object-contain rounded-lg shadow-sm shrink-0" />
             <div className="hidden xl:flex items-center gap-3">
               <span className="text-xl font-black text-white tracking-tighter">
-                AVANTE<span className="text-indigo-500">HUB</span>
+                AVANTE<span className="text-blue-700">HUB</span>
               </span>
               <span className="text-[10px] bg-white/5 border border-white/10 text-gray-400 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
                 v{CURRENT_VERSION}
@@ -1886,6 +1886,7 @@ export default function App() {
                 formatCurrency={safeFormatCurrency}
                 canEdit={canEdit}
                 teamMembers={teamMembers}
+                searchTerm={searchTerm}
               />
             )}
 

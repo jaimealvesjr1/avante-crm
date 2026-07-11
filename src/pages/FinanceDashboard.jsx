@@ -98,17 +98,19 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const totalReceitaAgencia = mesFolha === 'Atual' ? dashboardData.totalAgencyRevenueActual : metricasFolha.faturamentoBruto;
   const metaAgencia = mesFolha === 'Atual' ? dashboardData.agencyTarget : metricasFolha.metaAgenciaHistorica;
 
+  const [filtroStatusEntradas, setFiltroStatusEntradas] = useState('Todos');
+  const [filtroStatusSaidas, setFiltroStatusSaidas] = useState('Todos');
+
   const busca = (searchTerm || '').toLowerCase();
   
   const recebimentosFiltrados = recebimentos.filter(rec => 
-    !busca || rec.cliente.toLowerCase().includes(busca) || (rec.mesReferencia || '').toLowerCase().includes(busca) || (rec.contaBancaria && rec.contaBancaria.toLowerCase().includes(busca))
+      !busca || rec.cliente.toLowerCase().includes(busca) || (rec.mesReferencia || '').toLowerCase().includes(busca) || (rec.contaBancaria && rec.contaBancaria.toLowerCase().includes(busca))
   );
 
   const despesasFiltradas = despesas.filter(d => 
-    !busca || d.descricao.toLowerCase().includes(busca) || d.categoria.toLowerCase().includes(busca) || (d.contaBancaria && d.contaBancaria.toLowerCase().includes(busca))
+      !busca || d.descricao.toLowerCase().includes(busca) || d.categoria.toLowerCase().includes(busca) || (d.contaBancaria && d.contaBancaria.toLowerCase().includes(busca))
   );
 
-  // CÁLCULOS SEGUROS COM PARSESAFENUMBER
   const totalPendenteGeral = recebimentos.filter(r => r.status === 'Pendente').reduce((acc, curr) => acc + parseSafeNumber(curr.valorAgencia), 0);
 
   const pendenteFiltrado = recebimentosFiltrados.reduce((acc, r) => {
@@ -148,7 +150,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
   const mesPassadoExato = `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`;
 
-  const agruparPorTempo = (lista) => {
+  const agruparPorTempo = (lista, filtroStatus) => {
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
     
@@ -160,35 +162,35 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     fimProximaSemana.setDate(fimSemana.getDate() + 7);
 
     const grupos = {
-      'Atrasados': [],
-      'Esta Semana': [],
-      'Próxima Semana': [],
-      'Futuro': [],
-      'Concluídos': []
+      'Atrasados': [], 'Esta Semana': [], 'Próxima Semana': [], 'Futuro': [], 'Concluídos': []
     };
 
     const alocarNoGrupo = (itemAlocavel) => {
+      if (filtroStatus === 'Aberto' && itemAlocavel.status === 'Pago') return;
+      if (filtroStatus === 'Concluidos' && itemAlocavel.status !== 'Pago') return;
+
       if (itemAlocavel.status === 'Pago') {
+        if (filtroStatus === 'Atrasados') return; // Bloqueia se procurar só atrasos
         grupos['Concluídos'].push(itemAlocavel);
         return;
       }
+      
       const dataVenc = new Date(itemAlocavel.dataVencimento + 'T00:00:00');
-      if (dataVenc < hoje) grupos['Atrasados'].push(itemAlocavel);
-      else if (dataVenc >= inicioSemana && dataVenc <= fimSemana) grupos['Esta Semana'].push(itemAlocavel);
-      else if (dataVenc > fimSemana && dataVenc <= fimProximaSemana) grupos['Próxima Semana'].push(itemAlocavel);
-      else grupos['Futuro'].push(itemAlocavel);
+      if (dataVenc < hoje) {
+        grupos['Atrasados'].push(itemAlocavel);
+      } else {
+        if (filtroStatus === 'Atrasados') return; // Bloqueia tudo que não está atrasado
+        
+        if (dataVenc >= inicioSemana && dataVenc <= fimSemana) grupos['Esta Semana'].push(itemAlocavel);
+        else if (dataVenc > fimSemana && dataVenc <= fimProximaSemana) grupos['Próxima Semana'].push(itemAlocavel);
+        else grupos['Futuro'].push(itemAlocavel);
+      }
     };
 
     lista.forEach(item => {
       if (item.desembolsos && item.desembolsos.length > 0) {
         item.desembolsos.forEach((desem, idx) => {
-          alocarNoGrupo({
-            ...item,
-            ...desem,
-            idPai: item.id,
-            isParcela: true,
-            numeroParcela: idx + 1
-          });
+          alocarNoGrupo({ ...item, ...desem, idPai: item.id, isParcela: true, numeroParcela: idx + 1 });
         });
       } else {
         alocarNoGrupo(item);
@@ -198,8 +200,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     return grupos;
   };
 
-  const recebimentosAgrupados = agruparPorTempo(recebimentosFiltrados);
-  const despesasAgrupadas = agruparPorTempo(despesasFiltradas);
+  const recebimentosAgrupados = agruparPorTempo(recebimentosFiltrados, filtroStatusEntradas);
+  const despesasAgrupadas = agruparPorTempo(despesasFiltradas, filtroStatusSaidas);
 
   const folhaCalculada = useMemo(() => {
     if (!teamMembers) return [];
@@ -754,9 +756,21 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
             <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden h-max">
-              <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
+              <div className="p-5 border-b border-white/10 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2"><ArrowUpRight size={18} className="text-green-400"/> Cronograma de Entradas</h3>
-                {busca && <span className="text-xs bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full">Filtrado por: "{busca}"</span>}
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <select 
+                        value={filtroStatusEntradas} 
+                        onChange={e => setFiltroStatusEntradas(e.target.value)}
+                        className="bg-gray-900 border border-gray-700 text-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-green-500 shadow-sm cursor-pointer"
+                    >
+                        <option value="Todos">Todos os Status</option>
+                        <option value="Atrasados">Apenas Atrasados</option>
+                        <option value="Aberto">Apenas em Aberto</option>
+                        <option value="Concluidos">Apenas Concluídos</option>
+                    </select>
+                    {busca && <span className="text-xs bg-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-lg border border-indigo-500/30 whitespace-nowrap">Busca: "{busca}"</span>}
+                </div>
               </div>
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left border-collapse">
@@ -903,8 +917,21 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
             <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden h-max">
-              <div className="p-5 border-b border-white/10 bg-white/5">
+              <div className="p-5 border-b border-white/10 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2"><Clock size={18} className="text-gray-400"/> Cronograma de Saídas</h3>
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <select 
+                        value={filtroStatusSaidas} 
+                        onChange={e => setFiltroStatusSaidas(e.target.value)}
+                        className="bg-gray-900 border border-gray-700 text-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-rose-500 shadow-sm cursor-pointer"
+                    >
+                        <option value="Todos">Todos os Status</option>
+                        <option value="Atrasados">Apenas Atrasadas</option>
+                        <option value="Aberto">Apenas em Aberto</option>
+                        <option value="Concluidos">Apenas Concluídas</option>
+                    </select>
+                    {busca && <span className="text-xs bg-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-lg border border-indigo-500/30 whitespace-nowrap">Busca: "{busca}"</span>}
+                </div>
               </div>
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left">
