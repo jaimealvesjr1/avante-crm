@@ -3,7 +3,7 @@ import {
   Search, Download, ArchiveRestore, CalendarDays, Eraser, LogOut,
   Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, 
   Eye, EyeOff, Flame, Activity, PieChart as PieChartIcon, 
-  TrendingUp, DollarSign, Target, MessageCircle, Upload, Save, Plus, X, Trash2, Zap
+  TrendingUp, DollarSign, Target, MessageCircle, Upload, Save, Plus, X, Trash2, Zap, Wallet
 } from 'lucide-react';
 
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
@@ -24,6 +24,7 @@ const FinanceDashboard = lazy(() => import('./pages/FinanceDashboard'));
 const WarRoom = lazy(() => import('./pages/WarRoom'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const TeamFeedView = lazy(() => import('./pages/TeamFeedView'));
+const PersonalFinance = lazy(() => import('./pages/PersonalFinance'));
 
 import ClientFileModal from './features/clients/ClientFileModal';
 import BatchEntry from './features/operations/BatchEntry';
@@ -52,7 +53,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.1.1';
+  const CURRENT_VERSION = '3.2';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -1637,6 +1638,16 @@ export default function App() {
               </button>
             )}
 
+            {!isVisitante && (
+              <button 
+                onClick={() => setActiveView('pessoal')} 
+                className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'pessoal' ? 'bg-purple-900 text-purple-100 shadow-md border border-purple-500/30' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                title="Meu Caixa (Pessoal)"
+              >
+                <Wallet size={18} className="shrink-0" /> <span className="hidden xl:inline">Pessoal</span>
+              </button>
+            )}
+
             {isManager && (
               <button onClick={() => setActiveView('admin')} className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'admin' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`} title="Gestão de Equipe">
                 <Shield size={18} className="shrink-0" /> <span className="hidden xl:inline">Equipe</span>
@@ -1905,7 +1916,15 @@ export default function App() {
                 currentDay={currentDay}
               />
             )}
-            
+
+            {activeView === 'pessoal' && (
+              <PersonalFinance
+                db={db}
+                currentUser={user}
+                formatCurrency={safeFormatCurrency}
+              />
+            )}
+
           </Suspense> 
           <br></br>
         </ErrorBoundary>

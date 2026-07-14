@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserPlus, Shield, Users, Mail, Clock, Edit2, Check, X, Palette, Eye, Flame, Trash2, DollarSign, Calendar, Percent, Target } from 'lucide-react';
+import { UserPlus, Shield, Users, Mail, Clock, Edit2, Check, X, Palette, Eye, Flame, Trash2, DollarSign, Calendar, Percent, Target, Briefcase, User } from 'lucide-react';
 import { getVisualRole } from '../App';
 
 const AVATAR_COLORS = [
@@ -27,23 +27,20 @@ export default function AdminPanel({
 }) {
   const [editingUser, setEditingUser] = useState(null);
   
-  // Estados de Perfil Básicos
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
   const [editAvatarUrl, setEditAvatarUrl] = useState('');
 
-  // ==========================================
-  // NOVOS ESTADOS: Regras Financeiras do Usuário
-  // ==========================================
   const [editSalarioFixo, setEditSalarioFixo] = useState(0);
   const [editDiaFixo, setEditDiaFixo] = useState('');
   const [editPercentual, setEditPercentual] = useState(0);
   const [editBaseCalculo, setEditBaseCalculo] = useState('LT'); // LT (Bruto) ou LL (Líquido)
   const [editGatilho, setEditGatilho] = useState(0); // Valor a exceder (Ex: 16000 do Jaime)
   const [editDiaVariavel, setEditDiaVariavel] = useState('');
-  const [editFrequencia, setEditFrequencia] = useState('mensal'); // mensal, fracionado, semanal, quinzenal
+  const [editFrequencia, setEditFrequencia] = useState('mensal');
+  
+  const [editTipoConta, setEditTipoConta] = useState('PF');
 
-  // Lógica para Iniciais e Cores
   const getInitials = (name) => {
     if (!name) return 'U';
     const parts = name.trim().split(' ');
@@ -74,6 +71,7 @@ export default function AdminPanel({
     setEditGatilho(pConfig.gatilho || 0);
     setEditDiaVariavel(pConfig.diaVariavel || '');
     setEditFrequencia(pConfig.frequencia || 'mensal');
+    setEditTipoConta(pConfig.tipoConta || 'PF');
   };
 
   const saveEdit = (email) => {
@@ -88,7 +86,8 @@ export default function AdminPanel({
       baseCalculo: editBaseCalculo,
       gatilho: Number(editGatilho),
       diaVariavel: editDiaVariavel,
-      frequencia: editFrequencia
+      frequencia: editFrequencia,
+      tipoConta: editTipoConta
     };
 
     handleUpdateUser(email, editName, editColor, editAvatarUrl, paymentConfig);
@@ -183,9 +182,20 @@ export default function AdminPanel({
                               <Mail size={12} /> {member.email}
                             </p>
                             
-                            {/* Resumo visual financeiro quando não está editando */}
-                            {member.paymentConfig && member.paymentConfig.salarioFixo >= 0 && (
-                               <div className="mt-2 flex gap-2 flex-wrap">
+                            <div className="mt-2 flex gap-2 flex-wrap">
+                              {member.paymentConfig && member.paymentConfig.tipoConta && (
+                                <span className={`text-[10px] border px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                                  member.paymentConfig.tipoConta === 'MEI' 
+                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                    : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                }`}>
+                                  {member.paymentConfig.tipoConta === 'MEI' ? <Briefcase size={10}/> : <User size={10}/>}
+                                  {member.paymentConfig.tipoConta === 'MEI' ? 'Gestão MEI' : 'Gestão PF (Pessoal)'}
+                                </span>
+                              )}
+
+                              {member.paymentConfig && member.paymentConfig.salarioFixo >= 0 && (
+                                <>
                                   <span className="text-[10px] bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
                                     <DollarSign size={10}/> R$ {member.paymentConfig.salarioFixo}
                                   </span>
@@ -194,8 +204,9 @@ export default function AdminPanel({
                                         <Percent size={10}/> {member.paymentConfig.percentual}% do {member.paymentConfig.baseCalculo}
                                       </span>
                                   )}
-                               </div>
-                            )}
+                                </>
+                              )}
+                          </div>
                           </>
                         ) : (
                           <div className="animate-in fade-in zoom-in-95 w-full">
@@ -213,7 +224,30 @@ export default function AdminPanel({
 
                             <div className="bg-black/30 p-4 rounded-xl border border-white/10 mt-2">
                               <h4 className="text-xs font-bold text-green-400 mb-3 flex items-center gap-1 uppercase tracking-wider"><DollarSign size={14}/> Configuração de Remuneração</h4>
-                              
+
+                              <div className="col-span-2 sm:col-span-4 mb-4 p-3 bg-white/5 border border-white/10 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                  <div>
+                                      <label className="block text-[11px] font-bold text-white mb-0.5">Tipo de Gestão</label>
+                                      <p className="text-[9px] text-gray-400 leading-tight max-w-[200px]">Define se o painel individual deste membro será Pessoal (PF) ou Empresarial (MEI)</p>
+                                  </div>
+                                  <div className="flex bg-black/50 p-1 rounded-lg border border-white/10 w-full sm:w-auto">
+                                      <button 
+                                          type="button"
+                                          onClick={() => setEditTipoConta('PF')}
+                                          className={`flex-1 sm:flex-none px-3 py-1.5 text-[10px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${editTipoConta === 'PF' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
+                                      >
+                                          <User size={12}/> Pessoal (PF)
+                                      </button>
+                                      <button 
+                                          type="button"
+                                          onClick={() => setEditTipoConta('MEI')}
+                                          className={`flex-1 sm:flex-none px-3 py-1.5 text-[10px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${editTipoConta === 'MEI' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
+                                      >
+                                          <Briefcase size={12}/> MEI (PJ)
+                                      </button>
+                                  </div>
+                              </div>
+                                                            
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
                                 <div className="col-span-2">
                                   <label className="block text-[10px] text-gray-400 mb-1">Frequência de Pagto</label>

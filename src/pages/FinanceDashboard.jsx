@@ -251,6 +251,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
             ...item, categoria: 'Folha de Pagamento', status: 'Pendente', contaBancaria: 'AVANTE PJ',
             holerite: dadosHolerite,
             chavePix: pixDefinitivo,
+            userEmail: membro.email,
             criadoEm: new Date().toISOString()
           });
       }
@@ -521,6 +522,20 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         dataPagamentoRealizado: novoStatus === 'Pago' ? new Date().toISOString() : null 
       });
 
+      if (novoStatus === 'Pago' && item.categoria === 'Folha de Pagamento' && item.userEmail) {
+         await addDoc(collection(db, "financeiro_pessoal"), {
+            userEmail: item.userEmail,
+            statusAlocacao: 'Pendente', // Marca que aguarda escolha de PJ/PF
+            data: new Date().toISOString().split('T')[0],
+            descricao: `Recebimento Agência: ${item.descricao}`,
+            tipo: 'Receita',
+            categoria: 'Serviços',
+            valor: parseSafeNumber(item.valor || item.valorBruto),
+            linkComprovante: '',
+            criadoEm: new Date().toISOString()
+         });
+      }
+
       if (novoStatus === 'Pago' && item.chavePix) {
         toast((t) => (
           <div className="flex flex-col gap-2 p-1">
@@ -541,9 +556,13 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       const despesa = despesas.find(d => d.id === idDespesa);
       if (!despesa) return;
 
+      let valorPagoAgora = 0;
+      let parcelaFoiPaga = false;
+
       const novosDesembolsos = despesa.desembolsos.map(d => {
         if (d.id === idDesembolso) {
             const novoStatus = d.status === 'Pago' ? 'Pendente' : 'Pago';
+            if (novoStatus === 'Pago') { valorPagoAgora = parseSafeNumber(d.valor); parcelaFoiPaga = true; }
             return { ...d, status: novoStatus, dataPagamentoRealizado: novoStatus === 'Pago' ? new Date().toISOString() : null };
         }
         return d;
@@ -558,6 +577,20 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
         status: novoStatus,
         dataPagamentoRealizado: todosPagos ? new Date().toISOString() : null
       });
+
+      if (parcelaFoiPaga && despesa.categoria === 'Folha de Pagamento' && despesa.userEmail) {
+         await addDoc(collection(db, "financeiro_pessoal"), {
+            userEmail: despesa.userEmail,
+            statusAlocacao: 'Pendente',
+            data: new Date().toISOString().split('T')[0],
+            descricao: `Recebimento Agência: ${despesa.descricao} (Parcela)`,
+            tipo: 'Receita',
+            categoria: 'Serviços',
+            valor: valorPagoAgora,
+            linkComprovante: '',
+            criadoEm: new Date().toISOString()
+         });
+      }
 
       const parcelaAtualizada = novosDesembolsos.find(d => d.id === idDesembolso);
       if (parcelaAtualizada.status === 'Pago' && despesa.chavePix) {
@@ -1149,43 +1182,58 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
             return (
               <div key={mes} className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden">
-                <div className="p-6 border-b border-white/10 bg-gradient-to-r from-blue-900/20 to-transparent flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-                  <h3 className="text-xl font-black text-white flex items-center gap-2"><Calendar size={20} className="text-indigo-400"/> CAIXA: {mes}</h3>
+                <div className="p-6 border-b border-white/10 bg-gradient-to-r from-indigo-900/20 via-transparent to-transparent">
+                  <h3 className="text-xl font-black text-white flex items-center gap-2 mb-6">
+                    <Calendar size={22} className="text-indigo-400"/> Resumo do Mês: {mes}
+                  </h3>
                   
-                  <div className="flex flex-wrap gap-4">
-                    <div className="bg-white/5 rounded-xl p-3 border border-white/10 flex flex-col gap-1 min-w-[150px]">
-                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><CheckCircle size={12}/> Dinheiro na Conta (Real)</span>
-                      <span className="text-sm font-bold text-green-400 flex items-center justify-between">Entradas: <span>{formatCurrency(dadosMes.totalRealEntradas)}</span></span>
-                      <span className="text-sm font-bold text-rose-400 flex items-center justify-between">Saídas: <span>{formatCurrency(dadosMes.totalRealSaidas)}</span></span>
-                      <div className="w-full h-px bg-white/10 my-1"></div>
-                      <span className={`text-sm font-black flex items-center justify-between ${saldoReal >= 0 ? 'text-indigo-300' : 'text-red-400'}`}>Saldo Atual: <span>{formatCurrency(saldoReal)}</span></span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    {/* Card Entradas Reais */}
+                    <div className="bg-black/40 border border-white/10 rounded-2xl p-4 shadow-inner">
+                      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><ArrowUpRight size={14} className="text-green-400"/> Entradas Reais</p>
+                      <h4 className="text-xl font-black text-green-400">{formatCurrency(dadosMes.totalRealEntradas)}</h4>
+                      <p className="text-xs text-gray-500 mt-1 font-medium">+ {formatCurrency(dadosMes.totalPrevEntradas)} a receber</p>
                     </div>
 
-                    <div className="bg-black/40 rounded-xl p-3 border border-white/5 flex flex-col gap-1 min-w-[150px] shadow-inner">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1"><Clock size={12}/> Projeção Final (Se tudo for pago)</span>
-                      <span className="text-sm font-medium text-green-400/50 flex items-center justify-between">Entradas: <span>{formatCurrency(dadosMes.totalRealEntradas + dadosMes.totalPrevEntradas)}</span></span>
-                      <span className="text-sm font-medium text-rose-400/50 flex items-center justify-between">Saídas: <span>{formatCurrency(dadosMes.totalRealSaidas + dadosMes.totalPrevSaidas)}</span></span>
-                      <div className="w-full h-px bg-white/10 my-1"></div>
-                      <span className={`text-sm font-bold flex items-center justify-between ${saldoPrevisto >= 0 ? 'text-indigo-400/70' : 'text-red-400/70'}`}>Saldo Final: <span>{formatCurrency(saldoPrevisto)}</span></span>
+                    {/* Card Saídas Reais */}
+                    <div className="bg-black/40 border border-white/10 rounded-2xl p-4 shadow-inner">
+                      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><ArrowDownRight size={14} className="text-rose-400"/> Saídas Reais</p>
+                      <h4 className="text-xl font-black text-rose-400">{formatCurrency(dadosMes.totalRealSaidas)}</h4>
+                      <p className="text-xs text-gray-500 mt-1 font-medium">+ {formatCurrency(dadosMes.totalPrevSaidas)} a pagar</p>
+                    </div>
+
+                    {/* Card Saldo em Conta */}
+                    <div className={`border rounded-2xl p-4 shadow-inner ${saldoReal >= 0 ? 'bg-indigo-600/20 border-indigo-500/40' : 'bg-red-500/10 border-red-500/30'}`}>
+                      <p className={`text-[11px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 ${saldoReal >= 0 ? 'text-indigo-300' : 'text-red-300'}`}><CheckCircle size={14}/> Saldo em Conta</p>
+                      <h4 className={`text-2xl font-black ${saldoReal >= 0 ? 'text-indigo-400' : 'text-red-400'}`}>{formatCurrency(saldoReal)}</h4>
+                      <p className="text-xs mt-1 font-medium opacity-70 text-current">Dinheiro real disponível</p>
+                    </div>
+
+                    {/* Card Projeção Final */}
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 shadow-inner relative overflow-hidden">
+                      <div className="absolute top-0 right-0 -mt-2 -mr-2 text-white/5"><TrendingUp size={80}/></div>
+                      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 relative z-10 flex items-center gap-1.5"><Target size={14}/> Projeção do Mês</p>
+                      <h4 className={`text-2xl font-black relative z-10 ${saldoPrevisto >= 0 ? 'text-white' : 'text-red-400'}`}>{formatCurrency(saldoPrevisto)}</h4>
+                      <p className="text-xs text-gray-500 mt-1 font-medium relative z-10">Se tudo for pago/recebido</p>
                     </div>
                   </div>
                 </div>
                 
                 <div className="overflow-x-auto custom-scrollbar">
                   <table className="w-full text-left">
-                    <thead className="bg-black/20 text-gray-400 text-[10px] uppercase tracking-wider">
+                    <thead className="bg-gray-900 border-b border-white/10 text-gray-400 text-[10px] uppercase tracking-wider">
                       <tr>
-                        <th className="p-4 pl-6 font-semibold border-r border-white/5" rowSpan={2}>Semana</th>
-                        <th className="p-2 text-center border-r border-b border-white/5" colSpan={3}>REALIZADO (Já Pago)</th>
-                        <th className="p-2 text-center text-gray-500 border-b border-white/5" colSpan={3}>PREVISTO (Pendente)</th>
+                        <th className="p-4 pl-6 font-semibold border-r border-white/5 bg-black/20" rowSpan={2}>Semana do Mês</th>
+                        <th className="p-3 text-center border-r border-b border-white/5 text-indigo-300 bg-indigo-900/10" colSpan={3}>CAIXA REALIZADO (JÁ PAGO)</th>
+                        <th className="p-3 text-center text-gray-500 border-b border-white/5 bg-white/[0.02]" colSpan={3}>CAIXA PREVISTO (EM ABERTO)</th>
                       </tr>
                       <tr>
-                        <th className="p-3 font-semibold text-green-400">Entradas (+)</th>
-                        <th className="p-3 font-semibold text-rose-400">Saídas (-)</th>
-                        <th className="p-3 font-semibold border-r border-white/5">Saldo</th>
-                        <th className="p-3 font-semibold text-green-400/50">Entradas (+)</th>
-                        <th className="p-3 font-semibold text-rose-400/50">Saídas (-)</th>
-                        <th className="p-3 font-semibold text-gray-500 pr-6">Saldo Prev.</th>
+                        <th className="p-3 font-bold text-green-400 bg-indigo-900/10">Entradas (+)</th>
+                        <th className="p-3 font-bold text-rose-400 bg-indigo-900/10">Saídas (-)</th>
+                        <th className="p-3 font-bold text-indigo-300 border-r border-white/5 bg-indigo-900/10">Saldo Real</th>
+                        <th className="p-3 font-bold text-green-400/50 bg-white/[0.02]">Entradas (+)</th>
+                        <th className="p-3 font-bold text-rose-400/50 bg-white/[0.02]">Saídas (-)</th>
+                        <th className="p-3 font-bold text-gray-500 pr-6 bg-white/[0.02]">Saldo Prev.</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -1199,18 +1247,20 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                         if (dadosSemana.entradasReal === 0 && dadosSemana.saidasReal === 0 && dadosSemana.entradasPrev === 0 && dadosSemana.saidasPrev === 0) return null;
 
                         return (
-                          <tr key={semana} className="hover:bg-white/5 transition-colors text-sm">
-                            <td className="p-4 pl-6 font-bold text-gray-300 border-r border-white/5">{semana}</td>
+                          <tr key={semana} className="hover:bg-white/5 transition-colors text-sm border-b border-white/5 last:border-0">
+                            <td className="p-4 pl-6 font-bold text-gray-300 border-r border-white/5 bg-black/20">{semana}</td>
                             
-                            <td className="p-4 font-bold text-green-400">{formatCurrency(dadosSemana.entradasReal)}</td>
-                            <td className="p-4 font-bold text-rose-400">{formatCurrency(dadosSemana.saidasReal)}</td>
-                            <td className={`p-4 font-bold border-r border-white/5 ${saldoSemanaReal >= 0 ? 'text-indigo-300' : 'text-red-400'}`}>
+                            {/* Colunas do Realizado com fundo levemente azulado */}
+                            <td className="p-4 font-bold text-green-400 bg-indigo-900/[0.03]">{formatCurrency(dadosSemana.entradasReal)}</td>
+                            <td className="p-4 font-bold text-rose-400 bg-indigo-900/[0.03]">{formatCurrency(dadosSemana.saidasReal)}</td>
+                            <td className={`p-4 font-black border-r border-white/5 bg-indigo-900/[0.03] ${saldoSemanaReal >= 0 ? 'text-indigo-400' : 'text-red-400'}`}>
                               {formatCurrency(saldoSemanaReal)}
                             </td>
 
-                            <td className="p-4 font-medium text-green-400/50">{formatCurrency(dadosSemana.entradasPrev)}</td>
-                            <td className="p-4 font-medium text-rose-400/50">{formatCurrency(dadosSemana.saidasPrev)}</td>
-                            <td className={`p-4 pr-6 font-medium ${saldoSemanaPrevisto >= 0 ? 'text-indigo-400/50' : 'text-red-400/50'}`}>
+                            {/* Colunas do Previsto com fundo normal */}
+                            <td className="p-4 font-medium text-green-400/60 bg-white/[0.01]">{formatCurrency(dadosSemana.entradasPrev)}</td>
+                            <td className="p-4 font-medium text-rose-400/60 bg-white/[0.01]">{formatCurrency(dadosSemana.saidasPrev)}</td>
+                            <td className={`p-4 pr-6 font-medium bg-white/[0.01] ${saldoSemanaPrevisto >= 0 ? 'text-gray-400' : 'text-red-400/50'}`}>
                               {formatCurrency(saldoSemanaPrevisto)}
                             </td>
                           </tr>
@@ -1223,10 +1273,14 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
             );
           })}
           {Object.keys(fluxoDeCaixa).length === 0 && (
-            <div className="bg-[#0B0F19]/80 rounded-3xl border border-white/10 p-16 text-center text-gray-400 shadow-lg">
-              <Activity size={48} className="mx-auto mb-4 opacity-20 text-indigo-400" />
-              <p className="text-lg font-bold text-white mb-2">Sem movimentações financeiras</p>
-              <p>Cadastre despesas ou feche um mês para gerar o fluxo de caixa.</p>
+            <div className="bg-[#0B0F19]/40 backdrop-blur-md rounded-3xl border-2 border-dashed border-white/10 p-16 text-center shadow-inner flex flex-col items-center justify-center">
+              <div className="bg-indigo-500/10 p-4 rounded-full mb-4">
+                <Activity size={40} className="text-indigo-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">O Fluxo de Caixa está vazio</h3>
+              <p className="text-gray-400 text-sm max-w-md mx-auto">
+                Registre Entradas (A Receber) ou Saídas (A Pagar) para que o sistema gere automaticamente as projeções semanais e mensais.
+              </p>
             </div>
           )}
         </div>
