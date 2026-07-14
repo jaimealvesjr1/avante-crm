@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Wallet, DollarSign, ArrowUpCircle, ArrowDownCircle, FileText, Calendar, Target, ShieldCheck, Plus, Trash2, Link as LinkIcon, Download, Briefcase, User } from 'lucide-react';
+import { Wallet, DollarSign, ArrowUpCircle, ArrowDownCircle, FileText, Calendar, Target, ShieldCheck, Plus, Trash2, Link as LinkIcon, Download, Briefcase, User, CreditCard, PiggyBank, TrendingUp } from 'lucide-react';
 import { collection, onSnapshot, doc, addDoc, deleteDoc, updateDoc, query, where } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
 
@@ -17,7 +17,31 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     tipo: 'Receita',
     categoria: 'Prestação de Serviços',
     valor: '',
-    linkComprovante: ''
+    linkComprovante: '',
+    statusTransacao: 'Efetuado'
+  });
+
+  const [formCartao, setFormCartao] = useState({
+    cartao: 'Nubank',
+    diaVencimento: '10',
+    dataCompra: new Date().toISOString().split('T')[0],
+    descricao: '',
+    valorTotal: '',
+    parcelas: '1'
+  });
+
+  const [formCofrinho, setFormCofrinho] = useState({
+    nome: '',
+    metaTotal: '',
+    saldoInformado: '',
+    dataAtualizacao: new Date().toISOString().split('T')[0]
+  });
+
+  const [formInvestimento, setFormInvestimento] = useState({
+    ativo: '',
+    tipoAtivo: 'Renda Fixa (CDB/Tesouro)',
+    valorAplicado: '',
+    dataCompra: new Date().toISOString().split('T')[0]
   });
 
   const TIPOS = ['Receita', 'Despesa', 'Aporte', 'Retirada'];
@@ -62,10 +86,11 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         categoria: form.categoria,
         valor: valorConvertido,
         linkComprovante: form.linkComprovante.trim(),
+        statusTransacao: form.statusTransacao,
         criadoEm: new Date().toISOString()
       });
       toast.success("Registrado!");
-      setForm({...form, descricao: '', valor: ''});
+      setForm({...form, descricao: '', valor: '', statusTransacao: 'Efetuado'});
     } catch (error) { toast.error("Erro ao salvar."); }
   };
 
@@ -75,6 +100,109 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
       await deleteDoc(doc(db, "financeiro_pessoal", id));
       toast.success("Registro apagado.");
     }
+  };
+
+  // 3.1 ALTERNAR STATUS (EFETIVAR PREVISÃO)
+  const handleAlternarStatus = async (id, statusAtual) => {
+    try {
+      const novoStatus = statusAtual === 'Efetuado' ? 'Pendente' : 'Efetuado';
+      await updateDoc(doc(db, "financeiro_pessoal", id), {
+        statusTransacao: novoStatus
+      });
+      toast.success(novoStatus === 'Efetuado' ? "Lançamento efetivado com sucesso!" : "Marcado como pendente.");
+    } catch (error) {
+      toast.error("Erro ao atualizar status.");
+    }
+  };
+
+  // 3.2 LANÇAR DESPESA DE CARTÃO DE CRÉDITO
+  const handleSalvarCartao = async (e) => {
+    e.preventDefault();
+    const valorTotal = parseSafeNumber(formCartao.valorTotal);
+    const numParcelas = parseInt(formCartao.parcelas, 10);
+    
+    if (!formCartao.descricao.trim() || valorTotal <= 0 || numParcelas < 1) {
+      return toast.error("Verifique a descrição, valor e parcelas.");
+    }
+
+    const valorParcela = valorTotal / numParcelas;
+    const dataCompra = new Date(formCartao.dataCompra + 'T12:00:00');
+    
+    try {
+      // Lança cada parcela como uma despesa pendente no fluxo
+      for (let i = 0; i < numParcelas; i++) {
+        // Calcula o mês de vencimento da fatura
+        let dataVencimento = new Date(dataCompra.getFullYear(), dataCompra.getMonth() + i + 1, parseInt(formCartao.diaVencimento, 10));
+        
+        await addDoc(collection(db, "financeiro_pessoal"), {
+          userEmail: currentUser.email,
+          carteira: carteiraAtiva, // Lança no caixa selecionado (PJ ou PF)
+          data: dataVencimento.toISOString().split('T')[0],
+          descricao: `${formCartao.descricao} (${i + 1}/${numParcelas}) - ${formCartao.cartao}`,
+          tipo: 'Despesa Operacional', 
+          categoria: 'Cartão de Crédito',
+          valor: valorParcela,
+          linkComprovante: '',
+          statusTransacao: 'Pendente', // Entra como pendente na data da fatura
+          criadoEm: new Date().toISOString()
+        });
+      }
+      toast.success(`Compra parcelada em ${numParcelas}x lançada nas faturas!`);
+      setFormCartao({ ...formCartao, descricao: '', valorTotal: '', parcelas: '1' });
+    } catch (error) {
+      toast.error("Erro ao registrar compra no cartão.");
+    }
+  };
+
+  // 3.3 REGISTRAR COFRINHO / ATUALIZAR SALDO
+  const handleSalvarCofrinho = async (e) => {
+    e.preventDefault();
+    const saldo = parseSafeNumber(formCofrinho.saldoInformado);
+    const meta = parseSafeNumber(formCofrinho.metaTotal);
+    
+    if (!formCofrinho.nome.trim() || saldo < 0) return toast.error("Verifique o nome e o saldo.");
+    
+    try {
+      await addDoc(collection(db, "financeiro_pessoal"), {
+        userEmail: currentUser.email,
+        carteira: carteiraAtiva,
+        data: formCofrinho.dataAtualizacao,
+        descricao: `Atualização: ${formCofrinho.nome}`,
+        cofrinhoNome: formCofrinho.nome,
+        metaTotal: meta,
+        tipo: 'Cofrinho',
+        categoria: 'Cofrinho',
+        valor: saldo, // O valor aqui representa o "Saldo Total" naquele dia
+        statusTransacao: 'Efetuado',
+        criadoEm: new Date().toISOString()
+      });
+      toast.success("Saldo do cofrinho atualizado!");
+      setFormCofrinho({ ...formCofrinho, saldoInformado: '', metaTotal: '' });
+    } catch (error) { toast.error("Erro ao atualizar cofrinho."); }
+  };
+
+  // 3.4 REGISTRAR COMPRA DE INVESTIMENTO
+  const handleSalvarInvestimento = async (e) => {
+    e.preventDefault();
+    const valor = parseSafeNumber(formInvestimento.valorAplicado);
+    if (!formInvestimento.ativo.trim() || valor <= 0) return toast.error("Verifique os dados do investimento.");
+    
+    try {
+      await addDoc(collection(db, "financeiro_pessoal"), {
+        userEmail: currentUser.email,
+        carteira: carteiraAtiva,
+        data: formInvestimento.dataCompra,
+        descricao: formInvestimento.ativo,
+        tipoAtivo: formInvestimento.tipoAtivo,
+        tipo: 'Investimento',
+        categoria: 'Investimento',
+        valor: valor,
+        statusTransacao: 'Efetuado',
+        criadoEm: new Date().toISOString()
+      });
+      toast.success("Investimento registado com sucesso!");
+      setFormInvestimento({ ...formInvestimento, ativo: '', valorAplicado: '' });
+    } catch (error) { toast.error("Erro ao registar investimento."); }
   };
 
   // 4. MOTOR DE CÁLCULO PARA O IRPF (Consolidado Anual)
@@ -104,6 +232,8 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     };
 
     movimentacoesFiltradas.forEach(mov => {
+      if (mov.statusTransacao === 'Pendente') return; // Ignora previsões no cálculo de IRPF
+      
       const dataMov = new Date(mov.data + 'T12:00:00');
       if (dataMov.getFullYear() !== anoAtual) return; // Filtra apenas o ano atual
 
@@ -147,17 +277,26 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         
         {/* SELETOR DE CARTEIRA (PJ vs PF) */}
         <div className="flex bg-black/40 p-1 rounded-xl border border-white/10 shadow-inner">
-          <button onClick={() => setCarteiraAtiva('PJ')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PJ' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
-            <Briefcase size={14} /> Caixa PJ
-          </button>
           <button onClick={() => setCarteiraAtiva('PF')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PF' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
             <User size={14} /> Caixa PF
+          </button>
+          <button onClick={() => setCarteiraAtiva('PJ')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PJ' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
+            <Briefcase size={14} /> Caixa PJ
           </button>
         </div>
 
         <div className="flex bg-black/40 p-1.5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto max-w-full custom-scrollbar">
           <button onClick={() => setActiveTab('fluxo')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'fluxo' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
             <DollarSign size={16} /> O Dia a Dia
+          </button>
+          <button onClick={() => setActiveTab('cartoes')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'cartoes' ? 'bg-rose-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+            <CreditCard size={16} /> Cartões
+          </button>
+          <button onClick={() => setActiveTab('cofrinhos')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'cofrinhos' ? 'bg-amber-500 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+            <PiggyBank size={16} /> Cofrinhos
+          </button>
+          <button onClick={() => setActiveTab('investimentos')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'investimentos' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+            <TrendingUp size={16} /> Investimentos
           </button>
           <button onClick={() => setActiveTab('irpf')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'irpf' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
             <ShieldCheck size={16} /> Blindagem IRPF
@@ -168,6 +307,42 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
       {/* ABA 1: FLUXO DE CAIXA (O DIA A DIA) */}
       {activeTab === 'fluxo' && (
         <div className="space-y-6">
+
+          {/* CONTROLE DE IMPOSTOS (DAS MEI) - Apenas no Caixa PJ */}
+          {carteiraAtiva === 'PJ' && (() => {
+            const mesAtual = new Date().toISOString().slice(0, 7); // Pega o formato YYYY-MM
+            // Procura se tem algum pagamento de imposto com "DAS" na descrição neste mês
+            const dasPago = movimentacoesFiltradas.some(m => 
+              m.tipo.includes('Despesa') && 
+              m.descricao.toUpperCase().includes('DAS') && 
+              m.data.startsWith(mesAtual)
+            );
+
+            return (
+              <div className={`border rounded-2xl p-4 flex items-center justify-between shadow-md transition-all ${dasPago ? 'bg-emerald-900/20 border-emerald-500/30' : 'bg-rose-900/20 border-rose-500/30'}`}>
+                <div className="flex items-center gap-3">
+                  <ShieldCheck className={dasPago ? 'text-emerald-400' : 'text-rose-400'} size={24} />
+                  <div>
+                    <h4 className={`font-bold text-sm ${dasPago ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      Controle de DAS (Simples Nacional)
+                    </h4>
+                    <p className="text-xs text-gray-400">Referência: {new Date().toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}</p>
+                  </div>
+                </div>
+                <div>
+                  {dasPago ? (
+                    <span className="bg-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-500/30 flex items-center gap-1">
+                      ✅ DAS Pago
+                    </span>
+                  ) : (
+                    <span className="bg-rose-500/20 text-rose-400 px-3 py-1.5 rounded-lg text-xs font-bold border border-rose-500/30 flex items-center gap-1 animate-pulse">
+                      ⚠️ DAS Pendente
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
           
           {/* AVISO DE PENDÊNCIAS DA AGÊNCIA */}
           {pendenciasAlocacao.length > 0 && (
@@ -219,7 +394,7 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                 <input type="text" placeholder="Ex: Pagamento Cliente X, Compra de Mouse..." required value={form.descricao} onChange={e => setForm({...form, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm" />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase">Tipo</label>
                   <select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value, categoria: CATEGORIAS[e.target.value][0]})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
@@ -234,9 +409,18 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                 </div>
               </div>
 
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Valor (R$)</label>
-                <input type="number" step="0.01" required value={form.valor} onChange={e => setForm({...form, valor: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm font-bold" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Valor (R$)</label>
+                  <input type="number" step="0.01" required value={form.valor} onChange={e => setForm({...form, valor: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm font-bold" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Status</label>
+                  <select value={form.statusTransacao} onChange={e => setForm({...form, statusTransacao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
+                    <option className="bg-gray-900" value="Efetuado">Efetuado (Já Pago/Recebido)</option>
+                    <option className="bg-gray-900" value="Pendente">Pendente (A Pagar/Receber)</option>
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -292,10 +476,22 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                             {mov.tipo === 'Aporte/Capital' && <span className="text-blue-400 bg-blue-400/10 px-2 py-1 rounded text-[10px] font-bold">Aporte</span>}
                             {mov.tipo === 'Retirada (Sócio)' && <span className="text-amber-400 bg-amber-400/10 px-2 py-1 rounded text-[10px] font-bold">Retirada</span>}
                           </td>
-                          <td className={`p-4 font-black text-right ${mov.tipo === 'Receita' || mov.tipo === 'Aporte/Capital' ? 'text-green-400' : 'text-rose-400'}`}>
-                            {mov.tipo === 'Receita' || mov.tipo === 'Aporte/Capital' ? '+' : '-'} {formatCurrency(parseSafeNumber(mov.valor))}
+                          <td className={`p-4 font-black text-right ${mov.statusTransacao === 'Pendente' ? 'text-gray-500' : (mov.tipo === 'Receita' || mov.tipo === 'Aporte/Capital' ? 'text-green-400' : 'text-rose-400')}`}>
+                            <div className="flex flex-col items-end">
+                              <span>{mov.tipo === 'Receita' || mov.tipo === 'Aporte/Capital' ? '+' : '-'} {formatCurrency(parseSafeNumber(mov.valor))}</span>
+                              {mov.statusTransacao === 'Pendente' && <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded mt-1 font-bold">Pendente</span>}
+                            </div>
                           </td>
                           <td className="p-4 pr-6 text-center flex items-center justify-center gap-2">
+                             {mov.statusTransacao === 'Pendente' ? (
+                               <button onClick={() => handleAlternarStatus(mov.id, mov.statusTransacao)} className="p-2 text-amber-400 hover:text-white bg-amber-500/20 hover:bg-amber-500/60 rounded-xl transition-colors font-bold text-[10px] uppercase tracking-wider" title="Dar Baixa">
+                                 Dar Baixa
+                               </button>
+                             ) : (
+                               <button onClick={() => handleAlternarStatus(mov.id, mov.statusTransacao)} className="text-[10px] text-gray-500 underline hover:text-white mr-1" title="Desfazer">
+                                 Desfazer
+                               </button>
+                             )}
                              {mov.linkComprovante && (
                                <a href={mov.linkComprovante} target="_blank" rel="noopener noreferrer" className="p-2 text-indigo-300 hover:text-indigo-100 bg-indigo-500/20 hover:bg-indigo-500/40 rounded-xl transition-colors" title="Ver Comprovante">
                                  <FileText size={14}/>
@@ -314,6 +510,277 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
           </div>
         </div>
       </div>
+      )}
+
+      {/* ABA CARTÕES DE CRÉDITO */}
+      {activeTab === 'cartoes' && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Lançamento de Compra no Cartão */}
+            <div className="lg:col-span-1 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6 h-max">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
+                <CreditCard size={18} className="text-rose-400" /> Nova Compra no Cartão
+              </h3>
+              
+              <form onSubmit={handleSalvarCartao} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Cartão</label>
+                    <input type="text" placeholder="Ex: Nubank, Inter..." required value={formCartao.cartao} onChange={e => setFormCartao({...formCartao, cartao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Vencimento (Dia)</label>
+                    <input type="number" min="1" max="31" required value={formCartao.diaVencimento} onChange={e => setFormCartao({...formCartao, diaVencimento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Data da Compra</label>
+                  <input type="date" required value={formCartao.dataCompra} onChange={e => setFormCartao({...formCartao, dataCompra: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição da Compra</label>
+                  <input type="text" placeholder="Ex: Notebook M1, Supermercado..." required value={formCartao.descricao} onChange={e => setFormCartao({...formCartao, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Total (R$)</label>
+                    <input type="number" step="0.01" required value={formCartao.valorTotal} onChange={e => setFormCartao({...formCartao, valorTotal: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm font-bold" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Parcelas (Qtd)</label>
+                    <select value={formCartao.parcelas} onChange={e => setFormCartao({...formCartao, parcelas: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
+                      {[...Array(24)].map((_, i) => (
+                        <option key={i+1} className="bg-gray-900" value={i+1}>{i+1}x {formCartao.valorTotal ? `(${formatCurrency(parseSafeNumber(formCartao.valorTotal)/(i+1))})` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm mt-2">
+                  Lançar na Fatura
+                </button>
+              </form>
+            </div>
+
+            {/* Faturas Futuras Projetadas */}
+            <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg overflow-hidden">
+              <div className="p-5 border-b border-white/10 bg-white/5">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Calendar size={18} className="text-gray-400"/> Faturas Projetadas ({carteiraAtiva})
+                </h3>
+                <p className="text-xs text-gray-400 mt-1">Compras de cartão que vão vencer nos próximos meses.</p>
+              </div>
+              
+              <div className="overflow-x-auto custom-scrollbar max-h-[600px]">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-[10px] uppercase tracking-wider z-10">
+                    <tr>
+                      <th className="p-4 pl-6 font-semibold">Vencimento</th>
+                      <th className="p-4 font-semibold">Descrição / Parcela</th>
+                      <th className="p-4 font-semibold text-center">Status</th>
+                      <th className="p-4 font-semibold text-right">Valor da Parcela</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {movimentacoesFiltradas.filter(m => m.categoria === 'Cartão de Crédito').length === 0 ? (
+                      <tr><td colSpan="4" className="p-12 text-center text-gray-500">Nenhuma compra no cartão registrada.</td></tr>
+                    ) : (
+                      movimentacoesFiltradas
+                        .filter(m => m.categoria === 'Cartão de Crédito')
+                        .map(mov => (
+                        <tr key={mov.id} className="hover:bg-white/5 transition-colors">
+                          <td className="p-4 pl-6 text-sm font-bold text-gray-300">
+                            {new Date(mov.data + 'T12:00:00').toLocaleDateString('pt-BR')}
+                          </td>
+                          <td className="p-4">
+                            <div className="font-bold text-white text-sm">{mov.descricao}</div>
+                          </td>
+                          <td className="p-4 text-center">
+                            {mov.statusTransacao === 'Pendente' ? (
+                              <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-bold">A Pagar</span>
+                            ) : (
+                              <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded font-bold">Fatura Paga</span>
+                            )}
+                          </td>
+                          <td className="p-4 font-black text-right text-rose-400">
+                            - {formatCurrency(parseSafeNumber(mov.valor))}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ABA COFRINHOS (METAS E RENDIMENTOS) */}
+      {activeTab === 'cofrinhos' && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <div className="lg:col-span-1 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6 h-max">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
+                <PiggyBank size={18} className="text-amber-400" /> Atualizar Cofrinho
+              </h3>
+              <p className="text-xs text-gray-400 mb-4">Atualize o saldo do dia para o sistema calcular o quanto rendeu.</p>
+              
+              <form onSubmit={handleSalvarCofrinho} className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Cofrinho</label>
+                  <input type="text" placeholder="Ex: Viagem Vitória 2026, Férias..." required value={formCofrinho.nome} onChange={e => setFormCofrinho({...formCofrinho, nome: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-amber-500 mt-1 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Meta Total Desejada (R$)</label>
+                  <input type="number" step="0.01" value={formCofrinho.metaTotal} onChange={e => setFormCofrinho({...formCofrinho, metaTotal: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-amber-500 mt-1 text-sm" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Saldo Hoje (R$)</label>
+                    <input type="number" step="0.01" required value={formCofrinho.saldoInformado} onChange={e => setFormCofrinho({...formCofrinho, saldoInformado: e.target.value})} className="w-full bg-black/40 border border-white/10 text-amber-400 rounded-xl p-3 outline-none focus:border-amber-500 mt-1 text-sm font-bold" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Data Ref.</label>
+                    <input type="date" required value={formCofrinho.dataAtualizacao} onChange={e => setFormCofrinho({...formCofrinho, dataAtualizacao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-amber-500 mt-1 text-sm" />
+                  </div>
+                </div>
+                <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-black font-black py-3.5 rounded-xl transition-all shadow-md text-sm mt-2">
+                  Gravar Saldo Atual
+                </button>
+              </form>
+            </div>
+
+            <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
+                <Target size={18} className="text-gray-400"/> Meus Cofrinhos ({carteiraAtiva})
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(() => {
+                  const historicoCofrinhos = movimentacoesFiltradas.filter(m => m.tipo === 'Cofrinho');
+                  if (historicoCofrinhos.length === 0) return <p className="text-gray-500 text-sm">Nenhum cofrinho registado.</p>;
+                  
+                  // Agrupa pelo nome para pegar sempre a última atualização
+                  const cofrinhosAgrupados = {};
+                  historicoCofrinhos.forEach(c => {
+                    if (!cofrinhosAgrupados[c.cofrinhoNome] || new Date(c.data) > new Date(cofrinhosAgrupados[c.cofrinhoNome].data)) {
+                      cofrinhosAgrupados[c.cofrinhoNome] = c;
+                    }
+                  });
+
+                  return Object.values(cofrinhosAgrupados).map((cofre, idx) => {
+                    const progresso = cofre.metaTotal > 0 ? Math.min((cofre.valor / cofre.metaTotal) * 100, 100) : 0;
+                    return (
+                      <div key={idx} className="bg-white/5 border border-white/10 rounded-2xl p-5 shadow-inner">
+                        <div className="flex justify-between items-start mb-2">
+                          <h4 className="text-white font-bold">{cofre.cofrinhoNome}</h4>
+                          <span className="text-[10px] text-gray-500 uppercase bg-black/40 px-2 py-1 rounded">Atualizado: {new Date(cofre.data + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                        </div>
+                        <h2 className="text-3xl font-black text-amber-400">{formatCurrency(cofre.valor)}</h2>
+                        {cofre.metaTotal > 0 && (
+                          <div className="mt-4">
+                            <div className="flex justify-between text-xs text-gray-400 mb-1">
+                              <span>Progresso ({progresso.toFixed(1)}%)</span>
+                              <span>Meta: {formatCurrency(cofre.metaTotal)}</span>
+                            </div>
+                            <div className="w-full bg-black/40 rounded-full h-2">
+                              <div className="bg-gradient-to-r from-amber-600 to-amber-400 h-2 rounded-full" style={{ width: `${progresso}%` }}></div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ABA INVESTIMENTOS (PATRIMÓNIO) */}
+      {activeTab === 'investimentos' && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <div className="lg:col-span-1 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6 h-max">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
+                <TrendingUp size={18} className="text-blue-400" /> Registar Aplicação
+              </h3>
+              
+              <form onSubmit={handleSalvarInvestimento} className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Ativo</label>
+                  <input type="text" placeholder="Ex: MXRF11, Tesouro Selic..." required value={formInvestimento.ativo} onChange={e => setFormInvestimento({...formInvestimento, ativo: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Categoria</label>
+                  <select value={formInvestimento.tipoAtivo} onChange={e => setFormInvestimento({...formInvestimento, tipoAtivo: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
+                    <option className="bg-gray-900" value="Renda Fixa (CDB/Tesouro)">Renda Fixa (CDB/Tesouro)</option>
+                    <option className="bg-gray-900" value="Fundos Imobiliários (FIIs)">Fundos Imobiliários (FIIs)</option>
+                    <option className="bg-gray-900" value="Ações">Ações</option>
+                    <option className="bg-gray-900" value="Criptomoedas">Criptomoedas</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Aplicado</label>
+                    <input type="number" step="0.01" required value={formInvestimento.valorAplicado} onChange={e => setFormInvestimento({...formInvestimento, valorAplicado: e.target.value})} className="w-full bg-black/40 border border-white/10 text-blue-400 rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm font-bold" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Data Compra</label>
+                    <input type="date" required value={formInvestimento.dataCompra} onChange={e => setFormInvestimento({...formInvestimento, dataCompra: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm" />
+                  </div>
+                </div>
+                <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-3.5 rounded-xl transition-all shadow-md text-sm mt-2">
+                  Adicionar à Carteira
+                </button>
+              </form>
+            </div>
+
+            <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg overflow-hidden">
+              <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2"><Briefcase size={18} className="text-gray-400"/> Carteira de Ativos ({carteiraAtiva})</h3>
+              </div>
+              <div className="overflow-x-auto custom-scrollbar max-h-[600px]">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-[10px] uppercase tracking-wider z-10">
+                    <tr>
+                      <th className="p-4 pl-6 font-semibold">Data Compra</th>
+                      <th className="p-4 font-semibold">Ativo / Tipo</th>
+                      <th className="p-4 font-semibold text-right pr-6">Valor Aplicado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {movimentacoesFiltradas.filter(m => m.tipo === 'Investimento').length === 0 ? (
+                      <tr><td colSpan="3" className="p-12 text-center text-gray-500">Nenhum investimento registado.</td></tr>
+                    ) : (
+                      movimentacoesFiltradas.filter(m => m.tipo === 'Investimento').map(inv => (
+                        <tr key={inv.id} className="hover:bg-white/5 transition-colors">
+                          <td className="p-4 pl-6 text-sm font-bold text-gray-300 whitespace-nowrap">
+                            {new Date(inv.data + 'T12:00:00').toLocaleDateString('pt-BR')}
+                          </td>
+                          <td className="p-4">
+                            <div className="font-bold text-white text-sm">{inv.descricao}</div>
+                            <div className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full inline-block mt-1">{inv.tipoAtivo}</div>
+                          </td>
+                          <td className="p-4 pr-6 font-black text-right text-blue-400">
+                            {formatCurrency(parseSafeNumber(inv.valor))}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ABA 2: CONSOLIDADO ANUAL (BLINDAGEM IRPF) */}
