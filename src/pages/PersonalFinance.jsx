@@ -94,7 +94,6 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     } catch (error) { toast.error("Erro ao salvar."); }
   };
 
-  // 3. EXCLUIR MOVIMENTAÇÃO
   const handleExcluir = async (id) => {
     if (window.confirm("Deseja realmente apagar este registro?")) {
       await deleteDoc(doc(db, "financeiro_pessoal", id));
@@ -102,7 +101,6 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     }
   };
 
-  // 3.1 ALTERNAR STATUS (EFETIVAR PREVISÃO)
   const handleAlternarStatus = async (id, statusAtual) => {
     try {
       const novoStatus = statusAtual === 'Efetuado' ? 'Pendente' : 'Efetuado';
@@ -115,7 +113,6 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     }
   };
 
-  // 3.2 LANÇAR DESPESA DE CARTÃO DE CRÉDITO
   const handleSalvarCartao = async (e) => {
     e.preventDefault();
     const valorTotal = parseSafeNumber(formCartao.valorTotal);
@@ -129,21 +126,19 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     const dataCompra = new Date(formCartao.dataCompra + 'T12:00:00');
     
     try {
-      // Lança cada parcela como uma despesa pendente no fluxo
       for (let i = 0; i < numParcelas; i++) {
-        // Calcula o mês de vencimento da fatura
         let dataVencimento = new Date(dataCompra.getFullYear(), dataCompra.getMonth() + i + 1, parseInt(formCartao.diaVencimento, 10));
         
         await addDoc(collection(db, "financeiro_pessoal"), {
           userEmail: currentUser.email,
-          carteira: carteiraAtiva, // Lança no caixa selecionado (PJ ou PF)
+          carteira: carteiraAtiva,
           data: dataVencimento.toISOString().split('T')[0],
           descricao: `${formCartao.descricao} (${i + 1}/${numParcelas}) - ${formCartao.cartao}`,
           tipo: 'Despesa Operacional', 
           categoria: 'Cartão de Crédito',
           valor: valorParcela,
           linkComprovante: '',
-          statusTransacao: 'Pendente', // Entra como pendente na data da fatura
+          statusTransacao: 'Pendente',
           criadoEm: new Date().toISOString()
         });
       }
@@ -154,7 +149,6 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     }
   };
 
-  // 3.3 REGISTRAR COFRINHO / ATUALIZAR SALDO
   const handleSalvarCofrinho = async (e) => {
     e.preventDefault();
     const saldo = parseSafeNumber(formCofrinho.saldoInformado);
@@ -172,7 +166,7 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         metaTotal: meta,
         tipo: 'Cofrinho',
         categoria: 'Cofrinho',
-        valor: saldo, // O valor aqui representa o "Saldo Total" naquele dia
+        valor: saldo,
         statusTransacao: 'Efetuado',
         criadoEm: new Date().toISOString()
       });
@@ -181,7 +175,6 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     } catch (error) { toast.error("Erro ao atualizar cofrinho."); }
   };
 
-  // 3.4 REGISTRAR COMPRA DE INVESTIMENTO
   const handleSalvarInvestimento = async (e) => {
     e.preventDefault();
     const valor = parseSafeNumber(formInvestimento.valorAplicado);
@@ -205,12 +198,11 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     } catch (error) { toast.error("Erro ao registar investimento."); }
   };
 
-  // 4. MOTOR DE CÁLCULO PARA O IRPF (Consolidado Anual)
   const handleAlocarPendencia = async (id, carteiraEscolhida) => {
     try {
       await updateDoc(doc(db, "financeiro_pessoal", id), {
         carteira: carteiraEscolhida,
-        statusAlocacao: 'Concluído' // Remove da fila de pendências
+        statusAlocacao: 'Concluído'
       });
       toast.success(`Lançamento confirmado no Caixa ${carteiraEscolhida}!`);
     } catch (error) {
@@ -218,33 +210,67 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     }
   };
 
-  // 4. MOTOR DE CÁLCULO PARA O IRPF (Consolidado Anual)
   const movimentacoesFiltradas = movimentacoes.filter(m => (m.carteira || 'PF') === carteiraAtiva);
+
+  // AGRUPA FATURAS PARA A ABA "FLUXO"
+  const itensFluxo = useMemo(() => {
+    const lista = [];
+    const faturasMap = {};
+
+    movimentacoesFiltradas.forEach(mov => {
+      // Se for cartão, agrupamos pela Fatura (Cartão + Mês)
+      if (mov.categoria === 'Cartão de Crédito') {
+        const mesAno = mov.data.slice(0, 7); // Ex: 2026-08
+        const partesDesc = mov.descricao.split(' - ');
+        const nomeCartao = partesDesc.length > 1 ? partesDesc[partesDesc.length - 1] : 'Cartão';
+        const key = `fatura-${nomeCartao}-${mesAno}`;
+        
+        if (!faturasMap[key]) {
+          faturasMap[key] = {
+            id: key,
+            isFatura: true, // Tag identificadora
+            data: mov.data,
+            descricao: `Fatura ${nomeCartao}`,
+            categoria: 'Cartão de Crédito',
+            tipo: 'Despesa Operacional',
+            valor: 0,
+            itens: [],
+            statusTransacao: 'Efetuado'
+          };
+          lista.push(faturasMap[key]);
+        }
+        
+        faturasMap[key].valor += parseSafeNumber(mov.valor);
+        faturasMap[key].itens.push(mov);
+        
+        // Se houver qualquer parcela pendente, a fatura consta como pendente
+        if (mov.statusTransacao === 'Pendente') {
+          faturasMap[key].statusTransacao = 'Pendente';
+        }
+      } else {
+        // Lançamentos normais entram soltos na lista
+        lista.push({ ...mov, isFatura: false });
+      }
+    });
+
+    // Ordena do mais recente para o mais antigo
+    return lista.sort((a, b) => new Date(b.data) - new Date(a.data));
+  }, [movimentacoesFiltradas]);
 
   const consolidadoIRPF = useMemo(() => {
     const anoAtual = new Date().getFullYear();
-    const resumo = {
-      receitaTotal: 0,
-      despesaComprovada: 0,
-      lucroEvidenciado: 0, // Receita - Despesa (Isento de IRPF se MEI com contabilidade/livro caixa)
-      retiradas: 0,
-      meses: {}
-    };
+    const resumo = { receitaTotal: 0, despesaComprovada: 0, lucroEvidenciado: 0, retiradas: 0, meses: {} };
 
     movimentacoesFiltradas.forEach(mov => {
-      if (mov.statusTransacao === 'Pendente') return; // Ignora previsões no cálculo de IRPF
+      if (mov.statusTransacao === 'Pendente') return;
       
       const dataMov = new Date(mov.data + 'T12:00:00');
-      if (dataMov.getFullYear() !== anoAtual) return; // Filtra apenas o ano atual
+      if (dataMov.getFullYear() !== anoAtual) return;
 
       const mesNome = dataMov.toLocaleString('pt-BR', { month: 'long' }).toUpperCase();
-      
-      if (!resumo.meses[mesNome]) {
-        resumo.meses[mesNome] = { receita: 0, despesa: 0, retirada: 0 };
-      }
+      if (!resumo.meses[mesNome]) resumo.meses[mesNome] = { receita: 0, despesa: 0, retirada: 0 };
 
       const val = parseSafeNumber(mov.valor);
-
       if (mov.tipo === 'Receita') {
         resumo.receitaTotal += val;
         resumo.meses[mesNome].receita += val;
@@ -256,12 +282,44 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         resumo.meses[mesNome].retirada += val;
       }
     });
-
-    // O MEI que comprova despesas pode declarar o Lucro Evidenciado 100% isento no IRPF.
     resumo.lucroEvidenciado = resumo.receitaTotal - resumo.despesaComprovada;
-
     return resumo;
-  }, [movimentacoes]);
+  }, [movimentacoesFiltradas]);
+
+  const totaisGlobais = useMemo(() => {
+    let aPagar = 0;
+    let aReceber = 0;
+    let limiteUsado = 0;
+    let investido = 0;
+    const cofrinhos = {};
+
+    movimentacoesFiltradas.forEach(m => {
+      const val = parseSafeNumber(m.valor);
+      
+      // 1. Dívidas e Recebimentos Pendentes
+      if (m.statusTransacao === 'Pendente') {
+        if (m.tipo === 'Receita') aReceber += val;
+        if (m.tipo.includes('Despesa')) {
+          if (m.categoria === 'Cartão de Crédito') limiteUsado += val;
+          else aPagar += val; // Boletos e contas normais
+        }
+      }
+      
+      // 2. Patrimônio Investido
+      if (m.tipo === 'Investimento') investido += val;
+      
+      // 3. Cofrinhos (Sempre pega a atualização de saldo mais recente)
+      if (m.tipo === 'Cofrinho') {
+        if (!cofrinhos[m.cofrinhoNome] || new Date(m.data) > new Date(cofrinhos[m.cofrinhoNome].data)) {
+          cofrinhos[m.cofrinhoNome] = m;
+        }
+      }
+    });
+
+    const emCofrinho = Object.values(cofrinhos).reduce((sum, c) => sum + parseSafeNumber(c.valor), 0);
+
+    return { aPagar, aReceber, limiteUsado, investido, emCofrinho };
+  }, [movimentacoesFiltradas]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 w-full">
@@ -277,11 +335,11 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         
         {/* SELETOR DE CARTEIRA (PJ vs PF) */}
         <div className="flex bg-black/40 p-1 rounded-xl border border-white/10 shadow-inner">
-          <button onClick={() => setCarteiraAtiva('PF')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PF' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
-            <User size={14} /> Caixa PF
-          </button>
           <button onClick={() => setCarteiraAtiva('PJ')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PJ' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
             <Briefcase size={14} /> Caixa PJ
+          </button>
+          <button onClick={() => setCarteiraAtiva('PF')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PF' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
+            <User size={14} /> Caixa PF
           </button>
         </div>
 
@@ -304,18 +362,51 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         </div>
       </div>
 
+      {/* MÉTRICAS GLOBAIS (VISÍVEL EM TODAS AS ABAS) */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* 1. Total a Pagar (Boletos/Contas) */}
+        <div className="bg-rose-900/20 border border-rose-500/30 rounded-2xl p-4 shadow-sm">
+          <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1">A Pagar (Boletos)</p>
+          <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.aPagar)}</h3>
+        </div>
+        
+        {/* 2. Limite Usado (Cartões) */}
+        <div className="bg-purple-900/20 border border-purple-500/30 rounded-2xl p-4 shadow-sm">
+          <p className="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-1">Limite Usado</p>
+          <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.limiteUsado)}</h3>
+        </div>
+
+        {/* 3. Total a Receber */}
+        <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-2xl p-4 shadow-sm">
+          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1">A Receber</p>
+          <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.aReceber)}</h3>
+        </div>
+
+        {/* 4. Total em Cofrinhos */}
+        <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-4 shadow-sm">
+          <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-1">Em Cofrinhos</p>
+          <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.emCofrinho)}</h3>
+        </div>
+
+        {/* 5. Patrimônio Investido */}
+        <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-4 shadow-sm col-span-2 lg:col-span-1">
+          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1">Patrimônio Investido</p>
+          <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.investido)}</h3>
+        </div>
+      </div>
+
       {/* ABA 1: FLUXO DE CAIXA (O DIA A DIA) */}
       {activeTab === 'fluxo' && (
         <div className="space-y-6">
 
           {/* CONTROLE DE IMPOSTOS (DAS MEI) - Apenas no Caixa PJ */}
           {carteiraAtiva === 'PJ' && (() => {
-            const mesAtual = new Date().toISOString().slice(0, 7); // Pega o formato YYYY-MM
-            // Procura se tem algum pagamento de imposto com "DAS" na descrição neste mês
+            const mesAtual = new Date().toISOString().slice(0, 7);
             const dasPago = movimentacoesFiltradas.some(m => 
               m.tipo.includes('Despesa') && 
               m.descricao.toUpperCase().includes('DAS') && 
-              m.data.startsWith(mesAtual)
+              m.data.startsWith(mesAtual) &&
+              m.statusTransacao === 'Efetuado'
             );
 
             return (
@@ -443,7 +534,7 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
           <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden">
              <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2"><FileText size={18} className="text-gray-400"/> Livro Caixa ({carteiraAtiva})</h3>
-                <span className="text-xs bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full border border-indigo-500/30">Total Registros: {movimentacoesFiltradas.length}</span>
+                <span className="text-xs bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full border border-indigo-500/30">Total Registros: {itensFluxo.length}</span>
              </div>
              
              <div className="overflow-x-auto custom-scrollbar max-h-[600px]">
@@ -458,16 +549,19 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {movimentacoesFiltradas.length === 0 ? (
+                    {itensFluxo.length === 0 ? (
                       <tr><td colSpan="5" className="p-12 text-center text-gray-500">Nenhuma movimentação registrada nesta carteira.</td></tr>
                     ) : (
-                      movimentacoesFiltradas.map(mov => (
+                      itensFluxo.map(mov => (
                         <tr key={mov.id} className="hover:bg-white/5 transition-colors">
                           <td className="p-4 pl-6 text-sm font-bold text-gray-300 whitespace-nowrap">
                             {new Date(mov.data + 'T12:00:00').toLocaleDateString('pt-BR')}
                           </td>
                           <td className="p-4">
-                            <div className="font-bold text-white text-sm">{mov.descricao}</div>
+                            <div className="font-bold text-white text-sm">
+                              {mov.descricao} 
+                              {mov.isFatura && <span className="ml-2 text-[10px] font-normal text-gray-400">({mov.itens.length} parcelas)</span>}
+                            </div>
                             <div className="text-[10px] text-gray-500 uppercase mt-0.5">{mov.categoria}</div>
                           </td>
                           <td className="p-4 text-center">
@@ -483,23 +577,45 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                             </div>
                           </td>
                           <td className="p-4 pr-6 text-center flex items-center justify-center gap-2">
-                             {mov.statusTransacao === 'Pendente' ? (
-                               <button onClick={() => handleAlternarStatus(mov.id, mov.statusTransacao)} className="p-2 text-amber-400 hover:text-white bg-amber-500/20 hover:bg-amber-500/60 rounded-xl transition-colors font-bold text-[10px] uppercase tracking-wider" title="Dar Baixa">
-                                 Dar Baixa
-                               </button>
+                             {mov.isFatura ? (
+                               mov.statusTransacao === 'Pendente' ? (
+                                 <button 
+                                   onClick={async () => {
+                                     for (const item of mov.itens) {
+                                       if(item.statusTransacao === 'Pendente'){
+                                         await updateDoc(doc(db, "financeiro_pessoal", item.id), { statusTransacao: 'Efetuado' });
+                                       }
+                                     }
+                                     toast.success("Fatura paga com sucesso!");
+                                   }}
+                                   className="p-2 text-emerald-400 hover:text-white bg-emerald-500/20 hover:bg-emerald-500/60 rounded-xl transition-colors font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title="Pagar Fatura"
+                                 >
+                                   Pagar Fatura
+                                 </button>
+                               ) : (
+                                 <span className="text-[10px] text-green-400 bg-green-500/20 px-2 py-1 rounded">Paga</span>
+                               )
                              ) : (
-                               <button onClick={() => handleAlternarStatus(mov.id, mov.statusTransacao)} className="text-[10px] text-gray-500 underline hover:text-white mr-1" title="Desfazer">
-                                 Desfazer
-                               </button>
+                               <>
+                                 {mov.statusTransacao === 'Pendente' ? (
+                                   <button onClick={() => handleAlternarStatus(mov.id, mov.statusTransacao)} className="p-2 text-amber-400 hover:text-white bg-amber-500/20 hover:bg-amber-500/60 rounded-xl transition-colors font-bold text-[10px] uppercase tracking-wider" title="Dar Baixa">
+                                     Dar Baixa
+                                   </button>
+                                 ) : (
+                                   <button onClick={() => handleAlternarStatus(mov.id, mov.statusTransacao)} className="text-[10px] text-gray-500 underline hover:text-white mr-1" title="Desfazer">
+                                     Desfazer
+                                   </button>
+                                 )}
+                                 {mov.linkComprovante && (
+                                   <a href={mov.linkComprovante} target="_blank" rel="noopener noreferrer" className="p-2 text-indigo-300 hover:text-indigo-100 bg-indigo-500/20 hover:bg-indigo-500/40 rounded-xl transition-colors" title="Ver Comprovante">
+                                     <FileText size={14}/>
+                                   </a>
+                                 )}
+                                 <button onClick={() => handleExcluir(mov.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir">
+                                   <Trash2 size={14}/>
+                                 </button>
+                               </>
                              )}
-                             {mov.linkComprovante && (
-                               <a href={mov.linkComprovante} target="_blank" rel="noopener noreferrer" className="p-2 text-indigo-300 hover:text-indigo-100 bg-indigo-500/20 hover:bg-indigo-500/40 rounded-xl transition-colors" title="Ver Comprovante">
-                                 <FileText size={14}/>
-                               </a>
-                             )}
-                             <button onClick={() => handleExcluir(mov.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir">
-                               <Trash2 size={14}/>
-                             </button>
                           </td>
                         </tr>
                       ))
@@ -512,7 +628,7 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
       </div>
       )}
 
-      {/* ABA CARTÕES DE CRÉDITO */}
+      {/* ABA CARTÕES DE CRÉDITO (EXTRATO) */}
       {activeTab === 'cartoes' && (
         <div className="space-y-6 animate-in fade-in">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -566,15 +682,13 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
               </form>
             </div>
 
-            {/* Faturas Futuras Projetadas */}
+            {/* Extrato Analítico do Cartão */}
             <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg overflow-hidden">
-              <div className="p-5 border-b border-white/10 bg-white/5">
+              <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Calendar size={18} className="text-gray-400"/> Faturas Projetadas ({carteiraAtiva})
+                  <CreditCard size={18} className="text-gray-400"/> Extrato de Compras ({carteiraAtiva})
                 </h3>
-                <p className="text-xs text-gray-400 mt-1">Compras de cartão que vão vencer nos próximos meses.</p>
-              </div>
-              
+              </div>             
               <div className="overflow-x-auto custom-scrollbar max-h-[600px]">
                 <table className="w-full text-left border-collapse">
                   <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-[10px] uppercase tracking-wider z-10">
@@ -583,17 +697,18 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                       <th className="p-4 font-semibold">Descrição / Parcela</th>
                       <th className="p-4 font-semibold text-center">Status</th>
                       <th className="p-4 font-semibold text-right">Valor da Parcela</th>
+                      <th className="p-4 font-semibold text-center pr-6">Ação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {movimentacoesFiltradas.filter(m => m.categoria === 'Cartão de Crédito').length === 0 ? (
-                      <tr><td colSpan="4" className="p-12 text-center text-gray-500">Nenhuma compra no cartão registrada.</td></tr>
+                      <tr><td colSpan="5" className="p-12 text-center text-gray-500">Nenhuma compra no cartão registrada.</td></tr>
                     ) : (
                       movimentacoesFiltradas
                         .filter(m => m.categoria === 'Cartão de Crédito')
                         .map(mov => (
                         <tr key={mov.id} className="hover:bg-white/5 transition-colors">
-                          <td className="p-4 pl-6 text-sm font-bold text-gray-300">
+                          <td className="p-4 pl-6 text-sm font-bold text-gray-300 whitespace-nowrap">
                             {new Date(mov.data + 'T12:00:00').toLocaleDateString('pt-BR')}
                           </td>
                           <td className="p-4">
@@ -603,11 +718,16 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                             {mov.statusTransacao === 'Pendente' ? (
                               <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-bold">A Pagar</span>
                             ) : (
-                              <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded font-bold">Fatura Paga</span>
+                              <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded font-bold">Paga</span>
                             )}
                           </td>
                           <td className="p-4 font-black text-right text-rose-400">
                             - {formatCurrency(parseSafeNumber(mov.valor))}
+                          </td>
+                          <td className="p-4 pr-6 text-center">
+                             <button onClick={() => handleExcluir(mov.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir Parcela">
+                               <Trash2 size={14}/>
+                             </button>
                           </td>
                         </tr>
                       ))
