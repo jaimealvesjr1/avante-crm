@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Wallet, DollarSign, ArrowUpCircle, ArrowDownCircle, FileText, Calendar, Target, ShieldCheck, Plus, Trash2, Link as LinkIcon, Download, Briefcase, User, CreditCard, PiggyBank, TrendingUp } from 'lucide-react';
+import { Wallet, DollarSign, ArrowUpCircle, ArrowDownCircle, FileText, Calendar, Target, ShieldCheck, Plus, Trash2, Link as LinkIcon, Download, Briefcase, User, CreditCard, PiggyBank, TrendingUp, LayoutDashboard, Pencil, X } from 'lucide-react';
 import { collection, onSnapshot, doc, addDoc, deleteDoc, updateDoc, query, where } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
 
 export default function PersonalFinance({ db, currentUser, formatCurrency }) {
-  const [activeTab, setActiveTab] = useState('fluxo'); // 'fluxo' ou 'irpf'
-  const [carteiraAtiva, setCarteiraAtiva] = useState('PJ'); // 'PJ' ou 'PF'
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [carteiraAtiva, setCarteiraAtiva] = useState('PF')
   
   const [movimentacoesGerais, setMovimentacoesGerais] = useState([]);
-  const movimentacoes = movimentacoesGerais.filter(m => m.statusAlocacao !== 'Pendente');
+  const movimentacoes = movimentacoesGerais.filter(m => m.statusAlocacao !== 'Pendente' && m.tipo !== 'CartaoCadastro');
   const pendenciasAlocacao = movimentacoesGerais.filter(m => m.statusAlocacao === 'Pendente');
 
   const [form, setForm] = useState({
@@ -22,12 +22,19 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
   });
 
   const [formCartao, setFormCartao] = useState({
-    cartao: 'Nubank',
-    diaVencimento: '10',
+    cartaoId: '', // Armazenará o ID do cartão selecionado
     dataCompra: new Date().toISOString().split('T')[0],
     descricao: '',
     valorTotal: '',
     parcelas: '1'
+  });
+
+  const [formNovoCartao, setFormNovoCartao] = useState({
+    bandeira: 'Visa',
+    finalCartao: '',
+    limiteTotal: '',
+    diaFechamento: '3',
+    diaVencimento: '10'
   });
 
   const [formCofrinho, setFormCofrinho] = useState({
@@ -43,6 +50,24 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     valorAplicado: '',
     dataCompra: new Date().toISOString().split('T')[0]
   });
+
+  const [itemEditando, setItemEditando] = useState(null);
+
+  const handleSalvarEdicao = async (e) => {
+    e.preventDefault();
+    try {
+      await updateDoc(doc(db, "financeiro_pessoal", itemEditando.id), {
+        data: itemEditando.data,
+        descricao: itemEditando.descricao,
+        valor: parseSafeNumber(itemEditando.valor),
+        statusTransacao: itemEditando.statusTransacao
+      });
+      toast.success("Registro atualizado com sucesso!");
+      setItemEditando(null);
+    } catch (error) {
+      toast.error("Erro ao salvar edição.");
+    }
+  };
 
   const TIPOS = ['Receita', 'Despesa', 'Aporte', 'Retirada'];
   const CATEGORIAS = {
@@ -113,11 +138,40 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     }
   };
 
+  const handleCadastrarCartao = async (e) => {
+    e.preventDefault();
+    const limite = parseSafeNumber(formNovoCartao.limiteTotal);
+    if (!formNovoCartao.finalCartao || formNovoCartao.finalCartao.length !== 4 || limite <= 0) {
+      return toast.error("Preencha o final do cartão com 4 dígitos e insira um limite válido.");
+    }
+
+    try {
+      await addDoc(collection(db, "financeiro_pessoal"), {
+        userEmail: currentUser.email,
+        carteira: carteiraAtiva, // Vincula o cartão à carteira atualmente selecionada (PF ou PJ)
+        tipo: 'CartaoCadastro', // Identificador da coleção de cartões
+        bandeira: formNovoCartao.bandeira,
+        finalCartao: formNovoCartao.finalCartao,
+        limiteTotal: limite,
+        diaFechamento: formNovoCartao.diaFechamento,
+        diaVencimento: formNovoCartao.diaVencimento,
+        criadoEm: new Date().toISOString()
+      });
+      toast.success("Cartão cadastrado!");
+      setFormNovoCartao({ bandeira: 'Visa', finalCartao: '', limiteTotal: '', diaFechamento: '3', diaVencimento: '10' });
+    } catch (error) {
+      toast.error("Erro ao cadastrar cartão.");
+    }
+  };
+
   const handleSalvarCartao = async (e) => {
     e.preventDefault();
     const valorTotal = parseSafeNumber(formCartao.valorTotal);
     const numParcelas = parseInt(formCartao.parcelas, 10);
     
+    const cartaoSelecionado = cartoesCadastrados.find(c => c.id === formCartao.cartaoId);
+
+    if (!cartaoSelecionado) return toast.error("Selecione um cartão cadastrado.");
     if (!formCartao.descricao.trim() || valorTotal <= 0 || numParcelas < 1) {
       return toast.error("Verifique a descrição, valor e parcelas.");
     }
@@ -125,24 +179,63 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     const valorParcela = valorTotal / numParcelas;
     const dataCompra = new Date(formCartao.dataCompra + 'T12:00:00');
     
+    const fechamentoDia = parseInt(cartaoSelecionado.diaFechamento, 10);
+    const vencimentoDia = parseInt(cartaoSelecionado.diaVencimento, 10);
+
+    // 1. Determinar o mês do ciclo de fechamento atual
+    const dataFechamentoAtual = new Date(dataCompra.getFullYear(), dataCompra.getMonth(), fechamentoDia, 23, 59, 59);
+    
+    let cicloMesIndex = dataCompra.getMonth();
+    let cicloAno = dataCompra.getFullYear();
+
+    // Se comprou após o fechamento, cai no ciclo do próximo mês
+    if (dataCompra > dataFechamentoAtual) {
+      cicloMesIndex += 1;
+      if (cicloMesIndex > 11) {
+        cicloMesIndex = 0;
+        cicloAno += 1;
+      }
+    }
+
+    // 2. Calcular o mês de vencimento base do ciclo
+    let vencimentoMesIndex = cicloMesIndex;
+    let vencimentoAno = cicloAno;
+
+    // Se o dia de fechamento for maior ou igual ao vencimento, o vencimento é no mês seguinte ao fechamento
+    if (fechamentoDia >= vencimentoDia) {
+      vencimentoMesIndex += 1;
+      if (vencimentoMesIndex > 11) {
+        vencimentoMesIndex = 0;
+        vencimentoAno += 1;
+      }
+    }
+
     try {
       for (let i = 0; i < numParcelas; i++) {
-        let dataVencimento = new Date(dataCompra.getFullYear(), dataCompra.getMonth() + i + 1, parseInt(formCartao.diaVencimento, 10));
+        let vencIndex = vencimentoMesIndex + i;
+        let vencAno = vencimentoAno;
+        while (vencIndex > 11) {
+          vencIndex -= 12;
+          vencAno += 1;
+        }
+
+        let dataVencimento = new Date(vencAno, vencIndex, vencimentoDia);
         
         await addDoc(collection(db, "financeiro_pessoal"), {
           userEmail: currentUser.email,
           carteira: carteiraAtiva,
           data: dataVencimento.toISOString().split('T')[0],
-          descricao: `${formCartao.descricao} (${i + 1}/${numParcelas}) - ${formCartao.cartao}`,
+          descricao: `${formCartao.descricao} (${i + 1}/${numParcelas}) - ${cartaoSelecionado.bandeira} ****${cartaoSelecionado.finalCartao}`,
           tipo: 'Despesa Operacional', 
           categoria: 'Cartão de Crédito',
           valor: valorParcela,
+          cartaoId: cartaoSelecionado.id,
           linkComprovante: '',
           statusTransacao: 'Pendente',
           criadoEm: new Date().toISOString()
         });
       }
-      toast.success(`Compra parcelada em ${numParcelas}x lançada nas faturas!`);
+      toast.success(`Compra lançada com sucesso no ${cartaoSelecionado.bandeira}!`);
       setFormCartao({ ...formCartao, descricao: '', valorTotal: '', parcelas: '1' });
     } catch (error) {
       toast.error("Erro ao registrar compra no cartão.");
@@ -212,15 +305,99 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
 
   const movimentacoesFiltradas = movimentacoes.filter(m => (m.carteira || 'PF') === carteiraAtiva);
 
+  const cartoesCadastrados = useMemo(() => {
+    return movimentacoesGerais.filter(m => 
+      m.tipo === 'CartaoCadastro' && (m.carteira || 'PF') === carteiraAtiva
+    );
+  }, [movimentacoesGerais, carteiraAtiva]);
+
+  const dashboardCartoes = useMemo(() => {
+    const hoje = new Date();
+    const anoAtual = hoje.getFullYear();
+    const mesAtual = hoje.getMonth();
+
+    return cartoesCadastrados.map(c => {
+      const limiteTotal = parseSafeNumber(c.limiteTotal);
+      const fechamentoDia = parseInt(c.diaFechamento, 10);
+      const vencimentoDia = parseInt(c.diaVencimento, 10);
+
+      // Transações vinculadas a este cartão
+      const transacoes = movimentacoesFiltradas.filter(
+        m => m.categoria === 'Cartão de Crédito' && m.cartaoId === c.id
+      );
+
+      // Limite usado = total das parcelas que ainda constam como 'Pendente'
+      const limiteUsado = transacoes
+        .filter(t => t.statusTransacao === 'Pendente')
+        .reduce((sum, t) => sum + parseSafeNumber(t.valor), 0);
+
+      const limiteDisponivel = Math.max(0, limiteTotal - limiteUsado);
+
+      // Agrupa as parcelas por mês da fatura ('YYYY-MM')
+      const faturas = {};
+      transacoes.forEach(t => {
+        const mesAno = t.data.slice(0, 7);
+        if (!faturas[mesAno]) {
+          faturas[mesAno] = { mesAno, valor: 0, status: 'Efetuado' };
+        }
+        faturas[mesAno].valor += parseSafeNumber(t.valor);
+        if (t.statusTransacao === 'Pendente') {
+          faturas[mesAno].status = 'Pendente';
+        }
+      });
+
+      const faturasOrdenadas = Object.values(faturas).sort((a, b) => a.mesAno.localeCompare(b.mesAno));
+
+      // A próxima fatura é a fatura pendente mais antiga. Se não houver, estimamos a do mês corrente.
+      let proximaFatura = faturasOrdenadas.find(f => f.status === 'Pendente');
+
+      if (!proximaFatura) {
+        const cicloAtualMes = mesAtual + 1;
+        const mesAnoEstimado = `${anoAtual}-${cicloAtualMes.toString().padStart(2, '0')}`;
+        proximaFatura = faturas[mesAnoEstimado] || { mesAno: mesAnoEstimado, valor: 0, status: 'Efetuado' };
+      }
+
+      // Calcular se essa próxima fatura já está fechada
+      const [fatAno, fatMes] = proximaFatura.mesAno.split('-').map(Number);
+      let fechamentoAno = fatAno;
+      let fechamentoMesIndex = fatMes - 1;
+
+      // Se o fechamento é em um mês anterior ao vencimento
+      if (fechamentoDia >= vencimentoDia) {
+        fechamentoMesIndex -= 1;
+        if (fechamentoMesIndex < 0) {
+          fechamentoMesIndex = 11;
+          fechamentoAno -= 1;
+        }
+      }
+
+      const dataFechamentoFatura = new Date(fechamentoAno, fechamentoMesIndex, fechamentoDia, 23, 59, 59);
+      const estaFechada = hoje > dataFechamentoFatura;
+
+      return {
+        ...c,
+        limiteTotal,
+        limiteUsado,
+        limiteDisponivel,
+        faturaAtual: {
+          mesAno: proximaFatura.mesAno,
+          valor: proximaFatura.valor,
+          status: proximaFatura.status,
+          estaFechada,
+          dataFechamento: dataFechamentoFatura
+        }
+      };
+    });
+  }, [cartoesCadastrados, movimentacoesFiltradas]);
+
   // AGRUPA FATURAS PARA A ABA "FLUXO"
   const itensFluxo = useMemo(() => {
     const lista = [];
     const faturasMap = {};
 
     movimentacoesFiltradas.forEach(mov => {
-      // Se for cartão, agrupamos pela Fatura (Cartão + Mês)
       if (mov.categoria === 'Cartão de Crédito') {
-        const mesAno = mov.data.slice(0, 7); // Ex: 2026-08
+        const mesAno = mov.data.slice(0, 7);
         const partesDesc = mov.descricao.split(' - ');
         const nomeCartao = partesDesc.length > 1 ? partesDesc[partesDesc.length - 1] : 'Cartão';
         const key = `fatura-${nomeCartao}-${mesAno}`;
@@ -228,7 +405,7 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         if (!faturasMap[key]) {
           faturasMap[key] = {
             id: key,
-            isFatura: true, // Tag identificadora
+            isFatura: true,
             data: mov.data,
             descricao: `Fatura ${nomeCartao}`,
             categoria: 'Cartão de Crédito',
@@ -243,18 +420,35 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         faturasMap[key].valor += parseSafeNumber(mov.valor);
         faturasMap[key].itens.push(mov);
         
-        // Se houver qualquer parcela pendente, a fatura consta como pendente
         if (mov.statusTransacao === 'Pendente') {
           faturasMap[key].statusTransacao = 'Pendente';
         }
       } else {
-        // Lançamentos normais entram soltos na lista
         lista.push({ ...mov, isFatura: false });
       }
     });
 
-    // Ordena do mais recente para o mais antigo
-    return lista.sort((a, b) => new Date(b.data) - new Date(a.data));
+    // ORDENAÇÃO INTELIGENTE: Futuros mais próximos acima; Passados mais recentes abaixo.
+    const hoje = new Date().toISOString().split('T')[0];
+    return lista.sort((a, b) => {
+      const aFuturo = a.data >= hoje;
+      const bFuturo = b.data >= hoje;
+
+      if (aFuturo && !bFuturo) return -1; // Futuros acima dos passados
+      if (!aFuturo && bFuturo) return 1;
+      
+      if (aFuturo && bFuturo) {
+        return new Date(a.data) - new Date(b.data); // Futuros: Mais próximo de hoje primeiro (Crescente)
+      }
+      return new Date(b.data) - new Date(a.data); // Passados: Mais recente primeiro (Decrescente)
+    });
+  }, [movimentacoesFiltradas]);
+
+  // EXTRATO DE CARTÕES (MAIS ANTIGO PRIMEIRO)
+  const extratoCartoes = useMemo(() => {
+    return movimentacoesFiltradas
+      .filter(m => m.categoria === 'Cartão de Crédito')
+      .sort((a, b) => new Date(a.data) - new Date(b.data)); // Crescente
   }, [movimentacoesFiltradas]);
 
   const consolidadoIRPF = useMemo(() => {
@@ -335,15 +529,18 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         
         {/* SELETOR DE CARTEIRA (PJ vs PF) */}
         <div className="flex bg-black/40 p-1 rounded-xl border border-white/10 shadow-inner">
-          <button onClick={() => setCarteiraAtiva('PJ')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PJ' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
-            <Briefcase size={14} /> Caixa PJ
-          </button>
           <button onClick={() => setCarteiraAtiva('PF')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PF' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
             <User size={14} /> Caixa PF
+          </button>
+          <button onClick={() => setCarteiraAtiva('PJ')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PJ' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
+            <Briefcase size={14} /> Caixa PJ
           </button>
         </div>
 
         <div className="flex bg-black/40 p-1.5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto max-w-full custom-scrollbar">
+          <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+            <LayoutDashboard size={16} /> Início
+          </button>
           <button onClick={() => setActiveTab('fluxo')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'fluxo' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
             <DollarSign size={16} /> O Dia a Dia
           </button>
@@ -394,6 +591,115 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
           <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.investido)}</h3>
         </div>
       </div>
+
+      {/* ABA 0: DASHBOARD / TELA INICIAL */}
+      {activeTab === 'dashboard' && (
+        <div className="space-y-6 animate-in fade-in">
+          
+          {/* Card de Boas-Vindas */}
+          <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
+            <h2 className="text-xl font-bold text-white mb-1">Olá! Bem-vindo ao seu painel.</h2>
+            <p className="text-gray-400 text-sm">Este é o ponto de partida das suas finanças particulares. Acompanhe a saúde dos seus limites abaixo.</p>
+          </div>
+
+          {/* Seção dos Cartões de Crédito */}
+          <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-6">
+              <CreditCard size={20} className="text-rose-400" /> Visão de Cartões de Crédito ({carteiraAtiva})
+            </h3>
+
+            {dashboardCartoes.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <CreditCard size={48} className="mx-auto mb-3 opacity-30 animate-pulse" />
+                <p className="text-sm">Nenhum cartão cadastrado neste caixa. Vá na aba "Cartões" para começar.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {dashboardCartoes.map((card) => {
+                  const percLimite = card.limiteTotal > 0 ? (card.limiteUsado / card.limiteTotal) * 100 : 0;
+                  
+                  // Formatar mês/ano (ex: "AGOSTO/2026")
+                  const [fatAno, fatMes] = card.faturaAtual.mesAno.split('-').map(Number);
+                  const nomeMesStr = new Date(fatAno, fatMes - 1, 1)
+                    .toLocaleString('pt-BR', { month: 'long' })
+                    .toUpperCase();
+
+                  return (
+                    <div key={card.id} className="bg-white/5 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-all flex flex-col justify-between">
+                      <div>
+                        {/* Identificadores do Cartão */}
+                        <div className="flex justify-between items-center mb-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs bg-purple-500/10 text-purple-400 font-bold px-2 py-1 rounded-lg border border-purple-500/20">
+                              {card.bandeira}
+                            </span>
+                            <span className="text-xs text-gray-400 font-mono">
+                              **** {card.finalCartao}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-gray-500 font-mono">
+                            Fech: Dia {card.diaFechamento} | Venc: Dia {card.diaVencimento}
+                          </span>
+                        </div>
+
+                        {/* Progresso do Limite Usado */}
+                        <div className="space-y-2 mb-6">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-400">Disponível: {formatCurrency(card.limiteDisponivel)}</span>
+                            <span className="text-purple-300 font-bold">Usado: {formatCurrency(card.limiteUsado)}</span>
+                          </div>
+                          <div className="w-full bg-black/40 rounded-full h-2">
+                            <div 
+                              className={`h-2 rounded-full transition-all ${
+                                percLimite > 85 ? 'bg-rose-500' : percLimite > 60 ? 'bg-amber-500' : 'bg-purple-500'
+                              }`}
+                              style={{ width: `${Math.min(percLimite, 100)}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex justify-between text-[10px] text-gray-500">
+                            <span>0%</span>
+                            <span>Limite Total: {formatCurrency(card.limiteTotal)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Caixa de Destaque da Fatura */}
+                      <div className="bg-black/30 border border-white/5 rounded-xl p-4 mt-2">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                            Fatura {nomeMesStr}
+                          </span>
+                          {card.faturaAtual.estaFechada ? (
+                            <span className="text-[9px] bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold px-2 py-0.5 rounded-full">
+                              🔒 Fechada
+                            </span>
+                          ) : (
+                            <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold px-2 py-0.5 rounded-full">
+                              🔓 Aberta
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-baseline justify-between">
+                          <h4 className="text-lg font-black text-white">
+                            {formatCurrency(card.faturaAtual.valor)}
+                          </h4>
+                          <span className="text-[10px] text-gray-500">
+                            {card.faturaAtual.estaFechada 
+                              ? `Fechou em: ${card.faturaAtual.dataFechamento.toLocaleDateString('pt-BR')}` 
+                              : `Fecha em: ${card.faturaAtual.dataFechamento.toLocaleDateString('pt-BR')}`}
+                          </span>
+                        </div>
+                      </div>
+
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
 
       {/* ABA 1: FLUXO DE CAIXA (O DIA A DIA) */}
       {activeTab === 'fluxo' && (
@@ -611,6 +917,9 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                                      <FileText size={14}/>
                                    </a>
                                  )}
+                                 <button onClick={() => setItemEditando(mov)} className="p-2 text-blue-400 hover:text-white bg-blue-500/20 hover:bg-blue-500/60 rounded-xl transition-colors" title="Editar">
+                                   <Pencil size={14}/>
+                                 </button>
                                  <button onClick={() => handleExcluir(mov.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir">
                                    <Trash2 size={14}/>
                                  </button>
@@ -632,64 +941,120 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
       {activeTab === 'cartoes' && (
         <div className="space-y-6 animate-in fade-in">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            {/* Lançamento de Compra no Cartão */}
-            <div className="lg:col-span-1 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6 h-max">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
-                <CreditCard size={18} className="text-rose-400" /> Nova Compra no Cartão
-              </h3>
+
+            {/* COLUNA ESQUERDA: FORMULÁRIOS (Ocupa 1 Coluna) */}
+            <div className="lg:col-span-1 flex flex-col gap-6">
               
-              <form onSubmit={handleSalvarCartao} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Cartão</label>
-                    <input type="text" placeholder="Ex: Nubank, Inter..." required value={formCartao.cartao} onChange={e => setFormCartao({...formCartao, cartao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
+              {/* Lançamento de Compra no Cartão */}
+              <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
+                  <CreditCard size={18} className="text-rose-400" /> Nova Compra no Cartão
+                </h3>
+                
+                <form onSubmit={handleSalvarCartao} className="space-y-4">
+                  
+                  {/* LINHA 1: Cartão e Data */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Selecione o Cartão</label>
+                      <select 
+                        required 
+                        value={formCartao.cartaoId} 
+                        onChange={e => setFormCartao({...formCartao, cartaoId: e.target.value})} 
+                        className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-sm cursor-pointer"
+                      >
+                        <option value="" className="bg-gray-900">Selecione...</option>
+                        {cartoesCadastrados.map(c => (
+                          <option key={c.id} value={c.id} className="bg-gray-900">
+                            {c.bandeira} (****{c.finalCartao})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Data da Compra</label>
+                      <input type="date" required value={formCartao.dataCompra} onChange={e => setFormCartao({...formCartao, dataCompra: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
+                    </div>
                   </div>
+
+                  {/* LINHA 2: Descrição */}
                   <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Vencimento (Dia)</label>
-                    <input type="number" min="1" max="31" required value={formCartao.diaVencimento} onChange={e => setFormCartao({...formCartao, diaVencimento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição da Compra</label>
+                    <input type="text" placeholder="Ex: Notebook M1, Supermercado..." required value={formCartao.descricao} onChange={e => setFormCartao({...formCartao, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
                   </div>
-                </div>
 
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase">Data da Compra</label>
-                  <input type="date" required value={formCartao.dataCompra} onChange={e => setFormCartao({...formCartao, dataCompra: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição da Compra</label>
-                  <input type="text" placeholder="Ex: Notebook M1, Supermercado..." required value={formCartao.descricao} onChange={e => setFormCartao({...formCartao, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Total (R$)</label>
-                    <input type="number" step="0.01" required value={formCartao.valorTotal} onChange={e => setFormCartao({...formCartao, valorTotal: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm font-bold" />
+                  {/* LINHA 3: Valor e Parcelas */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Total (R$)</label>
+                      <input type="number" step="0.01" required value={formCartao.valorTotal} onChange={e => setFormCartao({...formCartao, valorTotal: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm font-bold" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Parcelas (Qtd)</label>
+                      <select value={formCartao.parcelas} onChange={e => setFormCartao({...formCartao, parcelas: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
+                        {[...Array(24)].map((_, i) => (
+                          <option key={i+1} className="bg-gray-900" value={i+1}>{i+1}x {formCartao.valorTotal ? `(${formatCurrency(parseSafeNumber(formCartao.valorTotal)/(i+1))})` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Parcelas (Qtd)</label>
-                    <select value={formCartao.parcelas} onChange={e => setFormCartao({...formCartao, parcelas: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
-                      {[...Array(24)].map((_, i) => (
-                        <option key={i+1} className="bg-gray-900" value={i+1}>{i+1}x {formCartao.valorTotal ? `(${formatCurrency(parseSafeNumber(formCartao.valorTotal)/(i+1))})` : ''}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
 
-                <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm mt-2">
-                  Lançar na Fatura
-                </button>
-              </form>
+                  <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm mt-2">
+                    Lançar na Fatura
+                  </button>
+                </form>
+              </div>
+
+              {/* Cadastro de Cartão Físico/Virtual */}
+              <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
+                  <Plus size={18} className="text-purple-400" /> Cadastrar Novo Cartão
+                </h3>
+                <form onSubmit={handleCadastrarCartao} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Bandeira</label>
+                      <select value={formNovoCartao.bandeira} onChange={e => setFormNovoCartao({...formNovoCartao, bandeira: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 mt-1 text-xs cursor-pointer">
+                        <option className="bg-gray-900" value="Visa">Visa</option>
+                        <option className="bg-gray-900" value="MasterCard">MasterCard</option>
+                        <option className="bg-gray-900" value="Elo">Elo</option>
+                        <option className="bg-gray-900" value="Amex">Amex</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Últimos 4 Dígitos</label>
+                      <input type="text" maxLength="4" placeholder="1234" required value={formNovoCartao.finalCartao} onChange={e => setFormNovoCartao({...formNovoCartao, finalCartao: e.target.value.replace(/\D/g, '')})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 mt-1 text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Limite (R$)</label>
+                      <input type="number" step="0.01" required value={formNovoCartao.limiteTotal} onChange={e => setFormNovoCartao({...formNovoCartao, limiteTotal: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 mt-1 text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Fecham. (Dia)</label>
+                      <input type="number" min="1" max="31" required value={formNovoCartao.diaFechamento} onChange={e => setFormNovoCartao({...formNovoCartao, diaFechamento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 mt-1 text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Vencim. (Dia)</label>
+                      <input type="number" min="1" max="31" required value={formNovoCartao.diaVencimento} onChange={e => setFormNovoCartao({...formNovoCartao, diaVencimento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 mt-1 text-xs" />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm">
+                    Salvar Cartão
+                  </button>
+                </form>
+              </div>
             </div>
 
-            {/* Extrato Analítico do Cartão */}
-            <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg overflow-hidden">
+            {/* COLUNA DIREITA: TABELA (Ocupa 2 Colunas) */}
+            <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg overflow-hidden h-max">
               <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <CreditCard size={18} className="text-gray-400"/> Extrato de Compras ({carteiraAtiva})
                 </h3>
-              </div>             
-              <div className="overflow-x-auto custom-scrollbar max-h-[600px]">
+              </div>              
+              <div className="overflow-x-auto custom-scrollbar max-h-[700px]">
                 <table className="w-full text-left border-collapse">
                   <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-[10px] uppercase tracking-wider z-10">
                     <tr>
@@ -701,12 +1066,10 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {movimentacoesFiltradas.filter(m => m.categoria === 'Cartão de Crédito').length === 0 ? (
+                    {extratoCartoes.length === 0 ? (
                       <tr><td colSpan="5" className="p-12 text-center text-gray-500">Nenhuma compra no cartão registrada.</td></tr>
                     ) : (
-                      movimentacoesFiltradas
-                        .filter(m => m.categoria === 'Cartão de Crédito')
-                        .map(mov => (
+                      extratoCartoes.map(mov => (
                         <tr key={mov.id} className="hover:bg-white/5 transition-colors">
                           <td className="p-4 pl-6 text-sm font-bold text-gray-300 whitespace-nowrap">
                             {new Date(mov.data + 'T12:00:00').toLocaleDateString('pt-BR')}
@@ -724,7 +1087,10 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                           <td className="p-4 font-black text-right text-rose-400">
                             - {formatCurrency(parseSafeNumber(mov.valor))}
                           </td>
-                          <td className="p-4 pr-6 text-center">
+                          <td className="p-4 pr-6 text-center flex items-center justify-center gap-2">
+                             <button onClick={() => setItemEditando(mov)} className="p-2 text-blue-400 hover:text-white bg-blue-500/20 hover:bg-blue-500/60 rounded-xl transition-colors" title="Editar Parcela">
+                               <Pencil size={14}/>
+                             </button>
                              <button onClick={() => handleExcluir(mov.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir Parcela">
                                <Trash2 size={14}/>
                              </button>
@@ -994,6 +1360,50 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* MODAL DE EDIÇÃO UNIVERSAL */}
+      {itemEditando && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-[#0B0F19] border border-white/10 rounded-3xl shadow-2xl p-6 w-full max-w-md relative">
+            <button onClick={() => setItemEditando(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white bg-white/5 p-2 rounded-full transition-colors">
+              <X size={20} />
+            </button>
+            <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+              <Pencil className="text-blue-400" size={24} /> Editar Lançamento
+            </h3>
+            
+            <form onSubmit={handleSalvarEdicao} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Data (Vencimento/Compra)</label>
+                <input type="date" required value={itemEditando.data} onChange={e => setItemEditando({...itemEditando, data: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm" />
+                {itemEditando.categoria === 'Cartão de Crédito' && (
+                  <p className="text-[10px] text-blue-400 mt-1">Dica: Alterar a data moverá a parcela para a respectiva fatura de forma automática.</p>
+                )}
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
+                <input type="text" required value={itemEditando.descricao} onChange={e => setItemEditando({...itemEditando, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Valor (R$)</label>
+                  <input type="number" step="0.01" required value={itemEditando.valor} onChange={e => setItemEditando({...itemEditando, valor: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm font-bold" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Status</label>
+                  <select value={itemEditando.statusTransacao} onChange={e => setItemEditando({...itemEditando, statusTransacao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
+                    <option className="bg-gray-900" value="Efetuado">Efetuado</option>
+                    <option className="bg-gray-900" value="Pendente">Pendente</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm mt-4">
+                Salvar Alterações
+              </button>
+            </form>
+          </div>
         </div>
       )}
 
