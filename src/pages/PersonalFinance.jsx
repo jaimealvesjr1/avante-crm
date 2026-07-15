@@ -18,15 +18,17 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     categoria: 'Prestação de Serviços',
     valor: '',
     linkComprovante: '',
-    statusTransacao: 'Efetuado'
+    statusTransacao: 'Efetuado',
+    recorrencia: 'none'
   });
 
   const [formCartao, setFormCartao] = useState({
-    cartaoId: '', // Armazenará o ID do cartão selecionado
+    cartaoId: '',
     dataCompra: new Date().toISOString().split('T')[0],
     descricao: '',
     valorTotal: '',
-    parcelas: '1'
+    parcelas: '1',
+    tipoCompra: 'Parcelada' // 'Parcelada' (divide o valor) ou 'Recorrente' (repete o valor)
   });
 
   const [formNovoCartao, setFormNovoCartao] = useState({
@@ -86,6 +88,31 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     return Number(cleaned) || 0;
   };
 
+  const processarRecorrencia = async (mov) => {
+    if (!mov.recorrencia || mov.recorrencia === 'none') return;
+
+    const [year, month, day] = mov.data.split('-').map(Number);
+    let nextDateObj = new Date(year, month - 1, day);
+    
+    // Calcula a data do próximo lançamento baseado na regra
+    if (mov.recorrencia === 'weekly') nextDateObj.setDate(nextDateObj.getDate() + 7);
+    if (mov.recorrencia === 'monthly') nextDateObj.setMonth(nextDateObj.getMonth() + 1);
+    if (mov.recorrencia === 'yearly') nextDateObj.setFullYear(nextDateObj.getFullYear() + 1);
+
+    const nextDateStr = `${nextDateObj.getFullYear()}-${String(nextDateObj.getMonth() + 1).padStart(2, '0')}-${String(nextDateObj.getDate()).padStart(2, '0')}`;
+
+    // Remove campos visuais ou IDs do objeto original antes de clonar
+    const { id, isFatura, itens, ...dadosBase } = mov;
+
+    // Gera o próximo como Pendente
+    await addDoc(collection(db, "financeiro_pessoal"), {
+        ...dadosBase,
+        data: nextDateStr,
+        statusTransacao: 'Pendente',
+        criadoEm: new Date().toISOString()
+    });
+  };
+
   useEffect(() => {
     if (!db || !currentUser?.email) return;
     const q = query(collection(db, "financeiro_pessoal"), where("userEmail", "==", currentUser.email));
@@ -101,8 +128,9 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     e.preventDefault();
     const valorConvertido = parseSafeNumber(form.valor);
     if (!form.descricao.trim() || valorConvertido <= 0) return toast.error("Verifique os campos.");
+
     try {
-      await addDoc(collection(db, "financeiro_pessoal"), {
+      const novaMovimentacao = {
         userEmail: currentUser.email,
         carteira: carteiraAtiva,
         data: form.data,
@@ -112,10 +140,18 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         valor: valorConvertido,
         linkComprovante: form.linkComprovante.trim(),
         statusTransacao: form.statusTransacao,
+        recorrencia: form.recorrencia || 'none',
         criadoEm: new Date().toISOString()
-      });
-      toast.success("Registrado!");
-      setForm({...form, descricao: '', valor: '', statusTransacao: 'Efetuado'});
+      };
+
+      await addDoc(collection(db, "financeiro_pessoal"), novaMovimentacao);
+
+      if (form.statusTransacao === 'Efetuado' && form.recorrencia !== 'none') {
+        await processarRecorrencia(novaMovimentacao);
+      }
+
+      toast.success("Lançamento registrado!");
+      setForm({...form, descricao: '', valor: '', statusTransacao: 'Efetuado', recorrencia: 'none'});
     } catch (error) { toast.error("Erro ao salvar."); }
   };
 
@@ -126,12 +162,17 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     }
   };
 
-  const handleAlternarStatus = async (id, statusAtual) => {
+  const handleAlternarStatus = async (mov) => {
     try {
-      const novoStatus = statusAtual === 'Efetuado' ? 'Pendente' : 'Efetuado';
-      await updateDoc(doc(db, "financeiro_pessoal", id), {
+      const novoStatus = mov.statusTransacao === 'Efetuado' ? 'Pendente' : 'Efetuado';
+      await updateDoc(doc(db, "financeiro_pessoal", mov.id), {
         statusTransacao: novoStatus
       });
+      
+      if (novoStatus === 'Efetuado' && mov.recorrencia && mov.recorrencia !== 'none') {
+        await processarRecorrencia(mov);
+      }
+
       toast.success(novoStatus === 'Efetuado' ? "Lançamento efetivado com sucesso!" : "Marcado como pendente.");
     } catch (error) {
       toast.error("Erro ao atualizar status.");
@@ -166,29 +207,25 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
 
   const handleSalvarCartao = async (e) => {
     e.preventDefault();
-    const valorTotal = parseSafeNumber(formCartao.valorTotal);
-    const numParcelas = parseInt(formCartao.parcelas, 10);
+    const valorBase = parseSafeNumber(formCartao.valorTotal);
+    const numMeses = parseInt(formCartao.parcelas, 10);
+    const isRecorrente = formCartao.tipoCompra === 'Recorrente';
     
     const cartaoSelecionado = cartoesCadastrados.find(c => c.id === formCartao.cartaoId);
-
     if (!cartaoSelecionado) return toast.error("Selecione um cartão cadastrado.");
-    if (!formCartao.descricao.trim() || valorTotal <= 0 || numParcelas < 1) {
-      return toast.error("Verifique a descrição, valor e parcelas.");
-    }
+    if (!formCartao.descricao.trim() || valorBase <= 0) return toast.error("Verifique os campos.");
 
-    const valorParcela = valorTotal / numParcelas;
+    const valorParcela = isRecorrente ? valorBase : (valorBase / numMeses);
     const dataCompra = new Date(formCartao.dataCompra + 'T12:00:00');
     
     const fechamentoDia = parseInt(cartaoSelecionado.diaFechamento, 10);
     const vencimentoDia = parseInt(cartaoSelecionado.diaVencimento, 10);
 
-    // 1. Determinar o mês do ciclo de fechamento atual
     const dataFechamentoAtual = new Date(dataCompra.getFullYear(), dataCompra.getMonth(), fechamentoDia, 23, 59, 59);
     
     let cicloMesIndex = dataCompra.getMonth();
     let cicloAno = dataCompra.getFullYear();
 
-    // Se comprou após o fechamento, cai no ciclo do próximo mês
     if (dataCompra > dataFechamentoAtual) {
       cicloMesIndex += 1;
       if (cicloMesIndex > 11) {
@@ -197,11 +234,9 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
       }
     }
 
-    // 2. Calcular o mês de vencimento base do ciclo
     let vencimentoMesIndex = cicloMesIndex;
     let vencimentoAno = cicloAno;
 
-    // Se o dia de fechamento for maior ou igual ao vencimento, o vencimento é no mês seguinte ao fechamento
     if (fechamentoDia >= vencimentoDia) {
       vencimentoMesIndex += 1;
       if (vencimentoMesIndex > 11) {
@@ -211,35 +246,41 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     }
 
     try {
-      for (let i = 0; i < numParcelas; i++) {
-        let vencIndex = vencimentoMesIndex + i;
-        let vencAno = vencimentoAno;
-        while (vencIndex > 11) {
-          vencIndex -= 12;
-          vencAno += 1;
-        }
-
-        let dataVencimento = new Date(vencAno, vencIndex, vencimentoDia);
-        
+      if (isRecorrente) {
+        // ASSINATURA: Lança só a primeira parcela. Quando pagar a fatura, gera a próxima.
+        let dataVencimento = new Date(vencimentoAno, vencimentoMesIndex, parseInt(cartaoSelecionado.diaVencimento, 10));
         await addDoc(collection(db, "financeiro_pessoal"), {
-          userEmail: currentUser.email,
-          carteira: carteiraAtiva,
+          userEmail: currentUser.email, carteira: carteiraAtiva,
           data: dataVencimento.toISOString().split('T')[0],
-          descricao: `${formCartao.descricao} (${i + 1}/${numParcelas}) - ${cartaoSelecionado.bandeira} ****${cartaoSelecionado.finalCartao}`,
-          tipo: 'Despesa Operacional', 
-          categoria: 'Cartão de Crédito',
-          valor: valorParcela,
-          cartaoId: cartaoSelecionado.id,
-          linkComprovante: '',
-          statusTransacao: 'Pendente',
+          descricao: `${formCartao.descricao} (Assinatura) - ${cartaoSelecionado.bandeira} ****${cartaoSelecionado.finalCartao}`,
+          tipo: 'Despesa Operacional', categoria: 'Cartão de Crédito',
+          valor: valorParcela, cartaoId: cartaoSelecionado.id, linkComprovante: '',
+          statusTransacao: 'Pendente', recorrencia: 'monthly',
           criadoEm: new Date().toISOString()
         });
+        toast.success(`Assinatura ativada no ${cartaoSelecionado.bandeira}!`);
+      } else {
+        // COMPRA PARCELADA: Como tem fim, roda o for() e joga recorrencia 'none'
+        for (let i = 0; i < numMeses; i++) {
+          let vencIndex = vencimentoMesIndex + i;
+          let vencAno = vencimentoAno;
+          while (vencIndex > 11) { vencIndex -= 12; vencAno += 1; }
+          let dataVencimento = new Date(vencAno, vencIndex, parseInt(cartaoSelecionado.diaVencimento, 10));
+          
+          await addDoc(collection(db, "financeiro_pessoal"), {
+            userEmail: currentUser.email, carteira: carteiraAtiva,
+            data: dataVencimento.toISOString().split('T')[0],
+            descricao: `${formCartao.descricao} (${i + 1}/${numMeses}) - ${cartaoSelecionado.bandeira} ****${cartaoSelecionado.finalCartao}`,
+            tipo: 'Despesa Operacional', categoria: 'Cartão de Crédito',
+            valor: valorParcela, cartaoId: cartaoSelecionado.id, linkComprovante: '',
+            statusTransacao: 'Pendente', recorrencia: 'none',
+            criadoEm: new Date().toISOString()
+          });
+        }
+        toast.success(`Compra parcelada no ${cartaoSelecionado.bandeira}!`);
       }
-      toast.success(`Compra lançada com sucesso no ${cartaoSelecionado.bandeira}!`);
-      setFormCartao({ ...formCartao, descricao: '', valorTotal: '', parcelas: '1' });
-    } catch (error) {
-      toast.error("Erro ao registrar compra no cartão.");
-    }
+      setFormCartao({ ...formCartao, descricao: '', valorTotal: '', parcelas: '1', tipoCompra: 'Parcelada' });
+    } catch (error) { toast.error("Erro ao registrar no cartão."); }
   };
 
   const handleSalvarCofrinho = async (e) => {
@@ -542,7 +583,7 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
             <LayoutDashboard size={16} /> Início
           </button>
           <button onClick={() => setActiveTab('fluxo')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'fluxo' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-            <DollarSign size={16} /> O Dia a Dia
+            <DollarSign size={16} /> Dia a Dia
           </button>
           <button onClick={() => setActiveTab('cartoes')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'cartoes' ? 'bg-rose-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
             <CreditCard size={16} /> Cartões
@@ -820,13 +861,24 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                 </div>
               </div>
 
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Link do Comprovante / NF (Drive)</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <LinkIcon size={14} className="text-gray-500" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Frequência</label>
+                  <select value={form.recorrencia} onChange={e => setForm({...form, recorrencia: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
+                    <option className="bg-gray-900" value="none">Único (Não repete)</option>
+                    <option className="bg-gray-900" value="weekly">Semanal</option>
+                    <option className="bg-gray-900" value="monthly">Mensal</option>
+                    <option className="bg-gray-900" value="yearly">Anual</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Link do Comprovante (Opcional)</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <LinkIcon size={14} className="text-gray-500" />
+                    </div>
+                    <input type="url" placeholder="https://drive.google.com/..." value={form.linkComprovante} onChange={e => setForm({...form, linkComprovante: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 pl-9 outline-none focus:border-indigo-500 mt-1 text-sm" />
                   </div>
-                  <input type="url" placeholder="https://drive.google.com/..." value={form.linkComprovante} onChange={e => setForm({...form, linkComprovante: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 pl-9 outline-none focus:border-indigo-500 mt-1 text-sm" />
                 </div>
               </div>
 
@@ -886,29 +938,32 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                              {mov.isFatura ? (
                                mov.statusTransacao === 'Pendente' ? (
                                  <button 
-                                   onClick={async () => {
-                                     for (const item of mov.itens) {
-                                       if(item.statusTransacao === 'Pendente'){
-                                         await updateDoc(doc(db, "financeiro_pessoal", item.id), { statusTransacao: 'Efetuado' });
-                                       }
-                                     }
-                                     toast.success("Fatura paga com sucesso!");
-                                   }}
-                                   className="p-2 text-emerald-400 hover:text-white bg-emerald-500/20 hover:bg-emerald-500/60 rounded-xl transition-colors font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title="Pagar Fatura"
-                                 >
-                                   Pagar Fatura
-                                 </button>
+                                  onClick={async () => {
+                                    for (const item of mov.itens) {
+                                      if(item.statusTransacao === 'Pendente'){
+                                        await updateDoc(doc(db, "financeiro_pessoal", item.id), { statusTransacao: 'Efetuado' });
+                                        if (item.recorrencia && item.recorrencia !== 'none') {
+                                          await processarRecorrencia(item);
+                                        }
+                                      }
+                                    }
+                                    toast.success("Fatura paga com sucesso!");
+                                  }}
+                                  className="..." title="Pagar Fatura"
+                                >
+                                  Pagar Fatura
+                                </button>
                                ) : (
                                  <span className="text-[10px] text-green-400 bg-green-500/20 px-2 py-1 rounded">Paga</span>
                                )
                              ) : (
                                <>
                                  {mov.statusTransacao === 'Pendente' ? (
-                                   <button onClick={() => handleAlternarStatus(mov.id, mov.statusTransacao)} className="p-2 text-amber-400 hover:text-white bg-amber-500/20 hover:bg-amber-500/60 rounded-xl transition-colors font-bold text-[10px] uppercase tracking-wider" title="Dar Baixa">
+                                   <button onClick={() => handleAlternarStatus(mov)} className="p-2 text-amber-400 hover:text-white bg-amber-500/20 hover:bg-amber-500/60 rounded-xl transition-colors font-bold text-[10px] uppercase tracking-wider" title="Dar Baixa">
                                      Dar Baixa
                                    </button>
                                  ) : (
-                                   <button onClick={() => handleAlternarStatus(mov.id, mov.statusTransacao)} className="text-[10px] text-gray-500 underline hover:text-white mr-1" title="Desfazer">
+                                   <button onClick={() => handleAlternarStatus(mov)} className="text-[10px] text-gray-500 underline hover:text-white mr-1" title="Desfazer">
                                      Desfazer
                                    </button>
                                  )}
@@ -983,18 +1038,49 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                     <input type="text" placeholder="Ex: Notebook M1, Supermercado..." required value={formCartao.descricao} onChange={e => setFormCartao({...formCartao, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
                   </div>
 
-                  {/* LINHA 3: Valor e Parcelas */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Total (R$)</label>
-                      <input type="number" step="0.01" required value={formCartao.valorTotal} onChange={e => setFormCartao({...formCartao, valorTotal: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm font-bold" />
+                  {/* LINHA 3: Tipo, Valor e Parcelas */}
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Tipo de Lançamento</label>
+                        <select value={formCartao.tipoCompra} onChange={e => setFormCartao({...formCartao, tipoCompra: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
+                          <option className="bg-gray-900" value="Parcelada">Compra Parcelada (Fim Definido)</option>
+                          <option className="bg-gray-900" value="Recorrente">Assinatura Mensal (Infinito)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Valor (R$)</label>
+                        <input type="number" step="0.01" required value={formCartao.valorTotal} onChange={e => setFormCartao({...formCartao, valorTotal: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm font-bold" />
+                      </div>
                     </div>
+
+                    {formCartao.tipoCompra === 'Parcelada' && (
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Quantidade de Parcelas</label>
+                        <select value={formCartao.parcelas} onChange={e => setFormCartao({...formCartao, parcelas: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
+                          {[...Array(24)].map((_, i) => (
+                            <option key={i+1} className="bg-gray-900" value={i+1}>
+                              {i+1}x {formCartao.valorTotal ? `(${formatCurrency(parseSafeNumber(formCartao.valorTotal) / (i+1))})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    
                     <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Parcelas (Qtd)</label>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Quantidade de Meses (Parcelas/Ciclos)</label>
                       <select value={formCartao.parcelas} onChange={e => setFormCartao({...formCartao, parcelas: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
-                        {[...Array(24)].map((_, i) => (
-                          <option key={i+1} className="bg-gray-900" value={i+1}>{i+1}x {formCartao.valorTotal ? `(${formatCurrency(parseSafeNumber(formCartao.valorTotal)/(i+1))})` : ''}</option>
-                        ))}
+                        {[...Array(24)].map((_, i) => {
+                           // Calcula dinamicamente a prévia do valor da parcela na label
+                           const previewValor = formCartao.tipoCompra === 'Recorrente' 
+                             ? parseSafeNumber(formCartao.valorTotal) 
+                             : parseSafeNumber(formCartao.valorTotal) / (i+1);
+                           return (
+                            <option key={i+1} className="bg-gray-900" value={i+1}>
+                              {i+1}x {formCartao.valorTotal ? `(${formatCurrency(previewValor)})` : ''}
+                            </option>
+                           );
+                        })}
                       </select>
                     </div>
                   </div>
@@ -1365,8 +1451,14 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
 
       {/* MODAL DE EDIÇÃO UNIVERSAL */}
       {itemEditando && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-[#0B0F19] border border-white/10 rounded-3xl shadow-2xl p-6 w-full max-w-md relative">
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setItemEditando(null)}
+        >
+          <div 
+            className="bg-[#0B0F19] border border-white/10 rounded-3xl shadow-2xl p-6 w-full max-w-md relative"
+            onClick={(e) => e.stopPropagation()} 
+          >
             <button onClick={() => setItemEditando(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white bg-white/5 p-2 rounded-full transition-colors">
               <X size={20} />
             </button>
