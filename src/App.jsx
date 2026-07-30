@@ -53,7 +53,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.2.2';
+  const CURRENT_VERSION = '3.2.3';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -1330,17 +1330,34 @@ export default function App() {
     } 
   };
 
-  const generateStoreWhatsAppLink = (row) => `https://wa.me/?text=${encodeURIComponent(`Olá, equipe da *${row.client}*!\nAvaliamos a loja *${row.store}* até o dia ${currentDay}.\nProjeção: ${formatCurrency(row.projectedGmv)} / Meta: ${formatCurrency(row.gmvTarget)}.\n${row.status === 'danger' ? 'Precisamos alinhar ações urgentes de Ads/Estoque.' : row.status === 'warning' ? 'Podemos otimizar as campanhas da semana?' : 'Vocês estão voando! Vamos manter a tração.'}`)}`;
+  const generateStoreWhatsAppLink = (row) => {
+    const percentStr = row.percentReached ? row.percentReached.toFixed(1) : '0';
+    const actionText = row.status === 'danger' 
+      ? '🚨 Estamos com o ritmo abaixo do esperado. Precisamos alinhar ações urgentes de Ads e Ofertas!' 
+      : row.status === 'warning' 
+      ? '⚠️ Estamos em zona de atenção. O que podemos otimizar nas campanhas desta semana?' 
+      : '✅ Vocês estão voando! 🚀 Vamos manter a tração para superar a meta.';
+      
+    const text = `Olá, equipe da *${row.client}*!\n\nAvaliamos o desempenho da loja *${row.store}* até o dia ${currentDay}:\n\n📈 *Projeção:* ${formatCurrency(row.projectedGmv)}\n🎯 *Meta:* ${formatCurrency(row.gmvTarget)}\n📊 *Ritmo (Pacing):* ${percentStr}%\n\n${actionText}`;
+    
+    return `https://wa.me/?text=${encodeURIComponent(text)}`;
+  };
   
   const generateClientWhatsAppLink = (group) => {
-    let text = `Olá, equipe da *${group.client}*! Aqui é a Equipe Avante - B2X.\n\nSegue o resumo do nosso desempenho até o dia ${currentDay}:\n\n`;
+    const percentStr = group.percentReached ? group.percentReached.toFixed(1) : '0';
+    let text = `Olá, equipe da *${group.client}*! \n\nSegue o resumo do nosso desempenho geral até o dia ${currentDay}:\n\n`;
+    
     group.stores.forEach(store => {
-      text += `🏪 *${store.store}*\nFaturado: ${formatCurrency(store.currentRevenue)}\nProjeção: ${formatCurrency(store.projectedGmv)} (Meta: ${formatCurrency(store.gmvTarget)})\n\n`;
+      const storePercent = store.percentReached ? store.percentReached.toFixed(1) : '0';
+      text += `🏪 *${store.store}*\nFaturado: ${formatCurrency(store.currentRevenue)}\nProjeção: ${formatCurrency(store.projectedGmv)} (Meta: ${formatCurrency(store.gmvTarget)} - Pacing: ${storePercent}%)\n\n`;
     });
-    text += `📊 *RESUMO GERAL*\nFaturado Total: *${formatCurrency(group.totalCurrentRevenue)}*\nProjeção Total: *${formatCurrency(group.totalProjectedGmv)}*\nMeta Global: *${formatCurrency(group.totalGmvTarget)}*\n\n`;
-    if (group.status === 'danger') text += `🚨 Como estamos abaixo da meta agrupada, precisamos alinhar urgentemente ações conjuntas.`;
-    else if (group.status === 'warning') text += `⚠️ Estamos um pouquinho abaixo do ritmo esperado. Sugerimos aplicar otimizações.`;
-    else text += `✅ Vocês estão voando! 🚀 Vamos manter a estratégia.`;
+    
+    text += `📊 *RESUMO GLOBAL*\nFaturado Atual: *${formatCurrency(group.totalCurrentRevenue)}*\nProjeção Total: *${formatCurrency(group.totalProjectedGmv)}*\nMeta Global: *${formatCurrency(group.totalGmvTarget)}*\nRitmo Agrupado: *${percentStr}%*\n\n`;
+    
+    if (group.status === 'danger') text += `🚨 Como estamos com o ritmo (${percentStr}%) abaixo da meta agrupada, precisamos alinhar urgentemente ações conjuntas.`;
+    else if (group.status === 'warning') text += `⚠️ Estamos rodando a ${percentStr}%, um pouquinho abaixo do ritmo ideal. Sugerimos aplicar otimizações e rever os preços.`;
+    else text += `✅ Parabéns! Estamos rodando a ${percentStr}% da meta. Vamos manter a estratégia e acelerar!`;
+    
     return `https://wa.me/?text=${encodeURIComponent(text)}`;
   };
 

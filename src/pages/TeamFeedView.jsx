@@ -30,7 +30,7 @@ export default function TeamFeedView({
     }, [scheduledEvents]);
 
     const [showVisitForm, setShowVisitForm] = useState(false);
-    const [visitForm, setVisitForm] = useState({ id: null, client: '', date: '', time: '', responsavel: '' });
+    const [visitForm, setVisitForm] = useState({ id: null, client: '', date: '', time: '' });
     
     const [expandedUserXP, setExpandedUserXP] = useState(null);
     const [showPausedTasks, setShowPausedTasks] = useState(false);
@@ -140,12 +140,12 @@ export default function TeamFeedView({
     const submitVisit = (e) => {
         e.preventDefault();
         if (!visitForm.client || !visitForm.date || !visitForm.time) {
-        toast.error("Preencha cliente, data e hora da visita.");
+        toast.error("Preencha o evento, data e hora.");
         return;
         }
         handleVisitAction('schedule', visitForm);
         setShowVisitForm(false);
-        setVisitForm({ id: null, client: '', date: '', time: '', responsavel: '' });
+        setVisitForm({ id: null, client: '', date: '', time: '' });
     };
 
     const editVisit = (visit) => {
@@ -1024,17 +1024,20 @@ export default function TeamFeedView({
                         {showVisitForm && canScheduleVisits && (
                         <form onSubmit={submitVisit} className="bg-black/40 border border-blue-500/30 p-4 rounded-xl mb-4 flex flex-col gap-3 items-end animate-in fade-in slide-in-from-top-2">                            
                             <div className="flex flex-col gap-1 w-full">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase">Cliente</label>
-                            <select 
+                            <label className="text-[10px] font-bold text-gray-400 uppercase">Evento / Cliente</label>
+                            <input 
+                                type="text"
+                                list="clientes-list"
+                                placeholder="Digite o evento ou escolha um cliente..."
                                 value={visitForm.client} 
                                 onChange={e => setVisitForm({...visitForm, client: e.target.value})}
                                 className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
-                            >
-                                <option value="">Selecione...</option>
+                            />
+                            <datalist id="clientes-list">
                                 {uniqueClients.map(client => (
-                                <option key={client} value={client}>{client}</option>
+                                    <option key={client} value={client} />
                                 ))}
-                            </select>
+                            </datalist>
                             </div>
 
                             <div className="flex gap-2 w-full">
@@ -1059,20 +1062,6 @@ export default function TeamFeedView({
                                 </div>
                             </div>
 
-                            <div className="flex flex-col gap-1 w-full">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase">Responsável</label>
-                            <select 
-                                value={visitForm.responsavel} 
-                                onChange={e => setVisitForm({...visitForm, responsavel: e.target.value})}
-                                className="bg-gray-900 border border-gray-700 rounded-lg p-2 text-sm text-white outline-none focus:border-blue-500"
-                            >
-                                <option value="">Selecione...</option>
-                                {teamMembers.map(m => (
-                                <option key={m.email} value={m.nomeCompleto || m.nome}>{m.nomeCompleto || m.nome}</option>
-                                ))}
-                            </select>
-                            </div>
-
                             <div className="w-full flex justify-end mt-2">
                             <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-5 py-2.5 rounded-lg shadow-md transition-colors">
                                 Confirmar Agendamento
@@ -1082,9 +1071,9 @@ export default function TeamFeedView({
                         )}
 
                         {upcomingVisits.length === 0 && !showVisitForm ? null : (
-                        <div className="flex flex-col gap-3 pb-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2">
                             {upcomingVisits.length === 0 ? (
-                            <div className="text-xs text-gray-500 italic p-2 text-center">Nenhuma visita agendada.</div>
+                            <div className="col-span-1 md:col-span-2 text-xs text-gray-500 italic p-2 text-center">Nenhum evento agendado.</div>
                             ) : (
                             upcomingVisits.map(visit => {
                                 const now = new Date();
@@ -1109,14 +1098,11 @@ export default function TeamFeedView({
 
                                 return (
                                     <div key={visit.id} className={`w-full p-4 rounded-xl border flex flex-col gap-2 shadow-sm transition-all ${cardClasses}`}>
-                                    <div className="flex justify-between items-start gap-2">
-                                        <span className="text-sm font-black text-white truncate">{visit.client}</span>
-                                        <span className={`text-[9px] font-bold px-2 py-1 rounded border whitespace-nowrap ${badgeClasses}`}>
+                                    <div className="flex flex-col gap-2">
+                                        <span className="text-sm font-black text-white line-clamp-2">{visit.client}</span>
+                                        <span className={`w-fit text-[9px] font-bold px-2 py-1 rounded border whitespace-nowrap ${badgeClasses}`}>
                                         {visit.date.split('-').reverse().join('/')} às {visit.time}
                                         </span>
-                                    </div>
-                                    <div className="text-[10px] text-gray-400 font-medium">
-                                        Responsável: <span className="text-gray-200">{visit.responsavel || 'A Definir'}</span>
                                     </div>
                                     
                                     {(canScheduleVisits || canCompleteVisits || canDeleteVisits) && (

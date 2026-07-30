@@ -244,9 +244,6 @@ export default function OperationalTable({
                                       {row.marketplace && <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded text-xs uppercase font-bold tracking-wider">{row.marketplace}</span>}
                                   </div>
                                   <div className="flex items-center gap-2">
-                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${row.tier === 'A' ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' : 'bg-white/5 text-gray-400 border-white/10'}`}>
-                                      Tier {row.tier}
-                                      </span>
                                       <span className="text-xs text-gray-400 font-medium">{row.client}</span>
                                   </div>
                               </div>
