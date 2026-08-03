@@ -9,15 +9,16 @@ export default function OperationalTable({
   showValues, generateClientWhatsAppLink, generateStoreWhatsAppLink,
   clientGrowthMap, updateGlobalSettings,
   startEditingStore, editingStoreId, setEditingStoreId, storeEditData, setStoreEditData, saveStoreEdit, deleteStore, offboardClient,
-  openTaskModal
+  openTaskModal, competenceMonth
 }) {
 
   const filteredGroups = dashboardData.groupedClients;
 
-  const dataAtual = new Date();
-  dataAtual.setMonth(dataAtual.getMonth() - 1);
+  const [compYear, compMonthNum] = competenceMonth.split('-').map(Number);
+  const dataMesPassado = new Date(compYear, compMonthNum - 2, 1);
+  
   const mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-  const mesPassadoExato = `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`;
+  const mesPassadoExato = `${mesesNomes[dataMesPassado.getMonth()]}/${String(dataMesPassado.getFullYear()).slice(-2)}`;
 
   const getStatusColor = (status) => {
     if (status === 'success') return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';

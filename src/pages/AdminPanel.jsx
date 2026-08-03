@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserPlus, Shield, Users, Mail, Clock, Edit2, Check, X, Palette, Eye, Flame, Trash2, DollarSign, Calendar, Percent, Target, Briefcase, User } from 'lucide-react';
 import { getVisualRole } from '../App';
+import { toast } from 'react-hot-toast';
 
 const AVATAR_COLORS = [
   'from-indigo-500 to-purple-600',

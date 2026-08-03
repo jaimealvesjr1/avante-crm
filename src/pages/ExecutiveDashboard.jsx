@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { TrendingUp, ShoppingCart, Activity, CreditCard, Clock, Zap, Target, Settings, Crown, Store, Filter } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Area, Line, Legend, Tooltip, Cell, LineChart, ReferenceLine } from 'recharts';
 
-export default function ExecutiveDashboard({ dashboardData, formatCurrency, formatNumber, pieData, roasData, COLORS, currentDay, daysInMonth, canEdit, openGoalsModal, showValues }) {
+export default function ExecutiveDashboard({ dashboardData, formatCurrency, formatNumber, pieData, roasData, COLORS, currentDay, daysInMonth, canEdit, openGoalsModal, showValues, competenceMonth }) {
   
   const predictedOrders = currentDay > 0 ? Math.round((dashboardData.totalOrders / currentDay) * daysInMonth) : 0;
   const avgAdsCostPerOrder = dashboardData.totalOrders > 0 ? dashboardData.totalGlobalAds / dashboardData.totalOrders : 0;
@@ -50,10 +50,11 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
   const [rankingType, setRankingType] = useState('client');
   const [storeMetric, setStoreMetric] = useState('gmv');
 
-  const dataAtual = new Date();
-  dataAtual.setMonth(dataAtual.getMonth() - 1);
+  const [compYear, compMonthNum] = competenceMonth.split('-').map(Number);
+  const dataMesPassado = new Date(compYear, compMonthNum - 2, 1);
+  
   const mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-  const mesPassadoExato = `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`;
+  const mesPassadoExato = `${mesesNomes[dataMesPassado.getMonth()]}/${String(dataMesPassado.getFullYear()).slice(-2)}`;
 
   const rankingData = useMemo(() => {
     if (rankingType === 'client') {
@@ -128,6 +129,9 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                   <Settings size={18} />
                 </button>
               )}
+              <span className="text-[10px] bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded font-bold uppercase tracking-wider hidden md:inline-block">
+                VIGÊNCIA: {competenceMonth.split('-').reverse().join('/')}
+              </span>
             </div>
             <p className="text-gray-400 text-sm mt-1">Faturamento consolidado de todos os clientes</p>
           </div>

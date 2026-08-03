@@ -53,7 +53,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.2.3';
+  const CURRENT_VERSION = '3.2.4';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -79,6 +79,11 @@ export default function App() {
   const [marketplaceGrowthMap, setMarketplaceGrowthMap] = useState({});
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [currentDay, setCurrentDay] = useState(new Date().getDate());
+  
+  const [competenceMonth, setCompetenceMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
   
   const [activeEvent, setActiveEvent] = useState(null);
   const [scheduledEvents, setScheduledEvents] = useState([]);
@@ -309,6 +314,9 @@ export default function App() {
         if(data.clientGrowthMap !== undefined) setClientGrowthMap(data.clientGrowthMap);
         if(data.marketplaceGrowthMap !== undefined) setMarketplaceGrowthMap(data.marketplaceGrowthMap);
         
+        if(data.currentDay !== undefined) setCurrentDay(data.currentDay);
+        if(data.competenceMonth) setCompetenceMonth(data.competenceMonth);
+        
         setActiveEvent(data.activeEvent || null);
         setScheduledEvents(data.scheduledEvents || []);
         setScheduledVisits(data.scheduledVisits || []);
@@ -477,7 +485,10 @@ export default function App() {
     if (!canEdit) return;
     const newVal = value !== '' && value !== null ? Number(value) : null;
     
-    if (field === 'day') setCurrentDay(newVal);
+    if (field === 'day') {
+      setCurrentDay(newVal);
+      await setDoc(doc(db, "settings", "global"), { currentDay: newVal }, { merge: true });
+    }
     else if (field === 'growth') {
       setGlobalGrowth(newVal);
       await setDoc(doc(db, "settings", "global"), { globalGrowth: newVal }, { merge: true });
@@ -1019,6 +1030,16 @@ export default function App() {
           }
       });
 
+      let nextCompetence = competenceMonth;
+      if (selectedMonthValue && selectedMonthValue.includes('-')) {
+          const [y, m] = selectedMonthValue.split('-').map(Number);
+          const nextDate = new Date(y, m, 1);
+          nextCompetence = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+      }
+      
+      const globalRef = doc(db, "settings", "global");
+      batch.set(globalRef, { competenceMonth: nextCompetence, currentDay: 1 }, { merge: true });
+
       await batch.commit();
       toast.success("Mês fechado com sucesso! Relatórios baixados, histórico atualizado e Faturas geradas.", { id: 'close-month' });
       sendGlobalNotification(`Acaba de fechar o mês de ${padronizado} com sucesso! 🏆`, 'success');
@@ -1094,7 +1115,7 @@ export default function App() {
       return Number(cleaned) || 0;
   };
 
-    const currentMonthBankFormat = normalizeMonthYear(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
+    const currentMonthBankFormat = normalizeMonthYear(competenceMonth);
     const isCurrentMonth = targetMonth === currentMonthBankFormat;
 
     // Varre todas as lojas e organiza dentro do objeto clientsGroup
@@ -1380,10 +1401,11 @@ export default function App() {
     const mktPerformance = {};
     const monthlyByClient = {};
 
-    const dataAtual = new Date();
-    dataAtual.setMonth(dataAtual.getMonth() - 1);
+    const [compYear, compMonthNum] = competenceMonth.split('-').map(Number);
+    const dataMesPassado = new Date(compYear, compMonthNum - 2, 1);
+    
     const mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-    const mesPassadoExato = `${mesesNomes[dataAtual.getMonth()]}/${String(dataAtual.getFullYear()).slice(-2)}`;
+    const mesPassadoExato = `${mesesNomes[dataMesPassado.getMonth()]}/${String(dataMesPassado.getFullYear()).slice(-2)}`;
 
     const processedStores = stores.map(store => {
       return enrichStoreMetrics(store, currentDay, daysInMonth, globalGrowth, clientGrowthMap, marketplaceGrowthMap);
@@ -1534,7 +1556,7 @@ export default function App() {
       rankingMarketplaces: Object.values(mktPerformance).sort((a, b) => b.atual - a.atual),
       historicalChartData
     };
-  }, [stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, myName]);
+  }, [stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, myName, competenceMonth]);
 
   const pieData = useMemo(() => dashboardData.groupedClients.map(g => ({ name: g.client, value: g.totalProjectedGmv })).filter(g => g.value > 0), [dashboardData]);
   const roasData = useMemo(() => dashboardData.groupedClients.filter(g => g.totalAds > 0).map(g => ({ name: g.client, roas: Number(g.roas) })).sort((a, b) => b.roas - a.roas), [dashboardData]);
@@ -1852,6 +1874,7 @@ export default function App() {
                 canEdit={canEdit}
                 openGoalsModal={() => setIsGoalsModalOpen(true)}
                 showValues={showValues}
+                competenceMonth={competenceMonth}
               />
             )}
             
@@ -1904,6 +1927,7 @@ export default function App() {
                   setActiveTaskStoreId(storeRow.id); 
                   setTaskModalOpen(true); 
                 }}
+                competenceMonth={competenceMonth}
               />
             )}
 

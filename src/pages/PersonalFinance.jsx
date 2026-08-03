@@ -1066,23 +1066,6 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                         </select>
                       </div>
                     )}
-                    
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Quantidade de Meses (Parcelas/Ciclos)</label>
-                      <select value={formCartao.parcelas} onChange={e => setFormCartao({...formCartao, parcelas: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
-                        {[...Array(24)].map((_, i) => {
-                           // Calcula dinamicamente a prévia do valor da parcela na label
-                           const previewValor = formCartao.tipoCompra === 'Recorrente' 
-                             ? parseSafeNumber(formCartao.valorTotal) 
-                             : parseSafeNumber(formCartao.valorTotal) / (i+1);
-                           return (
-                            <option key={i+1} className="bg-gray-900" value={i+1}>
-                              {i+1}x {formCartao.valorTotal ? `(${formatCurrency(previewValor)})` : ''}
-                            </option>
-                           );
-                        })}
-                      </select>
-                    </div>
                   </div>
 
                   <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm mt-2">
