@@ -619,7 +619,7 @@ export default function ClientFileModal({
                 </div>
 
                 {/* GRÁFICOS: LINHA 2 */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                   <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
                     <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Zap size={16} className="text-amber-400" /> Eficiência de Ads</h3>
                     <div className="h-64">
@@ -656,7 +656,7 @@ export default function ClientFileModal({
                     </div>
                   </div>
 
-                  <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm flex flex-col">
+                  <div className="lg:col-span-2 bg-white/[0.02] p-5 rounded-2xl border border-white/5 shadow-sm flex flex-col">
                     <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-4 shrink-0">
                       <TrendingUp size={16} className="text-blue-400"/>
                       <h3 className="text-sm font-bold text-white tracking-wide">Evolução Histórica</h3>

@@ -31,7 +31,7 @@ export default function TeamFeedView({
 
     const [showVisitForm, setShowVisitForm] = useState(false);
     const [visitForm, setVisitForm] = useState({ id: null, client: '', date: '', time: '' });
-    
+    const [notifications, setNotifications] = useState([]);
     const [expandedUserXP, setExpandedUserXP] = useState(null);
     const [showPausedTasks, setShowPausedTasks] = useState(false);
     const [rankingPeriod, setRankingPeriod] = useState('semana');
@@ -86,7 +86,6 @@ export default function TeamFeedView({
             setShowSuggestions(false);
         }
     };
-    // ---------------------------------
 
     const submitClientTask = (e) => {
         e.preventDefault();
@@ -443,9 +442,13 @@ export default function TeamFeedView({
                     if (!duration) {
                         duration = new Date(task.completedAtFull).getTime() - new Date(task.startedAt).getTime();
                     }
-                    if (duration > 60000 && duration < 86400000) { 
+                    
+                    if (duration > 60000) { 
                         const weight = task.peso || 'media';
-                        if (globalAverages[weight]) {
+                        
+                        const maxAllowedTimeMs = globalAverages[weight].avg * 4;
+                        
+                        if (duration <= maxAllowedTimeMs && globalAverages[weight]) {
                             globalAverages[weight].totalTime += duration;
                             globalAverages[weight].count += 1;
                         }
@@ -697,12 +700,43 @@ export default function TeamFeedView({
     
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* GRID 10 COLUNAS: 10/70/20 em telas gigantes | 20/60/20 em XL | 25/50/25 em LG */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-10 gap-4 xl:gap-6 items-start">
                 
-                {/* LADO ESQUERDO: Radar de Prazos (SLA) */}
-                <div className="lg:col-span-2 flex flex-col gap-6">
+                {/* COLUNA ESQUERDA (10% no Ultrawide)*/}
+                <div className="lg:col-span-3 xl:col-span-2 min-[1920px]:col-span-1 flex flex-col gap-3 sticky top-[100px]">
+                    <h3 className="text-[12px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 pl-1">
+                        <Activity size={14} /> Atualizações
+                    </h3>
                     
+                    <div className="flex flex-col gap-2">
+                        {notifications.length > 0 ? notifications.map(notif => (
+                            <div 
+                                key={notif.id} 
+                                onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
+                                className="bg-white/5 border border-white/10 p-2.5 rounded-xl cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all relative group shadow-sm"
+                            >
+                                <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <X size={10} className="text-gray-500 hover:text-white" />
+                                </div>
+                                <div className="flex items-start gap-1.5">
+                                    <div className={`mt-1.5 w-1 h-1 rounded-full shrink-0 ${notif.type === 'completed' ? 'bg-emerald-500' : 'bg-indigo-500 shadow-[0_0_5px_rgba(99,102,241,0.8)]'}`}></div>
+                                    <div className="flex flex-col pr-3">
+                                        <p className="text-[12px] text-gray-300 font-medium leading-tight break-words">{notif.text}</p>
+                                        <span className="text-[10px] text-gray-500 mt-1 font-bold">{notif.time}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )) : (
+                            <div className="text-center p-3 border border-dashed border-white/5 rounded-xl text-[12px] text-gray-500 italic">
+                                Nenhuma novidade.
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* COLUNA CENTRAL (70% no Ultrawide): O Radar de Tarefas */}
+                <div className="lg:col-span-6 xl:col-span-6 min-[1920px]:col-span-7 flex flex-col gap-6">
                     <div className="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-lg relative overflow-hidden flex flex-col flex-1 min-h-[600px] lg:h-[calc(100vh-120px)]">
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-orange-500 to-blue-500"></div>
                         
@@ -846,7 +880,7 @@ export default function TeamFeedView({
                         )}
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2">
-                            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
                                 {deadlinesData.map(item => {
                                     const isOverdue = item.statusColor === 'red';
                                     const isWarning = item.statusColor === 'orange';
@@ -866,79 +900,79 @@ export default function TeamFeedView({
                                         <div 
                                             key={item.id} 
                                             onClick={() => handleOpenStore(item.storeName)}
-                                            className={`group relative p-3.5 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col justify-between gap-3 shadow-sm min-h-[110px] ${cardClasses}`}
+                                            className={`p-4 rounded-xl border cursor-pointer transition-colors duration-200 flex flex-col gap-3 shadow-sm min-h-[120px] ${cardClasses}`}
                                         >
-                                            <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 z-10 transition-opacity">
-                                                {!isRoutine && (
-                                                    <div className="flex items-center bg-black/60 rounded-md border border-white/10 overflow-hidden shadow-sm mr-1">
-                                                        <button onClick={(e) => { e.stopPropagation(); const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 3); }} className="text-[9px] font-bold text-gray-300 hover:text-amber-400 hover:bg-white/10 px-1.5 py-1 border-r border-white/10 transition-colors" title="Adiar 3 horas">+3h</button>
-                                                        <button onClick={(e) => { e.stopPropagation(); const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 6); }} className="text-[9px] font-bold text-gray-300 hover:text-amber-400 hover:bg-white/10 px-1.5 py-1 border-r border-white/10 transition-colors" title="Adiar 6 horas">+6h</button>
-                                                        <button onClick={(e) => { e.stopPropagation(); const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 24); }} className="text-[9px] font-bold text-gray-300 hover:text-indigo-400 hover:bg-white/10 px-1.5 py-1 transition-colors" title="Adiar para amanhã">+24h</button>
+                                            {/* CABEÇALHO DO CARD: Identificação e Prazo */}
+                                            <div className="flex justify-between items-start gap-2">
+                                                <div className="flex items-start gap-2.5 overflow-hidden">
+                                                    <div className={`mt-0.5 shrink-0 ${
+                                                        isOverdue ? 'text-red-400' : 
+                                                        isWarning ? 'text-orange-400' : 
+                                                        isClientTask ? 'text-indigo-400' :
+                                                        'text-blue-400'
+                                                    }`}>
+                                                        {item.isBeingWorkedOn ? (
+                                                            <div className="relative flex h-3.5 w-3.5 mt-0.5">
+                                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 border border-gray-900"></span>
+                                                            </div>
+                                                        ) : (
+                                                            isRoutine ? <CalendarClock size={16} /> : isClientTask ? <Target size={16} /> : <AlertCircle size={16} />
+                                                        )}
                                                     </div>
-                                                )}
-                                                
-                                                {!isRoutine && (
-                                                <button
-                                                    onClick={(e) => handleToggleTimer(e, item.storeId, item.originalTaskId)}
-                                                    className={`p-1 mr-1 rounded-md border shadow-sm transition-colors ${item.executingStatus === 'playing' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'}`}
-                                                    title={item.executingStatus === 'playing' ? "Pausar Tarefa" : "Iniciar Tarefa"}
-                                                >
-                                                    {item.executingStatus === 'playing' ? <Pause size={14} /> : <Play size={14} />}
-                                                </button>
-                                                )}
-
-                                                {isAdmin && (
-                                                    <button onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, isRoutine)} className="text-gray-400 hover:text-red-400 bg-black/60 hover:bg-red-500/20 p-1 rounded-md border border-white/10 hover:border-red-500/30 transition-colors" title="Forçar exclusão desta tarefa">
-                                                        <X size={14} />
-                                                    </button>
-                                                )}
-                                            </div>
-
-                                            {item.isBeingWorkedOn && (
-                                                <div className="absolute top-3 right-2 flex h-3 w-3">
-                                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border border-gray-900"></span>
+                                                    <div className="flex-1 overflow-hidden">
+                                                        {isClientTask ? (
+                                                            <h4 className="font-bold text-indigo-400 text-xs truncate leading-none mb-1">TAREFA DE CLIENTE</h4>
+                                                        ) : (
+                                                            <h4 className="font-bold text-white text-[13px] truncate leading-none mb-1">{item.storeName}</h4>
+                                                        )}
+                                                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest truncate block leading-none">{item.clientName}</span>
+                                                    </div>
                                                 </div>
-                                            )}
-
-                                            <div className="flex items-start gap-2.5">
-                                                <div className={`p-1.5 rounded-md shrink-0 ${
-                                                    isOverdue ? 'bg-red-500/20 text-red-400' : 
-                                                    isWarning ? 'bg-orange-500/20 text-orange-400' : 
-                                                    isClientTask ? 'bg-indigo-500/20 text-indigo-400' :
-                                                    'bg-blue-500/20 text-blue-400'
-                                                }`}>
-                                                    {isRoutine ? <CalendarClock size={14} /> : isClientTask ? <Target size={14} /> : <AlertCircle size={14} />}
-                                                </div>
-                                                <div className="flex-1 overflow-hidden">
-                                                    {isClientTask ? (
-                                                        <h4 className="font-bold text-indigo-400 text-xs truncate flex items-center gap-1" title="Tarefa Geral do Cliente">
-                                                            🎯 TAREFA DE CLIENTE
-                                                        </h4>
-                                                    ) : (
-                                                        <h4 className="font-bold text-white text-xs truncate" title={item.storeName}>{item.storeName}</h4>
-                                                    )}
-                                                    <span className="text-[9px] text-gray-500 font-medium uppercase tracking-wider truncate block" title={item.clientName}>{item.clientName}</span>
+                                                <div className="shrink-0 text-right">
+                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shadow-sm whitespace-nowrap ${
+                                                        isOverdue ? 'bg-red-500/10 text-red-400 border-red-500/20' : 
+                                                        isWarning ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : 
+                                                        'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                                    }`}>
+                                                        {item.timeLabel}
+                                                    </span>
                                                 </div>
                                             </div>
 
-                                            {/* Descrição Principal da Tarefa */}
-                                            <p className={`text-[11px] font-medium leading-tight line-clamp-2 ${isRoutine ? 'italic text-gray-400' : 'text-gray-300'}`} title={item.title}>
+                                            {/* CORPO: Descrição da Tarefa */}
+                                            <p className={`text-xs font-medium leading-relaxed line-clamp-2 flex-1 ${isRoutine ? 'italic text-gray-400' : 'text-gray-300'}`} title={item.title}>
                                                 {item.title}
                                             </p>
 
-                                            {/* Rodapé (Prazo e Responsável) */}
-                                            <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-auto">
-                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shadow-sm truncate max-w-[60%] ${
-                                                    isOverdue ? 'bg-red-500/20 text-red-400 border-red-500/30' : 
-                                                    isWarning ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : 
-                                                    'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                                                }`}>
-                                                    ⏱️ {item.timeLabel}
+                                            {/* RODAPÉ FIXO: Responsável e Ações Diretas */}
+                                            <div className="flex items-center justify-between border-t border-white/5 pt-3 mt-auto">
+                                                <span className="text-[10px] text-gray-500 truncate max-w-[40%] flex items-center gap-1.5" title={item.responsavel || 'Equipe'}>
+                                                    <strong className="text-gray-300 truncate">{item.responsavel || 'Equipe'}</strong>
                                                 </span>
-                                                <span className="text-[9px] text-gray-500 truncate max-w-[40%]" title={item.responsavel || 'Equipe'}>
-                                                    Resp: <strong className="text-gray-300">{item.responsavel || 'Equipe'}</strong>
-                                                </span>
+
+                                                <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                                    {!isRoutine && (
+                                                        <>
+                                                            <div className="flex items-center bg-black/40 rounded-md border border-white/5 mr-1">
+                                                                <button onClick={(e) => { const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 3); }} className="text-[10px] font-bold text-gray-400 hover:text-amber-400 hover:bg-white/10 px-2 py-1 border-r border-white/5 transition-colors">+3h</button>
+                                                                <button onClick={(e) => { const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 6); }} className="text-[10px] font-bold text-gray-400 hover:text-indigo-400 hover:bg-white/10 px-2 py-1 border-r border-white/5 transition-colors">+6h</button>
+                                                                <button onClick={(e) => { const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 24); }} className="text-[10px] font-bold text-gray-400 hover:text-red-400 hover:bg-white/10 px-2 py-1 transition-colors">+24h</button>
+                                                            </div>
+                                                            <button
+                                                                onClick={(e) => handleToggleTimer(e, item.storeId, item.originalTaskId)}
+                                                                className={`p-1.5 rounded-md transition-colors ${item.executingStatus === 'playing' ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'}`}
+                                                            >
+                                                                {item.executingStatus === 'playing' ? <Pause size={14} /> : <Play size={14} />}
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {isAdmin && (
+                                                        <button onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, isRoutine)} className="text-gray-500 hover:text-red-400 p-1.5 ml-1 transition-colors">
+                                                            <X size={14} />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -955,9 +989,8 @@ export default function TeamFeedView({
                     </div>
                 </div>
 
-                {/* COLUNA DIREITA: Trabalhando Agora -> Pacing -> Ranking */}
-                <div className="lg:col-span-1 flex flex-col gap-6">
-
+                {/* COLUNA DIREITA (20% no Ultrawide): Agenda, Trabalhando Agora, Ranking, Pacing */}
+                <div className="lg:col-span-3 xl:col-span-2 min-[1920px]:col-span-2 flex flex-col gap-5">
                     {/* BANNER DE DESTAQUE SAZONAL */}
                     {activeEvent ? (
                         <div className="bg-gradient-to-r from-orange-600/20 to-red-600/20 border border-orange-500/30 p-5 rounded-3xl shadow-[0_4px_20px_rgba(234,88,12,0.15)] flex flex-col gap-4">
@@ -1005,24 +1038,24 @@ export default function TeamFeedView({
                                   
                     {/* Bloco Exclusivo de CRM: Próximas Visitas */}
                     {(upcomingVisits.length > 0 || canScheduleVisits) && (
-                    <div className="mb-6 bg-blue-900/10 border border-blue-500/20 p-5 rounded-2xl w-full">
+                    <div className="bg-blue-900/10 border border-blue-500/20 p-4 rounded-2xl w-full flex flex-col gap-3">
                         
-                        <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
-                            <Briefcase size={16} /> Visitas Presenciais
-                        </h3>
-                        {canScheduleVisits && (
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                                <Briefcase size={16} /> Agenda
+                            </h3>
+                            {canScheduleVisits && (
                             <button 
-                            onClick={() => setShowVisitForm(!showVisitForm)}
-                            className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors border ${showVisitForm ? 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-md border-blue-500/50'}`}
-                            >
-                            {showVisitForm ? '✕ Cancelar' : '+ Agendar'}
-                            </button>
-                        )}
+                                onClick={() => setShowVisitForm(!showVisitForm)}
+                                className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors border ${showVisitForm ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-md border-blue-500/50'}`}
+                                >
+                                {showVisitForm ? '✕ Fechar' : '+ Agendar'}
+                                </button>
+                            )}
                         </div>
 
                         {showVisitForm && canScheduleVisits && (
-                        <form onSubmit={submitVisit} className="bg-black/40 border border-blue-500/30 p-4 rounded-xl mb-4 flex flex-col gap-3 items-end animate-in fade-in slide-in-from-top-2">                            
+                        <form onSubmit={submitVisit} className="bg-black/40 border border-blue-500/30 p-4 rounded-xl flex flex-col gap-3 items-end animate-in fade-in slide-in-from-top-2 mt-2">
                             <div className="flex flex-col gap-1 w-full">
                             <label className="text-[10px] font-bold text-gray-400 uppercase">Evento / Cliente</label>
                             <input 
@@ -1070,8 +1103,8 @@ export default function TeamFeedView({
                         </form>
                         )}
 
-                        {upcomingVisits.length === 0 && !showVisitForm ? null : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2">
+                        {upcomingVisits.length > 0 && !showVisitForm && (
+                        <div className="grid grid-cols-1 gap-2 pt-2 border-t border-blue-500/10">
                             {upcomingVisits.length === 0 ? (
                             <div className="col-span-1 md:col-span-2 text-xs text-gray-500 italic p-2 text-center">Nenhum evento agendado.</div>
                             ) : (
@@ -1097,7 +1130,7 @@ export default function TeamFeedView({
                                 }
 
                                 return (
-                                    <div key={visit.id} className={`w-full p-4 rounded-xl border flex flex-col gap-2 shadow-sm transition-all ${cardClasses}`}>
+                                    <div key={visit.id} className={`w-full p-3 rounded-xl border flex flex-col gap-2 shadow-sm transition-all ${cardClasses}`}>
                                     <div className="flex flex-col gap-2">
                                         <span className="text-sm font-black text-white line-clamp-2">{visit.client}</span>
                                         <span className={`w-fit text-[9px] font-bold px-2 py-1 rounded border whitespace-nowrap ${badgeClasses}`}>
@@ -1134,52 +1167,50 @@ export default function TeamFeedView({
                     )}
 
                     {/* RADAR DA EQUIPE */}
-                    <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col">
+                    <div className="bg-gray-800/80 p-4 xl:p-5 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
                         
-                        <div className="flex items-center justify-between mb-5 border-b border-gray-700 pb-3">
-                            <h3 className="text-lg font-bold tracking-wide text-emerald-400 uppercase flex items-center gap-2">
-                                <Activity size={18} /> trabalhando agora
+                        <div className="flex items-center justify-between mb-3 border-b border-gray-700 pb-3 shrink-0">
+                            <h3 className="text-sm font-bold tracking-wider text-emerald-400 uppercase flex items-center gap-1.5">
+                                <Activity size={14} /> Trabalhando Agora
                             </h3>
                             
                             {minhasTarefasPausadas.length > 0 && (
                                 <button 
                                     onClick={() => setShowPausedTasks(!showPausedTasks)}
-                                    className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors flex items-center gap-1 ${showPausedTasks ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-gray-800 text-gray-400 border-gray-600 hover:bg-gray-700'}`}
+                                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition-colors flex items-center gap-1 outline-none ${showPausedTasks ? 'text-amber-400 bg-amber-500/10' : 'text-gray-400 hover:text-white'}`}
                                     title="Ver minhas tarefas pausadas"
                                 >
-                                    ⏸️ Pausadas ({minhasTarefasPausadas.length}) {showPausedTasks ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
+                                    PAUSADAS ({minhasTarefasPausadas.length}) {showPausedTasks ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
                                 </button>
                             )}
                         </div>
 
-                        {showPausedTasks && minhasTarefasPausadas.length > 0 && (
-                            <div className="mb-5 bg-black/40 border border-amber-500/20 rounded-xl p-3 shadow-inner max-h-[220px] overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2">
-                                <h4 className="text-[10px] text-amber-500 font-bold uppercase tracking-wider mb-2">Suas Tarefas em Pausa</h4>
-                                <div className="flex flex-col gap-2">
+                        <div className="flex flex-col overflow-y-auto custom-scrollbar pr-1 gap-1">
+                            {/* LISTA DE PAUSADAS */}
+                            {showPausedTasks && minhasTarefasPausadas.length > 0 && (
+                                <div className="mb-2 flex flex-col gap-1 border-b border-gray-700/50 pb-2 animate-in fade-in slide-in-from-top-1">
                                     {minhasTarefasPausadas.map(task => (
-                                        <div key={task.id} className="flex items-center justify-between bg-white/5 border border-white/10 p-2.5 rounded-lg">
-                                            <div className="flex flex-col overflow-hidden mr-2">
-                                                <span className="text-[10px] text-gray-400 font-bold truncate">{task.storeName}</span>
-                                                <span className="text-xs text-gray-200 truncate" title={task.texto}>{task.texto}</span>
+                                        <div key={task.id} className="flex items-center justify-between bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/10 p-2 rounded-lg transition-colors">
+                                            <div className="flex flex-col overflow-hidden pr-2">
+                                                <span className="text-[9px] text-amber-500/70 font-bold uppercase tracking-widest truncate">{task.storeName}</span>
+                                                <span className="text-[11px] text-gray-300 font-medium truncate" title={task.texto}>{task.texto}</span>
                                             </div>
                                             <button 
                                                 onClick={(e) => handleToggleTimer(e, task.storeId, task.id)}
-                                                className="p-1.5 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/40 rounded border border-emerald-500/30 transition-colors shrink-0 shadow-sm"
+                                                className="w-6 h-6 flex items-center justify-center bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-md transition-colors shrink-0"
                                                 title="Retomar Tarefa"
                                             >
-                                                <Play size={14} />
+                                                <Play size={12} className="ml-0.5" />
                                             </button>
                                         </div>
                                     ))}
                                 </div>
-                            </div>
-                        )}
-                        
-                        {Object.keys(liveStatus).length > 0 ? (
-                            <div className="grid grid-cols-1 gap-3.5">
-                                {Object.entries(liveStatus).map(([userName, data]) => {
+                            )}
+                            
+                            {/* LISTA DE ATIVAS */}
+                            {Object.keys(liveStatus).length > 0 ? (
+                                Object.entries(liveStatus).map(([userName, data]) => {
                                     const isPaused = data.texto?.includes('⏸️');
-                                    
                                     const memberData = teamMembers?.find(m => m.nomeCompleto === userName || m.nome === userName);
                                     const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
                                     const userPhoto = memberData?.avatarUrl || null;
@@ -1192,82 +1223,76 @@ export default function TeamFeedView({
                                                     if (targetStore && openTaskModal) openTaskModal(targetStore);
                                                 }
                                             }}
-                                            className={`bg-gray-900/80 p-4 rounded-xl border flex items-center gap-4 relative overflow-hidden cursor-pointer transition-colors ${
-                                                isPaused ? 'border-amber-500/30 hover:border-amber-500' : 'border-gray-700 hover:border-emerald-500'
-                                            }`}>
-                                            <div className={`absolute top-0 left-0 h-full w-1.5 transition-all ${
-                                                isPaused ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
-                                            }`}></div>
-                                            
-                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
-                                                {userPhoto ? (
-                                                    <img src={userPhoto} alt={userName} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    userName.charAt(0).toUpperCase()
-                                                )}
-                                            </div>
-
-                                            <div className="flex-1">
-                                                <div className="text-sm font-bold text-white flex items-center justify-between mb-1">
-                                                    <span className="uppercase tracking-wider flex items-center gap-2">
-                                                        {userName}
-                                                    </span>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-                                                            isPaused ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-500/70 bg-emerald-500/10'
-                                                        }`}>
-                                                            {data.timestamp}
-                                                        </span>
-                                                        
-                                                        {userName === myName && (
-                                                            <button 
-                                                                onClick={(e) => handleCompleteFromRadar(e, data.storeId, userName)}
-                                                                className="p-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/40 transition-colors shadow-sm"
-                                                                title="Concluir Tarefa"
-                                                            >
-                                                                <CheckCircle size={14} />
-                                                            </button>
+                                            className="group flex flex-col py-2.5 border-b border-gray-700/50 last:border-0 hover:bg-white/[0.02] transition-colors cursor-pointer"
+                                        >
+                                            <div className="flex items-center justify-between w-full mb-1.5">
+                                                <div className="flex items-center gap-2 overflow-hidden">
+                                                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isPaused ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]'}`}></div>
+                                                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shadow-sm bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
+                                                        {userPhoto ? (
+                                                            <img src={userPhoto} alt={userName} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            userName.substring(0, 2).toUpperCase()
                                                         )}
                                                     </div>
+                                                    <span className="text-xs font-bold text-gray-200 truncate group-hover:text-white transition-colors">
+                                                        {userName}
+                                                    </span>
                                                 </div>
-                                                <p className={`text-xs mt-1 font-medium leading-relaxed transition-all duration-300 ${
-                                                    (data.taskId && animatingTasks.includes(data.taskId)) 
-                                                        ? 'text-gray-500 line-through opacity-60' 
-                                                        : 'text-gray-300'
-                                                }`}>
-                                                    {data.texto}
-                                                </p>
+                                                
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/40 ${isPaused ? 'text-amber-400 border border-amber-500/20' : 'text-emerald-500 border border-emerald-500/20'}`}>
+                                                        {data.timestamp}
+                                                    </span>
+                                                    {userName === myName && (
+                                                        <button 
+                                                            onClick={(e) => handleCompleteFromRadar(e, data.storeId, userName)}
+                                                            className="w-5 h-5 flex items-center justify-center rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-colors"
+                                                            title="Concluir Tarefa"
+                                                        >
+                                                            <CheckCircle size={12} />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
+                                            
+                                            <p className={`text-[11px] font-medium leading-tight pl-3.5 transition-all duration-300 line-clamp-2 ${
+                                                (data.taskId && animatingTasks.includes(data.taskId)) 
+                                                    ? 'text-gray-600 line-through' 
+                                                    : isPaused ? 'text-gray-400' : 'text-gray-300'
+                                            }`}>
+                                                {data.texto}
+                                            </p>
                                         </div>
                                     );
-                                })}
-                            </div>
-                        ) : (
-                            <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-700 rounded-xl bg-gray-900/30">
-                                <Activity size={32} className="text-gray-600 mb-3" />
-                                <p className="text-sm text-gray-500 font-medium italic text-center">Ninguém está executando tarefas rastreadas no momento.</p>
-                            </div>
-                        )}
+                                })
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-6 text-gray-500 text-xs font-medium text-center h-full">
+                                    <Activity size={20} className="opacity-30 mb-2" />
+                                    <span>Nenhuma tarefa ativa no momento.</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {/* RANKING DE EXECUÇÃO COM HISTÓRICO EXPANSÍVEL */}
-                    <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
-                        <div className="mb-4 border-b border-gray-700 pb-4 flex justify-between items-center">
-                            <h3 className="text-lg font-bold tracking-wide text-blue-400 uppercase flex items-center gap-2">
-                                🏆 Ranking da Equipe
+                    <div className="bg-gray-800/80 p-4 xl:p-5 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
+                        <div className="mb-3 border-b border-gray-700 pb-3 flex justify-between items-center">
+                            <h3 className="text-sm font-bold tracking-wider text-blue-400 uppercase flex items-center gap-1.5">
+                                🏆 Ranking
                             </h3>
                             <select
                                 value={rankingPeriod}
                                 onChange={e => setRankingPeriod(e.target.value)}
-                                className="bg-gray-900 border border-gray-700 text-[10px] font-bold text-gray-300 rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer shadow-inner"
+                                className="bg-transparent text-[10px] font-bold text-gray-400 hover:text-white outline-none cursor-pointer text-right"
                             >
-                                <option value="hoje">HOJE</option>
-                                <option value="semana">ESTA SEMANA</option>
-                                <option value="mes">ESTE MÊS</option>
+                                <option value="hoje" className="bg-gray-900">HOJE</option>
+                                <option value="semana" className="bg-gray-900">SEMANA</option>
+                                <option value="mes" className="bg-gray-900">MÊS</option>
                             </select>
                         </div>
                         
-                        <div className="space-y-3 pr-2">
+                        <div className="flex flex-col">
                             {rankingEquipe.map((rank, i) => {
                                 const memberData = teamMembers?.find(m => m.nomeCompleto === rank.name || m.nome === rank.name);
                                 const userColor = memberData?.avatarColor || 'from-indigo-500 to-purple-600';
@@ -1275,14 +1300,14 @@ export default function TeamFeedView({
                                 const isExpanded = expandedUserXP === rank.name;
 
                                 return (
-                                    <div key={rank.name} className="bg-gray-900 p-3.5 rounded-xl border border-gray-700 flex flex-col gap-2 hover:border-gray-500 transition-colors cursor-pointer" onClick={() => setExpandedUserXP(isExpanded ? null : rank.name)}>
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <span className={`w-6 h-6 rounded-full text-[10px] font-black flex items-center justify-center shadow-inner shrink-0 ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-white border border-yellow-300' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
+                                    <div key={rank.name} className="group flex flex-col gap-2 py-2.5 border-b border-gray-700/50 last:border-0 hover:bg-white/[0.02] transition-colors cursor-pointer" onClick={() => setExpandedUserXP(isExpanded ? null : rank.name)}>
+                                        <div className="flex items-center justify-between w-full">
+                                            <div className="flex items-center gap-2.5 overflow-hidden">
+                                                <span className={`text-[10px] font-black w-3 text-center shrink-0 ${i === 0 ? 'text-amber-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-orange-400' : 'text-gray-600'}`}>
                                                     {i + 1}
                                                 </span>
                                                 
-                                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
+                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-sm bg-gradient-to-br ${userColor} overflow-hidden shrink-0`}>
                                                     {userPhoto ? (
                                                         <img src={userPhoto} alt={rank.name} className="w-full h-full object-cover" />
                                                     ) : (
@@ -1290,85 +1315,70 @@ export default function TeamFeedView({
                                                     )}
                                                 </div>
 
-                                                <div>
-                                                    <p className="text-sm font-bold text-gray-200 leading-none flex items-center gap-1.5">
-                                                        {rank.name} {isExpanded ? <ChevronUp size={14} className="text-gray-500"/> : <ChevronDown size={14} className="text-gray-500"/>}
-                                                    </p>
-                                                    <p className="text-xs text-amber-500 font-bold mt-1">{rank.points} XP</p>
-                                                </div>
+                                                <span className="text-xs font-bold text-gray-200 truncate group-hover:text-white transition-colors">{rank.name}</span>
                                             </div>
-                                            <div className="text-right">
-                                                <span className="text-xs text-gray-300 font-bold bg-white/5 px-2.5 py-1 rounded-lg border border-white/5 flex items-center gap-1">
-                                                    {rank.tasks} <CheckCircle size={14} className="text-emerald-500"/>
+                                            
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <span className="text-[10px] text-amber-500 font-bold">{rank.points} XP</span>
+                                                <span className="text-[9px] text-gray-400 font-bold bg-black/40 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                                    {rank.tasks} <CheckCircle size={10} className="text-emerald-500"/>
                                                 </span>
                                             </div>
                                         </div>
-                                        
-                                        <div className="bg-black/40 rounded-lg px-3 py-2 flex justify-between items-center mt-1">
-                                            <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1.5"><Clock size={12}/> Tempos Médios</span>
-                                            <div className="flex gap-2 text-[10px] font-bold">
-                                                <span className={rank.avgBaixa > 0 ? 'text-emerald-400' : 'text-gray-600'}>🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}</span>
-                                                <span className={rank.avgMedia > 0 ? 'text-amber-400' : 'text-gray-600'}>🟡 {rank.avgMedia > 0 ? `${rank.avgMedia}m` : '--'}</span>
-                                                <span className={rank.avgAlta > 0 ? 'text-red-400' : 'text-gray-600'}>🔴 {rank.avgAlta > 0 ? `${rank.avgAlta}m` : '--'}</span>
-                                            </div>
-                                        </div>
 
-                                        {/* CAIXA DE AUDITORIA DE XP EXPANSÍVEL */}
+                                        {/* CAIXA DE AUDITORIA DE XP EXPANSÍVEL (Sem bordas agressivas) */}
                                         {isExpanded && (
-                                            <div className="mt-2 pt-2 border-t border-gray-700/50 flex flex-col gap-2 cursor-default" onClick={(e) => e.stopPropagation()}>
-                                                <h5 className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Extrato de XP</h5>
+                                            <div className="mt-1 pl-6 pr-1 flex flex-col gap-2 cursor-default animate-in fade-in slide-in-from-top-1" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex gap-2 text-[9px] font-bold bg-black/20 p-1.5 rounded text-center justify-between mb-1 border border-white/5">
+                                                    <span className={rank.avgBaixa > 0 ? 'text-emerald-400' : 'text-gray-600'}>🟢 {rank.avgBaixa > 0 ? `${rank.avgBaixa}m` : '--'}</span>
+                                                    <span className={rank.avgMedia > 0 ? 'text-amber-400' : 'text-gray-600'}>🟡 {rank.avgMedia > 0 ? `${rank.avgMedia}m` : '--'}</span>
+                                                    <span className={rank.avgAlta > 0 ? 'text-red-400' : 'text-gray-600'}>🔴 {rank.avgAlta > 0 ? `${rank.avgAlta}m` : '--'}</span>
+                                                </div>
+
                                                 {rank.history.length > 0 ? rank.history.map((hItem) => (
-                                                    <div key={hItem.id} className="bg-black/30 p-2 rounded flex justify-between items-start gap-2">
+                                                    <div key={hItem.id} className="flex justify-between items-start gap-2 py-1 border-b border-gray-700/30 last:border-0">
                                                         <div className="flex-1">
-                                                            <p className="text-[11px] text-gray-300 font-medium leading-tight">{hItem.desc}</p>
-                                                            {hItem.details && <p className="text-[9px] text-gray-500 mt-0.5">{hItem.details}</p>}
+                                                            <p className="text-[10px] text-gray-400 font-medium leading-tight">{hItem.desc}</p>
+                                                            {hItem.details && <p className="text-[8px] text-gray-600 mt-0.5 uppercase tracking-wide">{hItem.details}</p>}
                                                         </div>
-                                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${hItem.points > 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                                                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded bg-black/40 ${hItem.points > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                                             {hItem.points > 0 ? '+' : ''}{hItem.points}
                                                         </span>
                                                     </div>
                                                 )) : (
-                                                    <p className="text-[10px] text-gray-500 italic text-center py-2">Nenhum evento registrado.</p>
+                                                    <p className="text-[9px] text-gray-600 italic text-center py-1">Nenhum evento.</p>
                                                 )}
                                             </div>
                                         )}
                                     </div> 
                                 );
                             })}
-                            {rankingEquipe.length === 0 && <div className="text-center p-6 text-gray-500 italic text-sm border border-dashed border-gray-700 rounded-xl mt-4">Nenhuma entrega registrada neste período.</div>}
-                        </div>
-
-                        <div className="mt-4 pt-4 border-t border-gray-700/50 text-[10px] text-gray-400 text-center leading-relaxed">
-                            <strong>XP Base:</strong> Baixa (+10) • Média (+20) • Alta (+30) | <strong>Criação:</strong> (+2 XP)<br/>
-                            <strong>Prazos:</strong> No prazo (+5) • Atrasada (-10)<br/>
-                            <strong>Agilidade:</strong> Rápida (+5) • Na média (0) • Lenta (-5)
+                            {rankingEquipe.length === 0 && <div className="text-center py-4 text-gray-500 italic text-xs">Nenhuma entrega no período.</div>}
                         </div>
                     </div>
 
                     {/* RADAR DE PACING */}
-                    <div className="bg-gray-800/80 p-6 rounded-2xl border border-gray-700 shadow-lg overflow-hidden flex flex-col max-h-[400px]">
-                        <h3 className="text-lg font-bold text-amber-400 uppercase tracking-wide flex items-center gap-2 mb-5 shrink-0">
-                            <AlertTriangle size={18} /> Radar de Pacing
+                    <div className="bg-gray-800/80 p-4 xl:p-5 rounded-2xl border border-gray-700 shadow-lg overflow-hidden flex flex-col max-h-[400px]">
+                        <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5 mb-3 shrink-0">
+                            <AlertTriangle size={14} /> Faturamento em Risco
                         </h3>
                         
-                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                        <div className="flex flex-col overflow-y-auto custom-scrollbar pr-1">
                             {pacingLogs.map((log, i) => (
-                            <div key={i} className={`flex flex-col gap-2 p-3 rounded-xl border backdrop-blur-md transition-all ${log.type === 'danger' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
-                                <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-lg shrink-0 ${log.type === 'danger' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                                    {log.type === 'danger' ? <AlertTriangle size={14} /> : <Clock size={14} />}
+                            <div key={i} className="flex items-center justify-between py-2.5 border-b border-gray-700/50 last:border-0 hover:bg-white/[0.02] transition-colors">
+                                <div className="flex items-center gap-2.5 overflow-hidden">
+                                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${log.type === 'danger' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]'}`}></div>
+                                    <span className="text-xs font-bold text-gray-200 truncate">{log.client}</span>
                                 </div>
-                                <div className="flex-1">
-                                    <h4 className="font-bold text-white text-xs truncate" title={log.client}>{log.client}</h4>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">Operando a <strong className={log.type === 'danger' ? 'text-red-400' : 'text-amber-400'}>{log.percentReached.toFixed(1)}%</strong> da meta.</p>
-                                </div>
-                                </div>
+                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded bg-black/40 shrink-0 ${log.type === 'danger' ? 'text-red-400 border border-red-500/20' : 'text-amber-400 border border-amber-500/20'}`}>
+                                    {log.percentReached.toFixed(1)}%
+                                </span>
                             </div>
                             ))}
                             {pacingLogs.length === 0 && (
-                            <div className="flex flex-col items-center justify-center gap-3 p-6 text-emerald-400 text-sm font-medium text-center h-full bg-gray-900/30 rounded-xl border border-dashed border-gray-700">
-                                <CheckCircle size={28} className="opacity-50" /> 
-                                <span>Tudo verde! Todas as contas no ritmo da meta.</span>
+                            <div className="flex flex-col items-center justify-center gap-2 py-6 text-emerald-400 text-xs font-medium text-center h-full">
+                                <CheckCircle size={20} className="opacity-50" /> 
+                                <span>Todas as contas batendo a meta diária.</span>
                             </div>
                             )}
                         </div>

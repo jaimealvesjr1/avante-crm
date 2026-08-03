@@ -53,7 +53,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.2.4';
+  const CURRENT_VERSION = '3.2.5';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -1184,6 +1184,37 @@ export default function App() {
         docPdf.save(`B2X_${clientName}_Relatorio_${monthInput.replace('/', '-')}.pdf`);
       }
     }
+
+    if (formats.excel) {
+      // 1. Array para acumular todas as linhas da planilha
+      const excelData = [];
+
+      // 2. Monta as linhas iterando pelos clientes
+      for (const clientName of clientNames) {
+        const clientStores = clientsGroup[clientName];
+
+        clientStores.forEach(store => {
+          excelData.push({
+            'Cliente': store.client || '-',
+            'Loja': store.store || '-',
+            'Marketplace': store.marketplace || '-',
+            'Faturamento (R$)': store.reportGmv || 0,
+            'Investimento Ads (R$)': store.reportAds || 0,
+            'Pedidos': store.reportOrders || 0,
+            'Unidades': store.reportUnits || 0,
+            'Status': store.arquivada ? 'Arquivada' : 'Ativa'
+          });
+        });
+      }
+
+      // 3. Cria a planilha utilizando a biblioteca XLSX já importada
+      const worksheet = XLSX.utils.json_to_sheet(excelData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Relatorio");
+
+      // 4. Força o download agrupado em um único arquivo
+      XLSX.writeFile(workbook, `B2X_Relatorio_Geral_${monthInput.replace('/', '-')}.xlsx`);
+    }
   };
 
   const handleCustomExport = async ({ json, pdf, excel, monthInput, showAgencyFee }) => {
@@ -1634,7 +1665,7 @@ export default function App() {
       )}      
       
       <header className="sticky top-0 z-40 bg-[#0B0F19]/50 backdrop-blur-xl border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.3)]">
-        <div className="w-full px-3 md:px-6 2xl:px-12 mx-auto h-16 flex items-center justify-between gap-3 overflow-hidden flex-nowrap">
+        <div className="w-full max-w-[1920px] px-3 md:px-6 2xl:px-12 mx-auto h-16 flex items-center justify-between gap-3 overflow-hidden flex-nowrap">
           
           {/* LOGO - Esconde o texto "AVANTE HUB" em monitores verticais/mobile */}
           <div className="flex items-center gap-3 shrink-0">
@@ -1775,18 +1806,17 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 w-full px-4 md:px-8 2xl:px-12 pt-6 relative mx-auto">
+      <main className="flex-1 w-full max-w-[1920px] px-4 md:px-8 2xl:px-12 pt-6 relative mx-auto">
         <ErrorBoundary>
           {['dashboard', 'operacional', 'feed_equipe', 'financeiro', 'war_room'].includes(activeView) && (
             <div className="sticky top-[70px] md:top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-3 xl:p-5 rounded-2xl xl:rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
-              <div className="flex items-center gap-3 justify-between w-full flex-nowrap overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                
-                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+              <div className="flex flex-wrap lg:flex-nowrap items-center gap-4 justify-between w-full">
+                <div className="flex items-center gap-3 flex-1 min-w-[280px] w-full lg:w-auto">
                   <div className="relative w-full">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                     <input 
                       type="text" 
-                      placeholder="Buscar conta ou loja..." 
+                      placeholder="Buscar cliente, loja ou tarefa..." 
                       value={searchTerm} 
                       onChange={(e) => setSearchTerm(e.target.value)} 
                       className="w-full bg-black/20 border border-white/10 text-white rounded-xl py-2 pl-10 pr-4 outline-none focus:border-indigo-500 text-sm shadow-inner transition-all" 
@@ -1972,7 +2002,7 @@ export default function App() {
       </main>
 
       <footer className="w-full border-t border-white/5 bg-black/40 py-6 mt-auto shrink-0 z-20 relative">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 2xl:px-12 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="w-full max-w-[1920px] mx-auto px-4 md:px-8 2xl:px-12 flex flex-col md:flex-row items-center justify-between gap-4">
           
           {/* Lado Esquerdo: Logo completo da Ascentia */}
           <div className="flex items-center hover:cursor-pointer group">

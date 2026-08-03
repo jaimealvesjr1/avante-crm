@@ -6,6 +6,7 @@ export default function ExportModal({ isOpen, onClose, onExport, filterCount, al
   const [pdf, setPdf] = useState(true);
   const [excel, setExcel] = useState(true);
   const [json, setJson] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   
   const [monthInput, setMonthInput] = useState(() => {
     const today = new Date();
@@ -22,7 +23,7 @@ export default function ExportModal({ isOpen, onClose, onExport, filterCount, al
       return `${months[parseInt(month, 10) - 1]}/${year.slice(-2)}`;
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!pdf && !excel && !json) {
        return toast.error("Selecione pelo menos um formato de exportação.");
     }
@@ -31,14 +32,22 @@ export default function ExportModal({ isOpen, onClose, onExport, filterCount, al
         return toast.error("Por favor, selecione a Competência (Mês/Ano) para gerar os relatórios.");
     }
     
-    onExport({ 
-        json, 
-        pdf, 
-        excel, 
-        monthInput: (pdf || excel) ? formatToBankMonth(monthInput) : ''
-    });
+    setIsExporting(true); // Bloqueia o botão e mostra que está processando
     
-    onClose();
+    try {
+        await onExport({ 
+            json, 
+            pdf, 
+            excel, 
+            monthInput: (pdf || excel) ? formatToBankMonth(monthInput) : ''
+        });
+        
+        onClose(); // Só fecha o modal depois que o processo der certo
+    } catch (error) {
+        toast.error("Ocorreu um erro na exportação.");
+    } finally {
+        setIsExporting(false); // Libera o botão novamente
+    }
   };
 
   return (
@@ -110,8 +119,9 @@ export default function ExportModal({ isOpen, onClose, onExport, filterCount, al
           <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors">
             Cancelar
           </button>
-          <button onClick={handleExport} className="bg-orange-600 hover:bg-orange-500 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md transition-colors flex items-center gap-2">
-            <Download size={16} /> Baixar Arquivos
+          <button onClick={handleExport} disabled={isExporting} className={`text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md transition-colors flex items-center gap-2 ${isExporting ? 'bg-orange-400 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-500'}`}>
+            <Download size={16} className={isExporting ? "animate-bounce" : ""} /> 
+            {isExporting ? 'Gerando...' : 'Baixar Arquivos'}
           </button>
         </div>
       </div>
