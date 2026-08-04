@@ -89,7 +89,10 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       setMetricasFolha(prev => ({ 
         ...prev, 
         faturamentoBruto: target.ReceitaAgencia || 0,
-        metaAgenciaHistorica: mesFolha === 'Atual' ? dashboardData.agencyTarget : (prev.metaAgenciaHistorica || 0)
+        // CORREÇÃO AQUI: Tenta buscar a Meta do histórico, se não achar, zera para você digitar manualmente.
+        metaAgenciaHistorica: mesFolha === 'Atual' 
+          ? dashboardData.agencyTarget 
+          : (target.MetaAgencia || target.Meta || 0) 
       }));
     }
   }, [mesFolha, dashboardData]);

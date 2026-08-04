@@ -85,6 +85,7 @@ export default function App() {
   const [globalGrowth, setGlobalGrowth] = useState(10);
   const [clientGrowthMap, setClientGrowthMap] = useState({});
   const [marketplaceGrowthMap, setMarketplaceGrowthMap] = useState({});
+  const [historicalGoals, setHistoricalGoals] = useState([]);
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [currentDay, setCurrentDay] = useState(new Date().getDate());
   
@@ -321,6 +322,7 @@ export default function App() {
         if(data.globalGrowth !== undefined) setGlobalGrowth(data.globalGrowth);
         if(data.clientGrowthMap !== undefined) setClientGrowthMap(data.clientGrowthMap);
         if(data.marketplaceGrowthMap !== undefined) setMarketplaceGrowthMap(data.marketplaceGrowthMap);
+        if(data.historicalGoals !== undefined) setHistoricalGoals(data.historicalGoals);
         
         if(data.currentDay !== undefined) setCurrentDay(data.currentDay);
         if(data.competenceMonth) setCompetenceMonth(data.competenceMonth);
@@ -351,7 +353,7 @@ export default function App() {
                   Atualizar Agora
                 </button>
               </div>
-            ), { duration: Infinity, id: 'pwa-update-toast', icon: '🔄' });
+            ), { duration: Infinity, id: 'pwa-update-toast'});
           } else {
             toast.success(`Uma nova atualização (${data.versao}) foi lançada! Recarregue a página caso note instabilidades.`, {
               duration: 10000,
@@ -2159,6 +2161,7 @@ export default function App() {
         activeEvent={activeEvent}
         scheduledEvents={scheduledEvents}
         handleEventAction={handleEventAction}
+        historicalGoals={historicalGoals}
       />
     </div>
   );

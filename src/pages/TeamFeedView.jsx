@@ -38,21 +38,31 @@ export default function TeamFeedView({
         return saved ? JSON.parse(saved) : [];
     });
 
-    // Atualiza o armazenamento local sempre que uma notificação for ocultada
     useEffect(() => {
         localStorage.setItem('dismissedMentions', JSON.stringify(dismissedNotifs));
     }, [dismissedNotifs]);
 
-    // Filtra dinamicamente as tarefas que possuem @ + Nome do usuário logado
     const notifications = useMemo(() => {
         const notifs = [];
-        const myFirstName = myName.split(' ')[0]; // Pega o primeiro nome para a busca
+        const myFirstName = myName.split(' ')[0];
         
         stores.forEach(store => {
             if (store.arquivada) return;
             (store.checklists || []).forEach(task => {
-                // Verifica se a tarefa está pendente e possui @Nome Completo ou @PrimeiroNome
-                if (!task.feita && task.texto && (task.texto.includes(`@${myName}`) || task.texto.includes(`@${myFirstName}`))) {
+                
+                // CONDIÇÃO 1: Fui selecionado no dropdown de responsável por OUTRA pessoa
+                const isDelegatedToMe = (task.responsavel === myName || task.resp === myName) && task.criadoPor !== myName;
+                
+                // CONDIÇÃO 2: Fui mencionado manualmente no texto com @
+                const isMentionedInText = task.texto && (task.texto.includes(`@${myName}`) || task.texto.includes(`@${myFirstName}`));
+
+                const isRecurring = task.recorrencia && task.recorrencia !== 'none';
+
+                // CONDIÇÃO 3: Eu criei a tarefa, OUTRA pessoa concluiu, e NÃO é uma rotina
+                const iCreatedAndWasCompleted = task.feita && task.criadoPor === myName && (task.completedBy && task.completedBy !== myName) && !isRecurring;
+
+                // PROCESSA PENDENTES (Fazer)
+                if (!task.feita && (isDelegatedToMe || isMentionedInText)) {
                     if (!dismissedNotifs.includes(task.id)) {
                         notifs.push({
                             id: task.id,
@@ -60,13 +70,31 @@ export default function TeamFeedView({
                             storeName: store.store,
                             text: task.texto,
                             time: task.data ? `${task.data.split('-').reverse().join('/')} ${task.hora || ''}` : 'Sem prazo',
-                            type: 'mention'
+                            type: 'mention',
+                            sortKey: task.id
+                        });
+                    }
+                } 
+                // PROCESSA CONCLUÍDAS (Aviso de finalização)
+                else if (iCreatedAndWasCompleted) {
+                    const notifId = `${task.id}_completed`; // Modifica o ID para não dar conflito se já foi ocultada antes
+                    if (!dismissedNotifs.includes(notifId)) {
+                        notifs.push({
+                            id: notifId,
+                            storeId: store.id,
+                            storeName: store.store,
+                            text: `✅ ${task.completedBy.split(' ')[0]} concluiu: "${task.texto}"`,
+                            time: task.completedAtFull ? new Date(task.completedAtFull).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}) : 'Concluída',
+                            type: 'completed',
+                            sortKey: task.id
                         });
                     }
                 }
             });
         });
-        return notifs;
+        
+        // Ordena usando a chave de criação para os mais recentes ficarem no topo
+        return notifs.sort((a, b) => b.sortKey - a.sortKey);
     }, [stores, myName, dismissedNotifs]);
 
     // Função para ocultar a notificação sem abrir o modal
@@ -748,7 +776,7 @@ export default function TeamFeedView({
             <div className="grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-10 gap-4 xl:gap-6 items-start">
                 
                 {/* COLUNA ESQUERDA (10% no Ultrawide)*/}
-                <div className="lg:col-span-3 xl:col-span-2 min-[1920px]:col-span-1 flex flex-col gap-3 sticky top-[100px]">
+                <div className="lg:col-span-3 xl:col-span-2 min-[1920px]:col-span-1 flex flex-col gap-3 sticky top-[170px]">
                     <h3 className="text-[12px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 pl-1">
                         <Activity size={14} /> Notificações
                     </h3>
@@ -757,13 +785,16 @@ export default function TeamFeedView({
                         {notifications.length > 0 ? notifications.map(notif => (
                             <div 
                                 key={notif.id} 
-                                onClick={() => handleOpenStore(notif.storeName)} // Redireciona para o modal da loja
+                                onClick={() => {
+                                    handleOpenStore(notif.storeName);
+                                    setDismissedNotifs(prev => [...prev, notif.id]);
+                                }}
                                 className="bg-white/5 border border-white/10 p-2.5 rounded-xl cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all relative group shadow-sm"
                                 title={`Abrir tarefas da loja ${notif.storeName}`}
                             >
                                 <div 
                                     className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                                    onClick={(e) => handleDismissNotif(e, notif.id)} // Ignora o clique principal e apenas oculta
+                                    onClick={(e) => handleDismissNotif(e, notif.id)}
                                 >
                                     <X size={12} className="text-gray-500 hover:text-red-400" />
                                 </div>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Target, Save, TrendingUp, ShoppingBag, Briefcase, Globe, ArrowRight, CalendarDays, Play, Trash2, Flame, Download } from 'lucide-react';
+import { X, Target, Save, TrendingUp, ShoppingBag, Briefcase, Globe, ArrowRight, CalendarDays, Play, Trash2, Flame, Download, History } from 'lucide-react';
 import { doc, writeBatch, deleteField } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
 import { formatCurrency, formatNumber } from '../../utils/financeUtils';
@@ -8,10 +8,12 @@ import autoTable from 'jspdf-autotable';
 
 export default function GoalsSettingsModal({ 
   isOpen, onClose, stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, 
-  formatCurrency, db, activeEvent, scheduledEvents, handleEventAction 
+  historicalGoals = [], formatCurrency, db, activeEvent, scheduledEvents, handleEventAction 
 }) {
   if (!isOpen) return null;
 
+  const [localHistoricalGoals, setLocalHistoricalGoals] = useState([...historicalGoals]);
+  const [goalForm, setGoalForm] = useState({ month: '', level: 'Agência', targetValue: '' });
   const [activeTab, setActiveTab] = useState('global');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -21,6 +23,7 @@ export default function GoalsSettingsModal({
   const [localStoreMap, setLocalStoreMap] = useState({});
 
   const [eventForm, setEventForm] = useState({ name: '', target: '', date: '', channels: [] });
+  const clients = useMemo(() => [...new Set(stores.map(s => s.client))].filter(Boolean).sort(), [stores]);
   const getLocalStoreData = (store) => {
     if (localStoreMap[store.id]) return localStoreMap[store.id];
     return {
@@ -56,6 +59,23 @@ export default function GoalsSettingsModal({
     return { base, target: base * (1 + (rate / 100)), rate, rule: 'Acumulada' };
   };
 
+  const handleAddHistoricalGoal = () => {
+    if(!goalForm.month || !goalForm.targetValue) return toast.error("Preencha o mês e o valor.");
+    setLocalHistoricalGoals(prev => [...prev, { ...goalForm, id: Date.now() }]);
+    setGoalForm({ month: '', level: 'Agência', targetValue: '' });
+  };
+
+  const handleRemoveHistoricalGoal = (id) => {
+    setLocalHistoricalGoals(prev => prev.filter(g => g.id !== id));
+  };
+
+  const formatMonthLabel = (val) => {
+    if (!val) return '';
+    const [year, month] = val.split('-');
+    const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    return `${meses[parseInt(month) - 1]}/${year.slice(-2)}`;
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
@@ -64,7 +84,8 @@ export default function GoalsSettingsModal({
       batch.set(doc(db, "settings", "global"), {
         globalGrowth: Number(localGlobal),
         clientGrowthMap: localClientMap,
-        marketplaceGrowthMap: localMktMap
+        marketplaceGrowthMap: localMktMap,
+        historicalGoals: localHistoricalGoals
       }, { merge: true });
 
       Object.entries(localStoreMap).forEach(([storeId, val]) => {
@@ -211,7 +232,6 @@ export default function GoalsSettingsModal({
       }
   };
 
-  const clients = useMemo(() => [...new Set(stores.map(s => s.client))].filter(Boolean).sort(), [stores]);
   const activeMkts = useMemo(() => [...new Set(stores.map(s => s.marketplace?.toUpperCase()))].filter(Boolean).sort(), [stores]);
 
   return (
@@ -273,6 +293,69 @@ export default function GoalsSettingsModal({
                       <p className="text-2xl font-black text-indigo-400">{formatCurrency(stores.reduce((acc, s) => acc + calculateTarget(s, true).target, 0))}</p>
                     </div>
                   </div>
+                </div>
+
+                <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl shadow-sm mt-6">
+                  <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                    <History size={18} className="text-indigo-400"/> Histórico de Metas (Faturamento Real)
+                  </h3>
+                  <p className="text-sm text-gray-400 mb-6">Registre as metas fixas de meses anteriores para a Agência inteira ou para Clientes específicos.</p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-black/20 p-4 rounded-xl border border-white/5">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Mês/Ano</label>
+                      <input type="month" value={goalForm.month} onChange={e => setGoalForm({...goalForm, month: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 outline-none focus:border-indigo-500 text-sm mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Nível da Meta</label>
+                      <select value={goalForm.level} onChange={e => setGoalForm({...goalForm, level: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 outline-none focus:border-indigo-500 text-sm mt-1 cursor-pointer">
+                        <option className="bg-gray-900" value="Agência">Agência (Global)</option>
+                        {clients.map(c => <option className="bg-gray-900" key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Valor da Meta (R$)</label>
+                      <input type="number" value={goalForm.targetValue} onChange={e => setGoalForm({...goalForm, targetValue: e.target.value})} placeholder="Ex: 500000" className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 outline-none focus:border-indigo-500 text-sm mt-1" />
+                    </div>
+                    <div className="flex items-end">
+                      <button onClick={handleAddHistoricalGoal} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md transition-colors">
+                        Adicionar ao Histórico
+                      </button>
+                    </div>
+                  </div>
+
+                  {localHistoricalGoals.length > 0 ? (
+                    <div className="overflow-x-auto custom-scrollbar border border-white/5 rounded-xl">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-black/40 text-gray-400 text-[10px] uppercase tracking-wider">
+                          <tr>
+                            <th className="p-3 pl-4">Competência</th>
+                            <th className="p-3">Nível</th>
+                            <th className="p-3 text-right">Meta (R$)</th>
+                            <th className="p-3 text-center pr-4">Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {localHistoricalGoals.sort((a,b) => b.month.localeCompare(a.month)).map(goal => (
+                            <tr key={goal.id} className="hover:bg-white/[0.02] transition-colors text-sm">
+                              <td className="p-3 pl-4 font-bold text-white">{formatMonthLabel(goal.month)}</td>
+                              <td className="p-3 font-bold text-gray-300">
+                                {goal.level === 'Agência' ? <span className="bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded text-xs">Agência (Global)</span> : goal.level}
+                              </td>
+                              <td className="p-3 text-right font-black text-emerald-400">{formatCurrency(Number(goal.targetValue))}</td>
+                              <td className="p-3 text-center pr-4">
+                                <button onClick={() => handleRemoveHistoricalGoal(goal.id)} className="p-1.5 text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg transition-colors">
+                                  <Trash2 size={16} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm text-center py-6 bg-black/20 rounded-xl border border-white/5 border-dashed">Nenhum histórico de metas registrado.</p>
+                  )}
                 </div>
               </div>
             )}
