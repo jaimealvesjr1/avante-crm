@@ -103,7 +103,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     const updatedChecklists = [...(store.checklists || []), item];
     const newNextAccess = calculateNextAccess(updatedChecklists);
 
-    let updatedLogs = store.taskLogs || [];
+    let updatedLogs = store.taskLogs ? [...store.taskLogs] : [];
     const resp = newChecklistResp.trim();
     if (resp && resp !== username) {
         updatedLogs.push({
@@ -194,10 +194,20 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
     const logOrigem = { id: Date.now(), data: new Date().toLocaleString('pt-BR'), texto: `📤 Nota duplicada para: ${destinationStore.store}`, author: username };
     const logDestino = { id: Date.now() + 1, data: new Date().toLocaleString('pt-BR'), texto: `📥 Nota recebida via duplicação: ${store.store}`, author: username };
 
-    saveChanges({ ...store, taskLogs: [...(store.taskLogs || []), logOrigem] });
+    const updatedOriginStore = { ...store, taskLogs: [...(store.taskLogs || []), logOrigem] };
     const updatedDestStore = { ...destinationStore, notasFixas: fixedNotes, taskLogs: [...(destinationStore.taskLogs || []), logDestino] };
+    
+    // 2. Dispara a gravação na nuvem para as duas lojas
+    updateStoreInCloud(updatedOriginStore);
     updateStoreInCloud(updatedDestStore);
-    setStores(stores.map(s => s.id === updatedDestStore.id ? updatedDestStore : s));
+    
+    // 3. Atualiza o estado local uma única vez, unindo as duas alterações no mesmo array
+    setStores(stores.map(s => {
+        if (s.id === updatedOriginStore.id) return updatedOriginStore;
+        if (s.id === updatedDestStore.id) return updatedDestStore;
+        return s;
+    }));
+    
     toast.success(`Nota duplicada para ${destinationStore.store}!`);
     setIsDuplicating(false); setDuplicateTargetId('');
   };

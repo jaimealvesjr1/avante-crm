@@ -53,12 +53,20 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.2.5';
+  const CURRENT_VERSION = '3.2.6';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
       if (!val) return 0;
-      return Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
+      
+      const cleaned = String(val).replace(/[^\d.,-]/g, '');
+      if (!cleaned) return 0;
+      
+      if (cleaned.includes(',')) {
+          return Number(cleaned.replace(/\./g, '').replace(',', '.')) || 0;
+      }
+      
+      return Number(cleaned) || 0;
   };
 
   const safeFormatCurrency = (val) => showValues ? formatCurrency(val) : 'R$ •••••';
@@ -623,15 +631,19 @@ export default function App() {
     
     if (isNaN(numericValue)) return;
 
-    const updatedStores = stores.map(s => {
+    // Dispara a atualização na nuvem separadamente para não cruzar com os ciclos de renderização do React
+    const targetStore = stores.find(s => s.id === id);
+    if (targetStore) {
+        updateStoreInCloud({ ...targetStore, [field]: numericValue });
+    }
+
+    // Atualiza o estado local de forma segura, garantindo a versão mais recente da matriz
+    setStores(prevStores => prevStores.map(s => {
       if (s.id === id) {
-        const novaLoja = { ...s, [field]: numericValue };
-        updateStoreInCloud(novaLoja);
-        return novaLoja;
+        return { ...s, [field]: numericValue };
       }
       return s;
-    });
-    setStores(updatedStores);
+    }));
   };
 
   const addNewStore = () => { setCreateModalClient(''); setCreateModalOpen(true); };
@@ -1101,20 +1113,6 @@ export default function App() {
     // Agrupa as lojas para que cada cliente tenha seu próprio relatório
     const clientsGroup = {};
     
-    const parseSafeNumber = (val) => {
-      if (typeof val === 'number') return val;
-      if (!val) return 0;
-      
-      const cleaned = String(val).replace(/[^\d.,-]/g, '');
-      if (!cleaned) return 0;
-      
-      if (cleaned.includes(',')) {
-          return Number(cleaned.replace(/\./g, '').replace(',', '.')) || 0;
-      }
-      
-      return Number(cleaned) || 0;
-  };
-
     const currentMonthBankFormat = normalizeMonthYear(competenceMonth);
     const isCurrentMonth = targetMonth === currentMonthBankFormat;
 
@@ -1665,7 +1663,7 @@ export default function App() {
       )}      
       
       <header className="sticky top-0 z-40 bg-[#0B0F19]/50 backdrop-blur-xl border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.3)]">
-        <div className="w-full max-w-[1920px] px-3 md:px-6 2xl:px-12 mx-auto h-16 flex items-center justify-between gap-3 overflow-hidden flex-nowrap">
+        <div className="w-full max-w-[2560px] px-3 md:px-6 2xl:px-12 min-[2000px]:px-16 mx-auto h-16 flex items-center justify-between gap-3 overflow-hidden flex-nowrap">
           
           {/* LOGO - Esconde o texto "AVANTE HUB" em monitores verticais/mobile */}
           <div className="flex items-center gap-3 shrink-0">
@@ -1806,7 +1804,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-[1920px] px-4 md:px-8 2xl:px-12 pt-6 relative mx-auto">
+      <main className="flex-1 w-full max-w-[2560px] px-4 md:px-8 2xl:px-12 min-[2000px]:px-16 pt-6 relative mx-auto flex flex-col">
         <ErrorBoundary>
           {['dashboard', 'operacional', 'feed_equipe', 'financeiro', 'war_room'].includes(activeView) && (
             <div className="sticky top-[70px] md:top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-3 xl:p-5 rounded-2xl xl:rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
@@ -2002,7 +2000,7 @@ export default function App() {
       </main>
 
       <footer className="w-full border-t border-white/5 bg-black/40 py-6 mt-auto shrink-0 z-20 relative">
-        <div className="w-full max-w-[1920px] mx-auto px-4 md:px-8 2xl:px-12 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="w-full max-w-[2560px] mx-auto px-4 md:px-8 2xl:px-12 min-[2000px]:px-16 flex flex-col md:flex-row items-center justify-between gap-4">
           
           {/* Lado Esquerdo: Logo completo da Ascentia */}
           <div className="flex items-center hover:cursor-pointer group">

@@ -31,7 +31,50 @@ export default function TeamFeedView({
 
     const [showVisitForm, setShowVisitForm] = useState(false);
     const [visitForm, setVisitForm] = useState({ id: null, client: '', date: '', time: '' });
-    const [notifications, setNotifications] = useState([]);
+    
+    // Gerenciamento de notificações dispensadas no localStorage para persistência
+    const [dismissedNotifs, setDismissedNotifs] = useState(() => {
+        const saved = localStorage.getItem('dismissedMentions');
+        return saved ? JSON.parse(saved) : [];
+    });
+
+    // Atualiza o armazenamento local sempre que uma notificação for ocultada
+    useEffect(() => {
+        localStorage.setItem('dismissedMentions', JSON.stringify(dismissedNotifs));
+    }, [dismissedNotifs]);
+
+    // Filtra dinamicamente as tarefas que possuem @ + Nome do usuário logado
+    const notifications = useMemo(() => {
+        const notifs = [];
+        const myFirstName = myName.split(' ')[0]; // Pega o primeiro nome para a busca
+        
+        stores.forEach(store => {
+            if (store.arquivada) return;
+            (store.checklists || []).forEach(task => {
+                // Verifica se a tarefa está pendente e possui @Nome Completo ou @PrimeiroNome
+                if (!task.feita && task.texto && (task.texto.includes(`@${myName}`) || task.texto.includes(`@${myFirstName}`))) {
+                    if (!dismissedNotifs.includes(task.id)) {
+                        notifs.push({
+                            id: task.id,
+                            storeId: store.id,
+                            storeName: store.store,
+                            text: task.texto,
+                            time: task.data ? `${task.data.split('-').reverse().join('/')} ${task.hora || ''}` : 'Sem prazo',
+                            type: 'mention'
+                        });
+                    }
+                }
+            });
+        });
+        return notifs;
+    }, [stores, myName, dismissedNotifs]);
+
+    // Função para ocultar a notificação sem abrir o modal
+    const handleDismissNotif = (e, notifId) => {
+        e.stopPropagation();
+        setDismissedNotifs(prev => [...prev, notifId]);
+    };
+
     const [expandedUserXP, setExpandedUserXP] = useState(null);
     const [showPausedTasks, setShowPausedTasks] = useState(false);
     const [rankingPeriod, setRankingPeriod] = useState('semana');
@@ -422,7 +465,8 @@ export default function TeamFeedView({
             const diff = today.getDate() - day + (day === 0 ? -6 : 1); 
             const monday = new Date(today.getFullYear(), today.getMonth(), diff);
             startMs = monday.getTime();
-            endMs = startMs + (7 * 86400000) - 1;         } else { 
+            endMs = startMs + (7 * 86400000) - 1;
+        } else { 
             const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
             startMs = firstDay.getTime();
             const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -706,30 +750,35 @@ export default function TeamFeedView({
                 {/* COLUNA ESQUERDA (10% no Ultrawide)*/}
                 <div className="lg:col-span-3 xl:col-span-2 min-[1920px]:col-span-1 flex flex-col gap-3 sticky top-[100px]">
                     <h3 className="text-[12px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 pl-1">
-                        <Activity size={14} /> Atualizações
+                        <Activity size={14} /> Notificações
                     </h3>
                     
                     <div className="flex flex-col gap-2">
                         {notifications.length > 0 ? notifications.map(notif => (
                             <div 
                                 key={notif.id} 
-                                onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
+                                onClick={() => handleOpenStore(notif.storeName)} // Redireciona para o modal da loja
                                 className="bg-white/5 border border-white/10 p-2.5 rounded-xl cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all relative group shadow-sm"
+                                title={`Abrir tarefas da loja ${notif.storeName}`}
                             >
-                                <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <X size={10} className="text-gray-500 hover:text-white" />
+                                <div 
+                                    className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                                    onClick={(e) => handleDismissNotif(e, notif.id)} // Ignora o clique principal e apenas oculta
+                                >
+                                    <X size={12} className="text-gray-500 hover:text-red-400" />
                                 </div>
                                 <div className="flex items-start gap-1.5">
                                     <div className={`mt-1.5 w-1 h-1 rounded-full shrink-0 ${notif.type === 'completed' ? 'bg-emerald-500' : 'bg-indigo-500 shadow-[0_0_5px_rgba(99,102,241,0.8)]'}`}></div>
                                     <div className="flex flex-col pr-3">
-                                        <p className="text-[12px] text-gray-300 font-medium leading-tight break-words">{notif.text}</p>
+                                        <p className="text-[10px] font-bold text-indigo-400 uppercase mb-0.5">{notif.storeName}</p>
+                                        <p className="text-[12px] text-gray-300 font-medium leading-tight break-words line-clamp-3">{notif.text}</p>
                                         <span className="text-[10px] text-gray-500 mt-1 font-bold">{notif.time}</span>
                                     </div>
                                 </div>
                             </div>
                         )) : (
                             <div className="text-center p-3 border border-dashed border-white/5 rounded-xl text-[12px] text-gray-500 italic">
-                                Nenhuma novidade.
+                                Nenhuma menção pendente.
                             </div>
                         )}
                     </div>

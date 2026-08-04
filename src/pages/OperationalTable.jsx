@@ -33,7 +33,7 @@ export default function OperationalTable({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 min-[1920px]:grid-cols-4 min-[2560px]:grid-cols-5 gap-6 items-start animate-in fade-in duration-500">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[2000px]:grid-cols-5 gap-6 items-start animate-in fade-in duration-500">
       {filteredGroups.length > 0 ? filteredGroups.map((group) => {
         const isExpanded = expandedClients.includes(group.client);
         const clientStatusClass = getStatusColor(group.status);
@@ -127,7 +127,7 @@ export default function OperationalTable({
 
             {/* LOJAS DO CLIENTE EM GRID COM NOVOS CARDS (E EDIÇÃO INLINE) */}
             {isExpanded && (
-            <div className="bg-black/20 border-t border-white/5 p-4 md:p-6 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 min-[1920px]:grid-cols-4 gap-4">
+            <div className="bg-black/20 border-t border-white/5 p-4 md:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[2000px]:grid-cols-6 gap-4">
               {[...group.stores].sort((a, b) => a.store.localeCompare(b.store, undefined, { numeric: true, sensitivity: 'base' })).map((row) => {
                 const isEditing = editingStoreId === row.id;
 
@@ -204,15 +204,15 @@ export default function OperationalTable({
                       <>
                         {/* CABEÇALHO DO CARD: Minimalista e direto ao ponto */}
                         <div className="flex items-start justify-between gap-2 w-full">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-col items-start gap-1.5 flex-1 pr-2">
                             <span 
                               onClick={(e) => { e.stopPropagation(); if(openTaskModal) openTaskModal(row); }}
-                              className="font-bold text-white hover:text-indigo-400 text-[15px] cursor-pointer transition-colors leading-none truncate max-w-[160px]"
+                              className="font-bold text-white hover:text-indigo-400 text-[15px] cursor-pointer transition-colors leading-tight"
                               title="Abrir Tarefas e Senhas"
                             >
                               {row.store}
                             </span>
-                            {row.marketplace && <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 rounded text-[9px] uppercase font-bold tracking-widest">{row.marketplace}</span>}
+                            {row.marketplace && <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 rounded text-[9px] uppercase font-bold tracking-widest w-fit">{row.marketplace}</span>}
                           </div>
 
                           {/* Botões simplificados, sem bordas pesadas e fundos brigando por atenção */}

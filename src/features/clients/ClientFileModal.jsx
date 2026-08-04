@@ -32,6 +32,7 @@ export default function ClientFileModal({
   const [editingProductData, setEditingProductData] = useState(null);
   const [showProductHistoryId, setShowProductHistoryId] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null); 
+  const [marketplaceFilter, setMarketplaceFilter] = useState('all');
 
   // Tarefas e Acessos
   const [newLog, setNewLog] = useState('');
@@ -690,11 +691,30 @@ export default function ClientFileModal({
                         <th className="p-4 text-emerald-400">Pedidos</th>
                         <th className="p-4 text-purple-400">Unidades</th>
                         <th className="p-4 text-amber-400">Ads Acumulado</th>
-                        <th className="p-4 text-right">Ação</th>
+                        {/* Nova Coluna de Ação com o Filtro de Marketplace */}
+                        <th className="p-4 text-right flex items-center justify-end gap-2">
+                          <select 
+                            value={marketplaceFilter} 
+                            onChange={e => setMarketplaceFilter(e.target.value)}
+                            className="bg-gray-800 text-white text-[9px] rounded p-1 outline-none border border-gray-600 focus:border-indigo-500 cursor-pointer"
+                          >
+                            <option value="all">TODOS OS CANAIS</option>
+                            {/* Cria as opções do select com base nos marketplaces únicos cadastrados nestas lojas */}
+                            {Array.from(new Set(liveStores.map(s => s.marketplace).filter(Boolean))).map(mkt => (
+                               <option key={mkt} value={mkt}>{mkt.toUpperCase()}</option>
+                            ))}
+                          </select>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
-                      {liveStores.map(store => (
+                      {/* Aplicamos o .filter() antes do .map() para mostrar apenas os canais selecionados */}
+                      {liveStores
+                        .filter(store => 
+                          marketplaceFilter === 'all' || 
+                          (store.marketplace && store.marketplace.toLowerCase() === marketplaceFilter.toLowerCase())
+                        )
+                        .map(store => (
                         <StoreEntryRow 
                           key={store.id} 
                           store={store} 

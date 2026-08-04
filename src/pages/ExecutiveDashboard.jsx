@@ -175,17 +175,13 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 w-full">
-      
       {/* BARRA SUPERIOR (META) */}
       {renderGlobalProgressBar()}
-
-      <div className="flex flex-col xl:flex-row gap-6 w-full">
-        
-        {/* COLUNA ESQUERDA (3/4 de largura) */}
-        <div className="flex flex-col gap-6 xl:w-3/4">
-          
+      <div className="flex flex-col lg:flex-row gap-6 w-full items-start">
+        {/* COLUNA ESQUERDA (Gráficos e Cards) */}
+        <div className="flex flex-col gap-6 w-full lg:w-2/3 2xl:w-3/4 min-[2000px]:w-4/5">
           {/* LINHA 1: Cartões (Volume / Ads / Agência) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 xl:gap-6">
             <div className="bg-white/[0.02] backdrop-blur-xl p-5 rounded-3xl border border-white/5 shadow-sm relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
               <div className="flex justify-between items-start mb-4 relative z-10">
@@ -260,8 +256,8 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 xl:gap-6">
+            <div className="lg:col-span-2 bg-white/[0.02] backdrop-blur-xl p-5 xl:p-6 rounded-3xl border border-white/5 shadow-sm flex flex-col">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 border-b border-white/5 pb-4 gap-3">
                 <h3 className="text-lg font-bold text-white tracking-wide flex items-center gap-2">
                   <Activity size={16} className="text-blue-400" /> Tração do Faturamento Diário
@@ -275,7 +271,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                   </span>
                 </div>
               </div>
-              <div className="h-60 w-full">
+              <div className="h-60 xl:h-72 min-[2000px]:h-96 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={dailyMetrics.days} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
@@ -316,7 +312,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
               </div>
             </div>
 
-            <div className="bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm">
+            <div className="bg-white/[0.02] backdrop-blur-xl p-5 xl:p-6 rounded-3xl border border-white/5 shadow-sm flex flex-col">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20"><Zap size={20} className="text-amber-400"/></div>
@@ -327,7 +323,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                 </span>
               </div>
               
-              <div className="h-[300px] w-full">
+              <div className="h-[250px] xl:h-[300px] min-[2000px]:h-[400px] w-full flex-1">
                 {roasData && roasData.length > 0 ? (
                   <ResponsiveContainer width="99%" height={250} minWidth={0}>
                     <BarChart data={roasData} layout="vertical" margin={{ left: 10, right: 10 }}>
@@ -351,8 +347,8 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-            <div className="lg:col-span-3 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm flex flex-col h-[350px]">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 xl:gap-6">
+            <div className="lg:col-span-3 bg-white/[0.02] backdrop-blur-xl p-5 xl:p-6 rounded-3xl border border-white/5 shadow-sm flex flex-col h-[300px] xl:h-[350px] min-[2000px]:h-[450px]">
               <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-4 shrink-0">
                 <TrendingUp size={16} className="text-blue-400"/>
                 <h3 className="text-lg font-bold text-white tracking-wide">Evolução Histórica Global</h3>
@@ -422,7 +418,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
               </div>
             </div>
 
-            <div className="lg:col-span-2 bg-white/[0.02] backdrop-blur-xl p-6 rounded-3xl border border-white/5 shadow-sm flex flex-col h-[350px]">
+            <div className="lg:col-span-2 bg-white/[0.02] backdrop-blur-xl p-5 xl:p-6 rounded-3xl border border-white/5 shadow-sm flex flex-col h-[300px] xl:h-[350px] min-[2000px]:h-[450px]">
               <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-4 shrink-0">
                 <ShoppingCart size={16} className="text-emerald-400"/>
                 <h3 className="text-lg font-bold text-white tracking-wide">Faturamento Canais</h3>
@@ -449,7 +445,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
         </div>
 
         {/* COLUNA DIREITA (1/4 de largura) - SUPER RANKING */}
-        <div className="xl:w-1/4 flex flex-col gap-4 bg-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden">
+        <div className="w-full lg:w-1/3 2xl:w-1/4 min-[2000px]:w-1/5 flex flex-col gap-4 bg-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden lg:sticky lg:top-[160px] lg:h-[calc(100vh-180px)]">
           <div className="p-5 border-b border-white/5 bg-black/20 shrink-0">
             <h3 className="text-lg font-black text-white flex items-center gap-2 mb-4">
               <Crown size={26} className="text-amber-400" /> Ranking Geral
