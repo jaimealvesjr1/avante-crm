@@ -625,7 +625,7 @@ export default function ClientFileModal({
                     <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Zap size={16} className="text-amber-400" /> Eficiência de Ads</h3>
                     <div className="h-64">
                       {roasData.filter(d => d.roas > 0).length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                           <BarChart data={roasData} layout="vertical" margin={{ left: 10 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
                             <XAxis type="number" hide />
@@ -642,7 +642,7 @@ export default function ClientFileModal({
                     <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Target size={16} className="text-rose-400"/> Faturamento por Canal</h3>
                     <div className="h-64 w-full">
                       {clientMktData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                           <BarChart data={clientMktData} layout="vertical" margin={{ left: 0, right: 15, top: 0, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} vertical={true} />
                             <XAxis type="number" hide />
@@ -664,7 +664,7 @@ export default function ClientFileModal({
                     </div>
                     <div className="flex-1 w-full relative h-[250px]">
                       {clientHistoricalChartData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                           <ComposedChart data={clientHistoricalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                             <XAxis dataKey="month" stroke="#6B7280" fontSize={10} tickLine={false} axisLine={false} />
                             <YAxis stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />

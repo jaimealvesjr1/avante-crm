@@ -26,25 +26,39 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
   };
 
   const dailyMetrics = useMemo(() => {
-    const days = Array.from({ length: currentDay }, (_, i) => ({ day: i + 1, gmv: 0, isEvent: false }));
+    // 1. Procurar o maior dia já registado no histórico de qualquer loja
+    let maxDay = Number(currentDay) || 1;
 
+    dashboardData.flatFilteredStores.forEach(s => {
+      if (s.history && s.history.length > 0) {
+        const maxStoreDay = Math.max(...s.history.map(h => Number(h.day) || 1));
+        if (maxStoreDay > maxDay) {
+          maxDay = maxStoreDay;
+        }
+      }
+    });
+
+    // 2. Criar a linha do tempo (eixo X) baseada nesse maior dia
+    const days = Array.from({ length: maxDay }, (_, i) => ({ day: i + 1, gmv: 0, isEvent: false }));
+
+    // 3. Agrupar os valores, garantindo que convertemos ambos os lados para Número
     dashboardData.flatFilteredStores.forEach(s => {
       if (s.history) {
         s.history.forEach(h => {
-          const d = days.find(x => x.day === h.day);
+          const d = days.find(x => x.day === Number(h.day));
           if (d) d.gmv += (Number(h.dailyRevenue) || 0);
         });
       }
     });
 
     const totalGmv = days.reduce((acc, d) => acc + d.gmv, 0);
-    const avgGmv = currentDay > 0 ? totalGmv / currentDay : 0;
+    const avgGmv = maxDay > 0 ? totalGmv / maxDay : 0;
     
     days.forEach(d => {
       if (d.gmv > avgGmv * 1.5) d.isEvent = true;
     });
 
-    return { days, avgGmv };
+    return { days, avgGmv, maxDay };
   }, [dashboardData, currentDay]);
 
   const [rankingType, setRankingType] = useState('client');
@@ -272,7 +286,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                 </div>
               </div>
               <div className="h-60 xl:h-72 min-[2000px]:h-96 w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
                   <LineChart data={dailyMetrics.days} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                     <XAxis dataKey="day" stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} />
@@ -290,12 +304,13 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                     
                     <Line type="monotone" dataKey="gmv" stroke="#3B82F6" strokeWidth={3} 
                       dot={(props) => {
-                        const { cx, cy, payload } = props;
+                        const { cx, cy, payload, key } = props;
                         const isAboveAvg = payload.gmv > dailyMetrics.avgGmv;
+                        const dotKey = key || `dot-${payload.day}`; // Criação da chave única
                         
-                        if (payload.isEvent) return <circle cx={cx} cy={cy} r={5} fill="#F97316" stroke="#fff" strokeWidth={1} />;
-                        if (isAboveAvg) return <circle cx={cx} cy={cy} r={3} fill="#10B981" stroke="none" />;
-                        return <circle cx={cx} cy={cy} r={3} fill="#6B7280" stroke="none" />;
+                        if (payload.isEvent) return <circle key={dotKey} cx={cx} cy={cy} r={5} fill="#F97316" stroke="#fff" strokeWidth={1} />;
+                        if (isAboveAvg) return <circle key={dotKey} cx={cx} cy={cy} r={3} fill="#10B981" stroke="none" />;
+                        return <circle key={dotKey} cx={cx} cy={cy} r={3} fill="#6B7280" stroke="none" />;
                       }} 
                       activeDot={{ r: 7, fill: '#60A5FA', stroke: '#fff', strokeWidth: 2 }} 
                     />
@@ -355,7 +370,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
               </div>
               <div className="flex-1 w-full relative">
                 {dashboardData.historicalChartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
                     <ComposedChart data={dashboardData.historicalChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorGlobal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/></linearGradient>
@@ -425,7 +440,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
               </div>
               <div className="flex-1 w-full relative">
                 {dashboardData.rankingMarketplaces.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
                     <BarChart data={dashboardData.rankingMarketplaces} layout="vertical" margin={{ left: 0, right: 10, top: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} vertical={true} />
                       <XAxis type="number" hide />

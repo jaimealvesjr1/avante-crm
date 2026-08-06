@@ -40,7 +40,7 @@ export default function AdminPanel({
   const [editDiaVariavel, setEditDiaVariavel] = useState('');
   const [editFrequencia, setEditFrequencia] = useState('mensal');
   
-  const [editTipoConta, setEditTipoConta] = useState('PF');
+  const [editTipoConta, setEditTipoConta] = useState('MEI');
 
   const getInitials = (name) => {
     if (!name) return 'U';
@@ -72,7 +72,7 @@ export default function AdminPanel({
     setEditGatilho(pConfig.gatilho || 0);
     setEditDiaVariavel(pConfig.diaVariavel || '');
     setEditFrequencia(pConfig.frequencia || 'mensal');
-    setEditTipoConta(pConfig.tipoConta || 'PF');
+    setEditTipoConta(pConfig.tipoConta || 'MEI');
   };
 
   const saveEdit = (email) => {
@@ -187,11 +187,11 @@ export default function AdminPanel({
                               {member.paymentConfig && member.paymentConfig.tipoConta && (
                                 <span className={`text-[10px] border px-2 py-0.5 rounded-full flex items-center gap-1 ${
                                   member.paymentConfig.tipoConta === 'MEI' 
-                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                                    : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                                    : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
                                 }`}>
-                                  {member.paymentConfig.tipoConta === 'MEI' ? <Briefcase size={10}/> : <User size={10}/>}
-                                  {member.paymentConfig.tipoConta === 'MEI' ? 'Gestão MEI' : 'Gestão PF (Pessoal)'}
+                                  <Briefcase size={10}/>
+                                  {member.paymentConfig.tipoConta === 'MEI' ? 'Regime: MEI' : 'Regime: SIMPLES'}
                                 </span>
                               )}
 
@@ -228,23 +228,23 @@ export default function AdminPanel({
 
                               <div className="col-span-2 sm:col-span-4 mb-4 p-3 bg-white/5 border border-white/10 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                                   <div>
-                                      <label className="block text-[11px] font-bold text-white mb-0.5">Tipo de Gestão</label>
-                                      <p className="text-[9px] text-gray-400 leading-tight max-w-[200px]">Define se o painel individual deste membro será Pessoal (PF) ou Empresarial (MEI)</p>
+                                      <label className="block text-[11px] font-bold text-white mb-0.5">Regime Empresarial (PJ)</label>
+                                      <p className="text-[9px] text-gray-400 leading-tight max-w-[200px]">Define qual será o regime da carteira empresarial deste membro no painel pessoal.</p>
                                   </div>
                                   <div className="flex bg-black/50 p-1 rounded-lg border border-white/10 w-full sm:w-auto">
                                       <button 
                                           type="button"
-                                          onClick={() => setEditTipoConta('PF')}
-                                          className={`flex-1 sm:flex-none px-3 py-1.5 text-[10px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${editTipoConta === 'PF' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
+                                          onClick={() => setEditTipoConta('MEI')}
+                                          className={`flex-1 sm:flex-none px-3 py-1.5 text-[10px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${editTipoConta === 'MEI' ? 'bg-amber-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
                                       >
-                                          <User size={12}/> Pessoal (PF)
+                                          <Briefcase size={12}/> Regime MEI
                                       </button>
                                       <button 
                                           type="button"
-                                          onClick={() => setEditTipoConta('MEI')}
-                                          className={`flex-1 sm:flex-none px-3 py-1.5 text-[10px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${editTipoConta === 'MEI' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
+                                          onClick={() => setEditTipoConta('SIMPLES')}
+                                          className={`flex-1 sm:flex-none px-3 py-1.5 text-[10px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${editTipoConta === 'SIMPLES' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
                                       >
-                                          <Briefcase size={12}/> MEI (PJ)
+                                          <Briefcase size={12}/> Regime SIMPLES
                                       </button>
                                   </div>
                               </div>

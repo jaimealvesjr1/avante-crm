@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Target, Save, TrendingUp, ShoppingBag, Briefcase, Globe, ArrowRight, CalendarDays, Play, Trash2, Flame, Download, History } from 'lucide-react';
+import { X, Target, Save, TrendingUp, ShoppingBag, Briefcase, Globe, ArrowRight, CalendarDays, Play, Trash2, Flame, Download, History, Pin } from 'lucide-react';
 import { doc, writeBatch, deleteField } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
 import { formatCurrency, formatNumber } from '../../utils/financeUtils';
@@ -8,15 +8,15 @@ import autoTable from 'jspdf-autotable';
 
 export default function GoalsSettingsModal({ 
   isOpen, onClose, stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, 
-  historicalGoals = [], formatCurrency, db, activeEvent, scheduledEvents, handleEventAction 
+  historicalGoals = [], formatCurrency, db, activeEvent, scheduledEvents, handleEventAction, competenceMonth
 }) {
   if (!isOpen) return null;
 
   const [localHistoricalGoals, setLocalHistoricalGoals] = useState([...historicalGoals]);
-  const [goalForm, setGoalForm] = useState({ month: '', level: 'Agência', targetValue: '' });
   const [activeTab, setActiveTab] = useState('global');
   const [isSaving, setIsSaving] = useState(false);
 
+  const [localClientFilter, setLocalClientFilter] = useState('all');
   const [localGlobal, setLocalGlobal] = useState(globalGrowth !== undefined ? globalGrowth : 10);
   const [localClientMap, setLocalClientMap] = useState({ ...(clientGrowthMap || {}) });
   const [localMktMap, setLocalMktMap] = useState({ ...(marketplaceGrowthMap || {}) });
@@ -24,6 +24,27 @@ export default function GoalsSettingsModal({
 
   const [eventForm, setEventForm] = useState({ name: '', target: '', date: '', channels: [] });
   const clients = useMemo(() => [...new Set(stores.map(s => s.client))].filter(Boolean).sort(), [stores]);
+  
+  const activeMkts = useMemo(() => [...new Set(stores.map(s => s.marketplace?.toUpperCase()))].filter(Boolean).sort(), [stores]);
+
+  const currentMonthStr = competenceMonth || new Date().toISOString().slice(0, 7);
+
+  const handleFixGoalToHistory = (levelName, targetValue) => {
+    setLocalHistoricalGoals(prev => {
+      const existingIndex = prev.findIndex(g => g.month === currentMonthStr && g.level === levelName);
+      
+      if (existingIndex >= 0) {
+        const newArray = [...prev];
+        newArray[existingIndex] = { ...newArray[existingIndex], targetValue: targetValue };
+        return newArray;
+      }
+      
+      return [...prev, { id: Date.now() + Math.random(), month: currentMonthStr, level: levelName, targetValue: targetValue }];
+    });
+
+    toast.success(`Meta fixada em ${formatMonthLabel(currentMonthStr)} para: ${levelName}!`);
+  };
+
   const getLocalStoreData = (store) => {
     if (localStoreMap[store.id]) return localStoreMap[store.id];
     return {
@@ -57,12 +78,6 @@ export default function GoalsSettingsModal({
     }
 
     return { base, target: base * (1 + (rate / 100)), rate, rule: 'Acumulada' };
-  };
-
-  const handleAddHistoricalGoal = () => {
-    if(!goalForm.month || !goalForm.targetValue) return toast.error("Preencha o mês e o valor.");
-    setLocalHistoricalGoals(prev => [...prev, { ...goalForm, id: Date.now() }]);
-    setGoalForm({ month: '', level: 'Agência', targetValue: '' });
   };
 
   const handleRemoveHistoricalGoal = (id) => {
@@ -232,8 +247,6 @@ export default function GoalsSettingsModal({
       }
   };
 
-  const activeMkts = useMemo(() => [...new Set(stores.map(s => s.marketplace?.toUpperCase()))].filter(Boolean).sort(), [stores]);
-
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[150] p-4 backdrop-blur-sm animate-in fade-in">
       <div className="bg-[#0B0F19] border border-white/10 w-full max-w-6xl rounded-3xl shadow-2xl flex flex-col max-h-[95vh] overflow-hidden">
@@ -288,42 +301,35 @@ export default function GoalsSettingsModal({
                       <p className="text-[10px] text-gray-500 uppercase font-bold">Meta Atual (Antes de salvar)</p>
                       <p className="text-lg font-bold text-gray-400">{formatCurrency(stores.reduce((acc, s) => acc + calculateTarget(s, false).target, 0))}</p>
                     </div>
-                    <div className="bg-indigo-900/20 p-3 rounded-xl border border-indigo-500/30 text-right">
+                    <div className="bg-indigo-900/20 p-3 rounded-xl border border-indigo-500/30 text-center group relative">
                       <p className="text-[10px] text-indigo-400 uppercase font-bold">Nova Meta Esperada</p>
-                      <p className="text-2xl font-black text-indigo-400">{formatCurrency(stores.reduce((acc, s) => acc + calculateTarget(s, true).target, 0))}</p>
+                      <div className="flex items-center justify-end gap-2">
+                        <p className="text-2xl font-black text-indigo-400">{formatCurrency(stores.reduce((acc, s) => acc + calculateTarget(s, true).target, 0))}</p>
+                        <button 
+                          onClick={() => handleFixGoalToHistory('Agência', stores.reduce((acc, s) => acc + calculateTarget(s, true).target, 0))}
+                          className="opacity-0 group-hover:opacity-100 p-1.5 bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 rounded transition-all"
+                          title="Fixar meta no histórico para este mês"
+                        >
+                          <Pin size={16} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl shadow-sm mt-6">
+                  
+                  {/* Cabeçalho da Seção */}
                   <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-                    <History size={18} className="text-indigo-400"/> Histórico de Metas (Faturamento Real)
+                    <History size={18} className="text-indigo-400"/> Histórico de Metas Fixadas
                   </h3>
-                  <p className="text-sm text-gray-400 mb-6">Registre as metas fixas de meses anteriores para a Agência inteira ou para Clientes específicos.</p>
+                  
+                  {/* Texto atualizado para explicar a nova forma de uso */}
+                  <p className="text-sm text-gray-400 mb-6">
+                    Aqui estão listadas as metas que você fixou usando o ícone de Alfinete (📌) nas abas de simulação.
+                  </p>
 
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-black/20 p-4 rounded-xl border border-white/5">
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-500 uppercase">Mês/Ano</label>
-                      <input type="month" value={goalForm.month} onChange={e => setGoalForm({...goalForm, month: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 outline-none focus:border-indigo-500 text-sm mt-1" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-500 uppercase">Nível da Meta</label>
-                      <select value={goalForm.level} onChange={e => setGoalForm({...goalForm, level: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 outline-none focus:border-indigo-500 text-sm mt-1 cursor-pointer">
-                        <option className="bg-gray-900" value="Agência">Agência (Global)</option>
-                        {clients.map(c => <option className="bg-gray-900" key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-500 uppercase">Valor da Meta (R$)</label>
-                      <input type="number" value={goalForm.targetValue} onChange={e => setGoalForm({...goalForm, targetValue: e.target.value})} placeholder="Ex: 500000" className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 outline-none focus:border-indigo-500 text-sm mt-1" />
-                    </div>
-                    <div className="flex items-end">
-                      <button onClick={handleAddHistoricalGoal} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md transition-colors">
-                        Adicionar ao Histórico
-                      </button>
-                    </div>
-                  </div>
-
+                  {/* Tabela de Exibição das Metas Fixadas */}
                   {localHistoricalGoals.length > 0 ? (
                     <div className="overflow-x-auto custom-scrollbar border border-white/5 rounded-xl">
                       <table className="w-full text-left border-collapse">
@@ -338,23 +344,45 @@ export default function GoalsSettingsModal({
                         <tbody className="divide-y divide-white/5">
                           {localHistoricalGoals.sort((a,b) => b.month.localeCompare(a.month)).map(goal => (
                             <tr key={goal.id} className="hover:bg-white/[0.02] transition-colors text-sm">
-                              <td className="p-3 pl-4 font-bold text-white">{formatMonthLabel(goal.month)}</td>
-                              <td className="p-3 font-bold text-gray-300">
-                                {goal.level === 'Agência' ? <span className="bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded text-xs">Agência (Global)</span> : goal.level}
+                              
+                              <td className="p-3 pl-4 font-bold text-white">
+                                {formatMonthLabel(goal.month)}
                               </td>
-                              <td className="p-3 text-right font-black text-emerald-400">{formatCurrency(Number(goal.targetValue))}</td>
+                              
+                              <td className="p-3 font-bold text-gray-300">
+                                {goal.level === 'Agência' ? (
+                                  <span className="bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded text-xs">
+                                    Agência (Global)
+                                  </span>
+                                ) : (
+                                  goal.level
+                                )}
+                              </td>
+                              
+                              <td className="p-3 text-right font-black text-emerald-400">
+                                {formatCurrency(Number(goal.targetValue))}
+                              </td>
+                              
                               <td className="p-3 text-center pr-4">
-                                <button onClick={() => handleRemoveHistoricalGoal(goal.id)} className="p-1.5 text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg transition-colors">
+                                <button 
+                                  onClick={() => handleRemoveHistoricalGoal(goal.id)} 
+                                  className="p-1.5 text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg transition-colors"
+                                  title="Remover meta do histórico"
+                                >
                                   <Trash2 size={16} />
                                 </button>
                               </td>
+
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-sm text-center py-6 bg-black/20 rounded-xl border border-white/5 border-dashed">Nenhum histórico de metas registrado.</p>
+                    /* Estado Vazio: Exibido caso não existam metas na memória */
+                    <p className="text-gray-500 text-sm text-center py-6 bg-black/20 rounded-xl border border-white/5 border-dashed">
+                      Nenhuma meta foi fixada ainda. Navegue pelas abas ao lado e use o ícone de Alfinete (📌) para registar metas.
+                    </p>
                   )}
                 </div>
               </div>
@@ -386,7 +414,19 @@ export default function GoalsSettingsModal({
                         <div className="flex items-center gap-4 text-sm w-full xl:w-auto xl:justify-end">
                           <div className="text-right flex-1 xl:flex-none"><p className="text-[9px] text-gray-500 uppercase font-bold">Meta Atual</p><p className="text-gray-400 font-medium">{formatCurrency(currentTarget)}</p></div>
                           <ArrowRight size={14} className="text-gray-600 shrink-0" />
-                          <div className="text-right flex-1 xl:flex-none"><p className="text-[9px] text-indigo-400 uppercase font-bold">Esperado</p><p className="text-indigo-400 font-bold">{formatCurrency(expectedTarget)}</p></div>
+                          <div className="text-left flex-1 xl:flex-none relative group">
+                            <p className="text-[9px] text-indigo-400 uppercase font-bold">Esperado</p>
+                            <div className="flex items-center justify-end gap-2">
+                              <p className="text-indigo-400 font-bold">{formatCurrency(expectedTarget)}</p>
+                              <button 
+                                onClick={() => handleFixGoalToHistory(`Canal: ${mkt}`, expectedTarget)}
+                                className="opacity-0 group-hover:opacity-100 p-1 bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 rounded transition-all"
+                                title="Fixar valor no histórico"
+                              >
+                                <Pin size={12} />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )
@@ -421,7 +461,19 @@ export default function GoalsSettingsModal({
                         <div className="flex items-center gap-4 text-sm w-full xl:w-auto xl:justify-end">
                           <div className="text-right flex-1 xl:flex-none"><p className="text-[9px] text-gray-500 uppercase font-bold">Meta Atual</p><p className="text-gray-400 font-medium">{formatCurrency(currentTarget)}</p></div>
                           <ArrowRight size={14} className="text-gray-600 shrink-0" />
-                          <div className="text-right flex-1 xl:flex-none"><p className="text-[9px] text-amber-400 uppercase font-bold">Esperado</p><p className="text-amber-400 font-bold">{formatCurrency(expectedTarget)}</p></div>
+                          <div className="text-left flex-1 xl:flex-none relative group">
+                            <p className="text-[9px] text-amber-400 uppercase font-bold">Esperado</p>
+                            <div className="flex items-center justify-end gap-2">
+                              <p className="text-amber-400 font-bold">{formatCurrency(expectedTarget)}</p>
+                              <button 
+                                onClick={() => handleFixGoalToHistory(`Cliente: ${client}`, expectedTarget)}
+                                className="opacity-0 group-hover:opacity-100 p-1 bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 rounded transition-all"
+                                title="Fixar valor no histórico"
+                              >
+                                <Pin size={12} />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )
@@ -432,14 +484,31 @@ export default function GoalsSettingsModal({
 
             {activeTab === 'lojas' && (
               <div className="space-y-4 animate-in fade-in">
-                <p className="text-sm text-gray-400 mb-4">Ajuste fino por Loja. Soma-se à Global, Canal e Cliente.</p>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                  <p className="text-sm text-gray-400">Ajuste fino por Loja. Soma-se à Global, Canal e Cliente.</p>
+                  
+                  <select 
+                    value={localClientFilter} 
+                    onChange={(e) => setLocalClientFilter(e.target.value)}
+                    className="bg-black/40 border border-white/10 text-white rounded-xl p-2 outline-none focus:border-indigo-500 text-sm cursor-pointer min-w-[200px]"
+                  >
+                    <option value="all">Todos os Clientes</option>
+                    {clients.map(c => (
+                      <option key={`filter-${c}`} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                
                 <div className="grid grid-cols-1 gap-3">
-                  {stores.filter(s => !s.arquivada).map(store => {
-                    const currentSim = calculateTarget(store, false);
-                    const expectedSim = calculateTarget(store, true);
+                  {stores
+                    .filter(s => !s.arquivada)
+                    .filter(s => localClientFilter === 'all' || s.client === localClientFilter)
+                    .map(store => {
+                      const currentSim = calculateTarget(store, false);
+                      const expectedSim = calculateTarget(store, true);
 
-                    return (
-                      <div key={store.id} className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-white/[0.04] transition-colors">
+                      return (
+                        <div key={store.id} className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-white/[0.04] transition-colors">
                         <div className="flex-1 min-w-[200px]">
                           <h4 className="font-bold text-white">{store.store}</h4>
                           <div className="flex items-center gap-2 mt-1">
@@ -481,9 +550,18 @@ export default function GoalsSettingsModal({
 
 
                           <ArrowRight size={14} className="text-gray-600 shrink-0" />
-                          <div className="text-right flex-1 xl:flex-none bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+                          <div className="text-left flex-1 xl:flex-none bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20 relative group">
                             <p className="text-[9px] text-emerald-400 uppercase font-bold">Esperado ({expectedSim.rate}%)</p>
-                            <p className="text-emerald-400 font-bold">{formatCurrency(expectedSim.target)}</p>
+                            <div className="flex items-center justify-end gap-2">
+                              <p className="text-emerald-400 font-bold">{formatCurrency(expectedSim.target)}</p>
+                              <button 
+                                onClick={() => handleFixGoalToHistory(`Loja: ${store.store} (${store.marketplace})`, expectedSim.target)}
+                                className="opacity-0 group-hover:opacity-100 p-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded transition-all"
+                                title="Fixar valor no histórico"
+                              >
+                                <Pin size={12} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>

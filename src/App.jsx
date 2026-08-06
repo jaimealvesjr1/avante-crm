@@ -53,7 +53,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.2.6';
+  const CURRENT_VERSION = '3.5 - Contábil';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -1714,7 +1714,7 @@ export default function App() {
                 className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'pessoal' ? 'bg-purple-900 text-purple-100 shadow-md border border-purple-500/30' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                 title="Meu Caixa (Pessoal)"
               >
-                <Wallet size={18} className="shrink-0" /> <span className="hidden xl:inline">Pessoal</span>
+                <Wallet size={18} className="shrink-0" /> <span className="hidden xl:inline">Contábil</span>
               </button>
             )}
 
@@ -1992,6 +1992,7 @@ export default function App() {
               <PersonalFinance
                 db={db}
                 currentUser={user}
+                currentUserData={currentUserData}
                 formatCurrency={safeFormatCurrency}
               />
             )}
@@ -2152,7 +2153,7 @@ export default function App() {
       <GoalsSettingsModal 
         isOpen={isGoalsModalOpen}
         onClose={() => setIsGoalsModalOpen(false)}
-        stores={dashboardData.flatFilteredStores}
+        stores={stores.filter(s => !s.arquivada)}
         globalGrowth={globalGrowth}
         clientGrowthMap={clientGrowthMap}
         marketplaceGrowthMap={marketplaceGrowthMap}
@@ -2162,6 +2163,7 @@ export default function App() {
         scheduledEvents={scheduledEvents}
         handleEventAction={handleEventAction}
         historicalGoals={historicalGoals}
+        competenceMonth={competenceMonth}
       />
     </div>
   );

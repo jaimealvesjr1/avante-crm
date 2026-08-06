@@ -27,7 +27,7 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
 
   const [despesaEmEdicao, setDespesaEmEdicao] = useState(null);
   const [despesaForm, setDespesaForm] = useState({ 
-    descricao: '', valor: '', desconto: '', motivoDesconto: '', categoria: 'Folha de Pagamento', 
+    descricao: '', valor: '', itensDesconto: [], categoria: 'Folha de Pagamento', 
     contaBancaria: 'AVANTE PJ', dataVencimento: new Date().toISOString().split('T')[0], 
     status: 'Pendente', desembolsos: [], chavePix: ''
   });
@@ -44,7 +44,8 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     metaAgenciaHistorica: dashboardData.agencyTarget || 0
   });
   
-  const [bonusManuais, setBonusManuais] = useState({});
+  const [extrasFolha, setExtrasFolha] = useState({});
+  const [descontosFolha, setDescontosFolha] = useState({});
   const [chavesPix, setChavesPix] = useState({});
   
   const [demonstrativoData, setDemonstrativoData] = useState(null);
@@ -209,10 +210,27 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
   const folhaCalculada = useMemo(() => {
     if (!teamMembers) return [];
     return teamMembers.filter(m => m.paymentConfig).map(m => {
-        const calculo = calcularFolhaMembro(m, metricasFolha.faturamentoBruto, metricasFolha.custoOperacional, parseSafeNumber(bonusManuais[m.email]));
-        return { ...m, calculo };
+        const listaExtras = extrasFolha[m.email] || [];
+        const listaDescontos = descontosFolha[m.email] || [];
+        
+        const somaExtras = listaExtras.reduce((acc, curr) => acc + parseSafeNumber(curr.valor), 0);
+        const somaDescontos = listaDescontos.reduce((acc, curr) => acc + parseSafeNumber(curr.valor), 0);
+        
+        // Passamos a soma total de Extras como bônus base para a função original
+        const calculoOriginal = calcularFolhaMembro(m, metricasFolha.faturamentoBruto, metricasFolha.custoOperacional, somaExtras);
+        
+        return { 
+            ...m, 
+            calculo: {
+                ...calculoOriginal,
+                desconto: somaDescontos,
+                total: calculoOriginal.total - somaDescontos,
+                listaExtras,
+                listaDescontos
+            } 
+        };
     });
-  }, [teamMembers, metricasFolha, bonusManuais]);
+  }, [teamMembers, metricasFolha, extrasFolha, descontosFolha]);
 
   const handleLancarPagamentoEquipe = async (membro) => {
     if (!canEdit) return toast.error("Sem permissão.");
@@ -234,18 +252,21 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
       comissao: membro.calculo.comissao,
       regra: regraTexto,
       bonus: membro.calculo.bonus,
+      desconto: membro.calculo.desconto,
+      listaExtras: membro.calculo.listaExtras,
+      listaDescontos: membro.calculo.listaDescontos,
       total: membro.calculo.total,
       p1V: membro.calculo.fixo,
       p1D: config.diaFixo || 'Dia 05',
-      p2V: membro.calculo.comissao + membro.calculo.bonus,
+      p2V: (membro.calculo.comissao + membro.calculo.bonus) - membro.calculo.desconto,
       p2D: config.diaVariavel || 'Dia 20'
     };
 
     if (config.frequencia === 'fracionado') {
         lancamentos.push({ descricao: `Fixo: ${membro.nomeCompleto}`, valor: config.salarioFixo, dataVencimento: hoje.toISOString().split('T')[0] });
-        lancamentos.push({ descricao: `Comissão: ${membro.nomeCompleto}`, valor: membro.calculo.comissao + membro.calculo.bonus, dataVencimento: hoje.toISOString().split('T')[0] });
+        lancamentos.push({ descricao: `Comissão Líquida: ${membro.nomeCompleto}`, valor: (membro.calculo.comissao + membro.calculo.bonus) - membro.calculo.desconto, dataVencimento: hoje.toISOString().split('T')[0] });
     } else {
-        lancamentos.push({ descricao: `Salário: ${membro.nomeCompleto}`, valor: membro.calculo.total, dataVencimento: hoje.toISOString().split('T')[0] });
+      lancamentos.push({ descricao: `Salário: ${membro.nomeCompleto}`, valor: membro.calculo.total, dataVencimento: hoje.toISOString().split('T')[0] });
     }
 
     try {
@@ -452,7 +473,9 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     if (!canEdit) return toast.error("Sem permissão.");
     
     const numValorBruto = parseSafeNumber(despesaForm.valor);
-    const numDesconto = parseSafeNumber(despesaForm.desconto);
+    
+    const parsedItensDesconto = (despesaForm.itensDesconto || []).map(d => ({ ...d, valor: parseSafeNumber(d.valor) }));
+    const numDesconto = parsedItensDesconto.reduce((acc, curr) => acc + curr.valor, 0);
     const numValorLiquido = numValorBruto - numDesconto;
 
     if (!despesaForm.descricao.trim() || numValorBruto <= 0) return toast.error("Preencha descrição e valor bruto válidos.");
@@ -469,45 +492,49 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     }
 
     const allPaid = parsedDesembolsos.length > 0 && parsedDesembolsos.every(d => d.status === 'Pago');
-    const finalStatus = parsedDesembolsos.length > 0 ? (allPaid ? 'Pago' : (parsedDesembolsos.some(d => d.status === 'Pago') ? 'Parcial' : 'Pendente')) : despesaForm.status;
+        const finalStatus = parsedDesembolsos.length > 0 ? (allPaid ? 'Pago' : (parsedDesembolsos.some(d => d.status === 'Pago') ? 'Parcial' : 'Pendente')) : despesaForm.status;
 
-    try {
-      if (despesaEmEdicao) {
-        await updateDoc(doc(db, "financeiro_despesas", despesaEmEdicao), {
-          descricao: despesaForm.descricao.trim(), 
-          valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: despesaForm.motivoDesconto.trim(), valor: numValorLiquido, 
-          categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
-          chavePix: despesaForm.chavePix.trim()
-        });
-        toast.success("Despesa atualizada!");
-        setDespesaEmEdicao(null);
-      } else {
-        await addDoc(collection(db, "financeiro_despesas"), {
-          descricao: despesaForm.descricao.trim(), 
-          valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: despesaForm.motivoDesconto.trim(), valor: numValorLiquido, 
-          categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
-          chavePix: despesaForm.chavePix.trim(), 
-          dataPagamentoRealizado: finalStatus === 'Pago' && parsedDesembolsos.length === 0 ? new Date().toISOString() : null,
-          criadoEm: new Date().toISOString()
-        });
-        toast.success("Despesa registrada!");
-      }
-      setDespesaForm({ descricao: '', valor: '', desconto: '', motivoDesconto: '', 
-        categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', 
-        dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', 
-        desembolsos: [], chavePix: '' });
-    } catch (error) { toast.error("Erro ao salvar despesa."); }
+        const stringMotivos = parsedItensDesconto.map(d => d.descricao).join(', ');
+
+        try {
+          if (despesaEmEdicao) {
+            await updateDoc(doc(db, "financeiro_despesas", despesaEmEdicao), {
+              descricao: despesaForm.descricao.trim(), 
+              valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: stringMotivos, itensDesconto: parsedItensDesconto, valor: numValorLiquido, 
+              categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
+              chavePix: despesaForm.chavePix.trim()
+            });
+            toast.success("Despesa atualizada!");
+            setDespesaEmEdicao(null);
+          } else {
+            await addDoc(collection(db, "financeiro_despesas"), {
+              descricao: despesaForm.descricao.trim(), 
+              valorBruto: numValorBruto, desconto: numDesconto, motivoDesconto: stringMotivos, itensDesconto: parsedItensDesconto, valor: numValorLiquido, 
+              categoria: despesaForm.categoria, contaBancaria: despesaForm.contaBancaria, dataVencimento: despesaForm.dataVencimento, status: finalStatus, desembolsos: parsedDesembolsos,
+              chavePix: despesaForm.chavePix.trim(), 
+              dataPagamentoRealizado: finalStatus === 'Pago' && parsedDesembolsos.length === 0 ? new Date().toISOString() : null,
+              criadoEm: new Date().toISOString()
+            });
+            toast.success("Despesa registrada!");
+          }
+          setDespesaForm({ descricao: '', valor: '', itensDesconto: [], 
+            categoria: 'Folha de Pagamento', contaBancaria: 'AVANTE PJ', 
+            dataVencimento: new Date().toISOString().split('T')[0], status: 'Pendente', 
+            desembolsos: [], chavePix: '' });
+        } catch (error) { toast.error("Erro ao salvar despesa."); }
   };
 
   const iniciarEdicaoDespesa = (d) => {
     const formElement = document.getElementById('form-despesa');
     if (formElement) formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setDespesaEmEdicao(d.id);
+    
+    const arrayDescontoLegado = d.desconto ? [{ id: Date.now(), descricao: d.motivoDesconto || 'Desconto', valor: d.desconto }] : [];
+
     setDespesaForm({ 
       descricao: d.descricao, 
       valor: d.valorBruto || d.valor,
-      desconto: d.desconto || '', 
-      motivoDesconto: d.motivoDesconto || '', 
+      itensDesconto: d.itensDesconto || arrayDescontoLegado, 
       categoria: d.categoria, 
       contaBancaria: d.contaBancaria || 'AVANTE PJ',
       dataVencimento: d.dataVencimento, status: d.status,
@@ -1019,14 +1046,6 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                       <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Bruto (R$)</label>
                       <input type="number" step="0.01" required value={despesaForm.valor} onChange={e => setDespesaForm({...despesaForm, valor: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Desconto (R$)</label>
-                      <input type="number" step="0.01" placeholder="0.00" value={despesaForm.desconto} onChange={e => setDespesaForm({...despesaForm, desconto: e.target.value})} className="w-full bg-black/40 border border-white/10 text-rose-300 rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Motivo do Desconto</label>
-                      <input type="text" placeholder="Ex: Multa, Abatimento" value={despesaForm.motivoDesconto} onChange={e => setDespesaForm({...despesaForm, motivoDesconto: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 shadow-inner text-sm" />
-                    </div>
                   </div>
 
                   <div>
@@ -1051,6 +1070,25 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                         <option className="bg-gray-900" value="Pendente">A Pagar</option>
                         <option className="bg-gray-900" value="Pago">Já Pago</option>
                       </select>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/10 pt-4 mt-2">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-2">Descontos <span className="bg-gray-800 px-2 py-0.5 rounded-full text-gray-500 font-normal normal-case">Opcional</span></label>
+                      <button type="button" onClick={() => setDespesaForm(p => ({...p, itensDesconto: [...(p.itensDesconto || []), { id: Date.now(), descricao: '', valor: '' }] }))} className="text-[10px] font-bold bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 px-3 py-1.5 rounded-lg border border-rose-500/30 transition-all">
+                        + Adicionar Desconto
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {(despesaForm.itensDesconto || []).map(item => (
+                        <div key={item.id} className="flex items-center gap-2">
+                          <input type="text" placeholder="Motivo (Ex: Adiantamento)" value={item.descricao} onChange={e => setDespesaForm(p => ({...p, itensDesconto: p.itensDesconto.map(x => x.id === item.id ? {...x, descricao: e.target.value} : x)}))} className="flex-1 bg-black/40 border border-white/10 text-white rounded-lg p-2 outline-none focus:border-rose-500 text-xs shadow-inner" />
+                          <input type="number" step="0.01" placeholder="Valor R$" value={item.valor} onChange={e => setDespesaForm(p => ({...p, itensDesconto: p.itensDesconto.map(x => x.id === item.id ? {...x, valor: e.target.value} : x)}))} className="w-1/3 bg-black/40 border border-white/10 text-rose-300 rounded-lg p-2 outline-none focus:border-rose-500 text-xs shadow-inner" />
+                          <button type="button" onClick={() => setDespesaForm(p => ({...p, itensDesconto: p.itensDesconto.filter(x => x.id !== item.id)}))} className="text-gray-500 hover:text-red-400 p-1 transition-colors"><X size={14}/></button>
+                        </div>
+                      ))}
+                      {(!despesaForm.itensDesconto || despesaForm.itensDesconto.length === 0) && <p className="text-xs text-gray-600 italic">Nenhum desconto aplicado ao valor bruto.</p>}
                     </div>
                   </div>
 
@@ -1147,14 +1185,44 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                           <span>Comissão: {formatCurrency(membro.calculo.comissao)}</span>
                         </div>
                         
-                        <div className="mt-3 flex flex-col gap-2">
-                           <div className="flex items-center gap-2">
-                             <span className="text-[11px] text-gray-500 font-bold w-12 uppercase">Extra R$:</span>
-                             <input type="number" value={bonusManuais[membro.email] || ''} onChange={e => setBonusManuais({...bonusManuais, [membro.email]: e.target.value})} placeholder="0.00" className="bg-black/40 border border-white/10 text-white rounded-lg px-2 py-1.5 text-xs flex-1 outline-none focus:border-indigo-500 shadow-inner" />
-                           </div>
+                        <div className="mt-3 flex flex-col gap-3">
                            <div className="flex items-center gap-2">
                              <span className="text-[11px] text-gray-500 font-bold w-12 uppercase">PIX:</span>
                              <input type="text" value={chavesPix[membro.email] !== undefined ? chavesPix[membro.email] : (membro.paymentConfig?.chavePix || '')} onChange={e => setChavesPix({...chavesPix, [membro.email]: e.target.value})} placeholder="CPF, Email, Telefone..." className="bg-black/40 border border-white/10 text-white rounded-lg px-2 py-1.5 text-xs flex-1 outline-none focus:border-indigo-500 shadow-inner" />
+                           </div>
+                           
+                           <div className="bg-black/20 p-2 rounded-xl border border-white/5">
+                             <div className="flex justify-between items-center mb-2">
+                               <span className="text-[10px] text-emerald-400 font-bold uppercase">Bônus</span>
+                               <button type="button" onClick={() => setExtrasFolha(p => ({...p, [membro.email]: [...(p[membro.email]||[]), {id: Date.now(), descricao: '', valor: ''}]}))} className="text-[9px] bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded border border-emerald-500/20">+ Bônus</button>
+                             </div>
+                             <div className="space-y-1.5">
+                               {(extrasFolha[membro.email] || []).map(extra => (
+                                 <div key={extra.id} className="flex gap-1.5">
+                                    <input type="text" placeholder="Motivo" value={extra.descricao} onChange={e => setExtrasFolha(p => ({...p, [membro.email]: p[membro.email].map(x => x.id === extra.id ? {...x, descricao: e.target.value} : x)}))} className="flex-1 bg-black/40 border border-white/10 text-white rounded p-1.5 text-[10px] outline-none" />
+                                    <input type="number" placeholder="R$" value={extra.valor} onChange={e => setExtrasFolha(p => ({...p, [membro.email]: p[membro.email].map(x => x.id === extra.id ? {...x, valor: e.target.value} : x)}))} className="w-16 bg-black/40 border border-white/10 text-emerald-300 rounded p-1.5 text-[10px] outline-none" />
+                                    <button onClick={() => setExtrasFolha(p => ({...p, [membro.email]: p[membro.email].filter(x => x.id !== extra.id)}))} className="text-gray-500 hover:text-red-400 px-1"><X size={12}/></button>
+                                 </div>
+                               ))}
+                               {(!extrasFolha[membro.email] || extrasFolha[membro.email].length === 0) && <p className="text-[9px] text-gray-600 italic">Sem acréscimos.</p>}
+                             </div>
+                           </div>
+
+                           <div className="bg-black/20 p-2 rounded-xl border border-white/5">
+                             <div className="flex justify-between items-center mb-2">
+                               <span className="text-[10px] text-rose-400 font-bold uppercase">Descontos</span>
+                               <button type="button" onClick={() => setDescontosFolha(p => ({...p, [membro.email]: [...(p[membro.email]||[]), {id: Date.now(), descricao: '', valor: ''}]}))} className="text-[9px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded border border-rose-500/20">+ Desconto</button>
+                             </div>
+                             <div className="space-y-1.5">
+                               {(descontosFolha[membro.email] || []).map(desc => (
+                                 <div key={desc.id} className="flex gap-1.5">
+                                    <input type="text" placeholder="Motivo" value={desc.descricao} onChange={e => setDescontosFolha(p => ({...p, [membro.email]: p[membro.email].map(x => x.id === desc.id ? {...x, descricao: e.target.value} : x)}))} className="flex-1 bg-black/40 border border-white/10 text-white rounded p-1.5 text-[10px] outline-none" />
+                                    <input type="number" placeholder="R$" value={desc.valor} onChange={e => setDescontosFolha(p => ({...p, [membro.email]: p[membro.email].map(x => x.id === desc.id ? {...x, valor: e.target.value} : x)}))} className="w-16 bg-black/40 border border-white/10 text-rose-300 rounded p-1.5 text-[10px] outline-none" />
+                                    <button onClick={() => setDescontosFolha(p => ({...p, [membro.email]: p[membro.email].filter(x => x.id !== desc.id)}))} className="text-gray-500 hover:text-red-400 px-1"><X size={12}/></button>
+                                 </div>
+                               ))}
+                               {(!descontosFolha[membro.email] || descontosFolha[membro.email].length === 0) && <p className="text-[9px] text-gray-600 italic">Sem descontos.</p>}
+                             </div>
                            </div>
                         </div>
                       </div>
@@ -1323,9 +1391,19 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
                           <div className="flex justify-between mb-0.5 text-[14px]"><span>Comissão:</span><span className="font-semibold">{formatCurrency(parseSafeNumber(demonstrativoData.comissao))}</span></div>
                           {demonstrativoData.regra && <div className="text-[10px] text-[#888888] text-right mb-2 italic">({demonstrativoData.regra})</div>}
                           
-                          {parseSafeNumber(demonstrativoData.bonus) > 0 && (
-                              <div className="flex justify-between mb-2 text-[14px] text-[#10b981]"><span>Acréscimo (Bônus):</span><span className="font-semibold">+ {formatCurrency(parseSafeNumber(demonstrativoData.bonus))}</span></div>
-                          )}
+                          {(demonstrativoData.listaExtras || []).map((ex, i) => (
+                              <div key={`ex-${i}`} className="flex justify-between mb-1 text-[14px] text-[#10b981]">
+                                <span>+ {ex.descricao || 'Acréscimo'}:</span>
+                                <span className="font-semibold">{formatCurrency(parseSafeNumber(ex.valor))}</span>
+                              </div>
+                          ))}
+                          
+                          {(demonstrativoData.listaDescontos || []).map((desc, i) => (
+                              <div key={`desc-${i}`} className="flex justify-between mb-1 text-[14px] text-[#e63946]">
+                                <span>- {desc.descricao || 'Desconto'}:</span>
+                                <span className="font-semibold">{formatCurrency(parseSafeNumber(desc.valor))}</span>
+                              </div>
+                          ))}
                             
                           <div className="bg-[#eef4fc] p-4 rounded-xl mt-4">
                               <div className="flex justify-between items-center m-0">

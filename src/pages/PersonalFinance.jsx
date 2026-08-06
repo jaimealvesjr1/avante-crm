@@ -1,65 +1,72 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Wallet, DollarSign, ArrowUpCircle, ArrowDownCircle, FileText, Calendar, Target, ShieldCheck, Plus, Trash2, Link as LinkIcon, Download, Briefcase, User, CreditCard, PiggyBank, TrendingUp, LayoutDashboard, Pencil, X } from 'lucide-react';
+import { Wallet, DollarSign, ArrowUpCircle, ArrowDownCircle, FileText, Calendar, Target, ShieldCheck, Plus, Trash2, Link as LinkIcon, 
+  Download, Briefcase, User, CreditCard, PiggyBank, TrendingUp, LayoutDashboard, Pencil, X, Activity, Calculator } from 'lucide-react';
 import { collection, onSnapshot, doc, addDoc, deleteDoc, updateDoc, query, where } from 'firebase/firestore';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 
-export default function PersonalFinance({ db, currentUser, formatCurrency }) {
+export default function PersonalFinance({ db, currentUser, currentUserData, formatCurrency }) { // <-- 1. Recebe a nova prop
   const [activeTab, setActiveTab] = useState('dashboard');
+  const carteiraPJ = currentUserData?.paymentConfig?.tipoConta || 'MEI';
   const [carteiraAtiva, setCarteiraAtiva] = useState('PF')
   
+  const anoAtual = new Date().getFullYear();
+  const dataInicialDefault = currentUserData?.dataAberturaMei || `${anoAtual}-01`;
+  const [dataAberturaMei, setDataAberturaMei] = useState(dataInicialDefault);
+
+  // NOVO: Escuta as mudanças do Firebase. Assim que o perfil carrega, atualiza o ecrã.
+  useEffect(() => {
+    if (currentUserData?.dataAberturaMei) {
+      setDataAberturaMei(currentUserData.dataAberturaMei);
+    }
+  }, [currentUserData?.dataAberturaMei]);
+
+  const handleSalvarAberturaMei = async (novaData) => {
+    setDataAberturaMei(novaData);
+    try {
+      await updateDoc(doc(db, "equipe", currentUser.email.toLowerCase()), {
+        dataAberturaMei: novaData
+      });
+      toast.success("Data de abertura do MEI gravada no seu perfil!");
+    } catch (error) {
+      toast.error("Erro ao guardar a data de abertura.");
+    }
+  };
+
   const [movimentacoesGerais, setMovimentacoesGerais] = useState([]);
   const movimentacoes = movimentacoesGerais.filter(m => m.statusAlocacao !== 'Pendente' && m.tipo !== 'CartaoCadastro');
   const pendenciasAlocacao = movimentacoesGerais.filter(m => m.statusAlocacao === 'Pendente');
 
   const [form, setForm] = useState({
     data: new Date().toISOString().split('T')[0],
+    conta: 'Conta Principal',
     descricao: '',
     tipo: 'Receita',
-    categoria: 'Prestação de Serviços',
+    categoria: 'Serviços',
     valor: '',
     linkComprovante: '',
     statusTransacao: 'Efetuado',
     recorrencia: 'none'
   });
 
-  const [formCartao, setFormCartao] = useState({
-    cartaoId: '',
-    dataCompra: new Date().toISOString().split('T')[0],
-    descricao: '',
-    valorTotal: '',
-    parcelas: '1',
-    tipoCompra: 'Parcelada' // 'Parcelada' (divide o valor) ou 'Recorrente' (repete o valor)
-  });
-
-  const [formNovoCartao, setFormNovoCartao] = useState({
-    bandeira: 'Visa',
-    finalCartao: '',
-    limiteTotal: '',
-    diaFechamento: '3',
-    diaVencimento: '10'
-  });
-
-  const [formCofrinho, setFormCofrinho] = useState({
-    nome: '',
-    metaTotal: '',
-    saldoInformado: '',
-    dataAtualizacao: new Date().toISOString().split('T')[0]
-  });
-
-  const [formInvestimento, setFormInvestimento] = useState({
-    ativo: '',
-    tipoAtivo: 'Renda Fixa (CDB/Tesouro)',
-    valorAplicado: '',
-    dataCompra: new Date().toISOString().split('T')[0]
-  });
-
   const [itemEditando, setItemEditando] = useState(null);
+  const [imagemExpandida, setImagemExpandida] = useState(null);
+
+  const handleUploadImagem = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setForm({ ...form, linkComprovante: reader.result });
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSalvarEdicao = async (e) => {
     e.preventDefault();
     try {
       await updateDoc(doc(db, "financeiro_pessoal", itemEditando.id), {
         data: itemEditando.data,
+        conta: itemEditando.conta || 'Conta Principal',
         descricao: itemEditando.descricao,
         valor: parseSafeNumber(itemEditando.valor),
         statusTransacao: itemEditando.statusTransacao
@@ -72,11 +79,12 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
   };
 
   const TIPOS = ['Receita', 'Despesa', 'Aporte', 'Retirada'];
+  
   const CATEGORIAS = {
-    'Receita': ['Salário', 'Serviços', 'Rendimento', 'Outros'],
-    'Despesa': ['Moradia', 'Alimentação', 'Transporte', 'Saúde', 'Lazer', 'Outros'],
-    'Aporte': ['Investimento', 'Reserva'],
-    'Retirada': ['Transferência']
+    'Receita': ['Prestação de Serviços', 'Rendimentos (CDB/Ações)', 'Estornos', 'Outros'],
+    'Despesa': ['Impostos (DAS/Simples)', 'Pró-Labore / Folha', 'Fornecedores / Software', 'Despesas Administrativas', 'Saúde/Alimentação (PF)', 'Lazer/Moradia (PF)'],
+    'Aporte': ['Capital Social', 'Transferência para Empresa'],
+    'Retirada': ['Distribuição de Lucros (Isento)', 'Transferência Pessoal']
   };
 
   const parseSafeNumber = (val) => {
@@ -134,6 +142,7 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         userEmail: currentUser.email,
         carteira: carteiraAtiva,
         data: form.data,
+        conta: form.conta.trim() || 'Conta Principal',
         descricao: form.descricao.trim(),
         tipo: form.tipo,
         categoria: form.categoria,
@@ -145,6 +154,28 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
       };
 
       await addDoc(collection(db, "financeiro_pessoal"), novaMovimentacao);
+
+      if (form.tipo === 'Retirada') {
+        const carteiraDestino = carteiraAtiva === 'PF' ? carteiraPJ : 'PF';
+        await addDoc(collection(db, "financeiro_pessoal"), {
+          ...novaMovimentacao,
+          carteira: carteiraDestino,
+          tipo: 'Receita',
+          categoria: carteiraAtiva === 'PF' ? 'Capital Social' : 'Distribuição de Lucros (Isento)',
+          descricao: `Recebimento de Transferência: ${form.descricao.trim()}`
+        });
+        toast.success(`Transferência espelhada automaticamente para o Caixa ${carteiraDestino}!`);
+      } else if (form.tipo === 'Aporte') {
+        const carteiraDestino = carteiraAtiva === 'PF' ? carteiraPJ : 'PF';
+        await addDoc(collection(db, "financeiro_pessoal"), {
+          ...novaMovimentacao,
+          carteira: carteiraDestino,
+          tipo: 'Receita',
+          categoria: carteiraAtiva === 'PF' ? 'Capital Social' : 'Rendimentos (CDB/Ações)',
+          descricao: `Aporte recebido: ${form.descricao.trim()}`
+        });
+        toast.success(`Aporte espelhado automaticamente para o Caixa ${carteiraDestino}!`);
+      }
 
       if (form.statusTransacao === 'Efetuado' && form.recorrencia !== 'none') {
         await processarRecorrencia(novaMovimentacao);
@@ -179,159 +210,6 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
     }
   };
 
-  const handleCadastrarCartao = async (e) => {
-    e.preventDefault();
-    const limite = parseSafeNumber(formNovoCartao.limiteTotal);
-    if (!formNovoCartao.finalCartao || formNovoCartao.finalCartao.length !== 4 || limite <= 0) {
-      return toast.error("Preencha o final do cartão com 4 dígitos e insira um limite válido.");
-    }
-
-    try {
-      await addDoc(collection(db, "financeiro_pessoal"), {
-        userEmail: currentUser.email,
-        carteira: carteiraAtiva, // Vincula o cartão à carteira atualmente selecionada (PF ou PJ)
-        tipo: 'CartaoCadastro', // Identificador da coleção de cartões
-        bandeira: formNovoCartao.bandeira,
-        finalCartao: formNovoCartao.finalCartao,
-        limiteTotal: limite,
-        diaFechamento: formNovoCartao.diaFechamento,
-        diaVencimento: formNovoCartao.diaVencimento,
-        criadoEm: new Date().toISOString()
-      });
-      toast.success("Cartão cadastrado!");
-      setFormNovoCartao({ bandeira: 'Visa', finalCartao: '', limiteTotal: '', diaFechamento: '3', diaVencimento: '10' });
-    } catch (error) {
-      toast.error("Erro ao cadastrar cartão.");
-    }
-  };
-
-  const handleSalvarCartao = async (e) => {
-    e.preventDefault();
-    const valorBase = parseSafeNumber(formCartao.valorTotal);
-    const numMeses = parseInt(formCartao.parcelas, 10);
-    const isRecorrente = formCartao.tipoCompra === 'Recorrente';
-    
-    const cartaoSelecionado = cartoesCadastrados.find(c => c.id === formCartao.cartaoId);
-    if (!cartaoSelecionado) return toast.error("Selecione um cartão cadastrado.");
-    if (!formCartao.descricao.trim() || valorBase <= 0) return toast.error("Verifique os campos.");
-
-    const valorParcela = isRecorrente ? valorBase : (valorBase / numMeses);
-    const dataCompra = new Date(formCartao.dataCompra + 'T12:00:00');
-    
-    const fechamentoDia = parseInt(cartaoSelecionado.diaFechamento, 10);
-    const vencimentoDia = parseInt(cartaoSelecionado.diaVencimento, 10);
-
-    const dataFechamentoAtual = new Date(dataCompra.getFullYear(), dataCompra.getMonth(), fechamentoDia, 23, 59, 59);
-    
-    let cicloMesIndex = dataCompra.getMonth();
-    let cicloAno = dataCompra.getFullYear();
-
-    if (dataCompra > dataFechamentoAtual) {
-      cicloMesIndex += 1;
-      if (cicloMesIndex > 11) {
-        cicloMesIndex = 0;
-        cicloAno += 1;
-      }
-    }
-
-    let vencimentoMesIndex = cicloMesIndex;
-    let vencimentoAno = cicloAno;
-
-    if (fechamentoDia >= vencimentoDia) {
-      vencimentoMesIndex += 1;
-      if (vencimentoMesIndex > 11) {
-        vencimentoMesIndex = 0;
-        vencimentoAno += 1;
-      }
-    }
-
-    try {
-      if (isRecorrente) {
-        // ASSINATURA: Lança só a primeira parcela. Quando pagar a fatura, gera a próxima.
-        let dataVencimento = new Date(vencimentoAno, vencimentoMesIndex, parseInt(cartaoSelecionado.diaVencimento, 10));
-        await addDoc(collection(db, "financeiro_pessoal"), {
-          userEmail: currentUser.email, carteira: carteiraAtiva,
-          data: dataVencimento.toISOString().split('T')[0],
-          descricao: `${formCartao.descricao} (Assinatura) - ${cartaoSelecionado.bandeira} ****${cartaoSelecionado.finalCartao}`,
-          tipo: 'Despesa Operacional', categoria: 'Cartão de Crédito',
-          valor: valorParcela, cartaoId: cartaoSelecionado.id, linkComprovante: '',
-          statusTransacao: 'Pendente', recorrencia: 'monthly',
-          criadoEm: new Date().toISOString()
-        });
-        toast.success(`Assinatura ativada no ${cartaoSelecionado.bandeira}!`);
-      } else {
-        // COMPRA PARCELADA: Como tem fim, roda o for() e joga recorrencia 'none'
-        for (let i = 0; i < numMeses; i++) {
-          let vencIndex = vencimentoMesIndex + i;
-          let vencAno = vencimentoAno;
-          while (vencIndex > 11) { vencIndex -= 12; vencAno += 1; }
-          let dataVencimento = new Date(vencAno, vencIndex, parseInt(cartaoSelecionado.diaVencimento, 10));
-          
-          await addDoc(collection(db, "financeiro_pessoal"), {
-            userEmail: currentUser.email, carteira: carteiraAtiva,
-            data: dataVencimento.toISOString().split('T')[0],
-            descricao: `${formCartao.descricao} (${i + 1}/${numMeses}) - ${cartaoSelecionado.bandeira} ****${cartaoSelecionado.finalCartao}`,
-            tipo: 'Despesa Operacional', categoria: 'Cartão de Crédito',
-            valor: valorParcela, cartaoId: cartaoSelecionado.id, linkComprovante: '',
-            statusTransacao: 'Pendente', recorrencia: 'none',
-            criadoEm: new Date().toISOString()
-          });
-        }
-        toast.success(`Compra parcelada no ${cartaoSelecionado.bandeira}!`);
-      }
-      setFormCartao({ ...formCartao, descricao: '', valorTotal: '', parcelas: '1', tipoCompra: 'Parcelada' });
-    } catch (error) { toast.error("Erro ao registrar no cartão."); }
-  };
-
-  const handleSalvarCofrinho = async (e) => {
-    e.preventDefault();
-    const saldo = parseSafeNumber(formCofrinho.saldoInformado);
-    const meta = parseSafeNumber(formCofrinho.metaTotal);
-    
-    if (!formCofrinho.nome.trim() || saldo < 0) return toast.error("Verifique o nome e o saldo.");
-    
-    try {
-      await addDoc(collection(db, "financeiro_pessoal"), {
-        userEmail: currentUser.email,
-        carteira: carteiraAtiva,
-        data: formCofrinho.dataAtualizacao,
-        descricao: `Atualização: ${formCofrinho.nome}`,
-        cofrinhoNome: formCofrinho.nome,
-        metaTotal: meta,
-        tipo: 'Cofrinho',
-        categoria: 'Cofrinho',
-        valor: saldo,
-        statusTransacao: 'Efetuado',
-        criadoEm: new Date().toISOString()
-      });
-      toast.success("Saldo do cofrinho atualizado!");
-      setFormCofrinho({ ...formCofrinho, saldoInformado: '', metaTotal: '' });
-    } catch (error) { toast.error("Erro ao atualizar cofrinho."); }
-  };
-
-  const handleSalvarInvestimento = async (e) => {
-    e.preventDefault();
-    const valor = parseSafeNumber(formInvestimento.valorAplicado);
-    if (!formInvestimento.ativo.trim() || valor <= 0) return toast.error("Verifique os dados do investimento.");
-    
-    try {
-      await addDoc(collection(db, "financeiro_pessoal"), {
-        userEmail: currentUser.email,
-        carteira: carteiraAtiva,
-        data: formInvestimento.dataCompra,
-        descricao: formInvestimento.ativo,
-        tipoAtivo: formInvestimento.tipoAtivo,
-        tipo: 'Investimento',
-        categoria: 'Investimento',
-        valor: valor,
-        statusTransacao: 'Efetuado',
-        criadoEm: new Date().toISOString()
-      });
-      toast.success("Investimento registado com sucesso!");
-      setFormInvestimento({ ...formInvestimento, ativo: '', valorAplicado: '' });
-    } catch (error) { toast.error("Erro ao registar investimento."); }
-  };
-
   const handleAlocarPendencia = async (id, carteiraEscolhida) => {
     try {
       await updateDoc(doc(db, "financeiro_pessoal", id), {
@@ -346,130 +224,9 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
 
   const movimentacoesFiltradas = movimentacoes.filter(m => (m.carteira || 'PF') === carteiraAtiva);
 
-  const cartoesCadastrados = useMemo(() => {
-    return movimentacoesGerais.filter(m => 
-      m.tipo === 'CartaoCadastro' && (m.carteira || 'PF') === carteiraAtiva
-    );
-  }, [movimentacoesGerais, carteiraAtiva]);
-
-  const dashboardCartoes = useMemo(() => {
-    const hoje = new Date();
-    const anoAtual = hoje.getFullYear();
-    const mesAtual = hoje.getMonth();
-
-    return cartoesCadastrados.map(c => {
-      const limiteTotal = parseSafeNumber(c.limiteTotal);
-      const fechamentoDia = parseInt(c.diaFechamento, 10);
-      const vencimentoDia = parseInt(c.diaVencimento, 10);
-
-      // Transações vinculadas a este cartão
-      const transacoes = movimentacoesFiltradas.filter(
-        m => m.categoria === 'Cartão de Crédito' && m.cartaoId === c.id
-      );
-
-      // Limite usado = total das parcelas que ainda constam como 'Pendente'
-      const limiteUsado = transacoes
-        .filter(t => t.statusTransacao === 'Pendente')
-        .reduce((sum, t) => sum + parseSafeNumber(t.valor), 0);
-
-      const limiteDisponivel = Math.max(0, limiteTotal - limiteUsado);
-
-      // Agrupa as parcelas por mês da fatura ('YYYY-MM')
-      const faturas = {};
-      transacoes.forEach(t => {
-        const mesAno = t.data.slice(0, 7);
-        if (!faturas[mesAno]) {
-          faturas[mesAno] = { mesAno, valor: 0, status: 'Efetuado' };
-        }
-        faturas[mesAno].valor += parseSafeNumber(t.valor);
-        if (t.statusTransacao === 'Pendente') {
-          faturas[mesAno].status = 'Pendente';
-        }
-      });
-
-      const faturasOrdenadas = Object.values(faturas).sort((a, b) => a.mesAno.localeCompare(b.mesAno));
-
-      // A próxima fatura é a fatura pendente mais antiga. Se não houver, estimamos a do mês corrente.
-      let proximaFatura = faturasOrdenadas.find(f => f.status === 'Pendente');
-
-      if (!proximaFatura) {
-        const cicloAtualMes = mesAtual + 1;
-        const mesAnoEstimado = `${anoAtual}-${cicloAtualMes.toString().padStart(2, '0')}`;
-        proximaFatura = faturas[mesAnoEstimado] || { mesAno: mesAnoEstimado, valor: 0, status: 'Efetuado' };
-      }
-
-      // Calcular se essa próxima fatura já está fechada
-      const [fatAno, fatMes] = proximaFatura.mesAno.split('-').map(Number);
-      let fechamentoAno = fatAno;
-      let fechamentoMesIndex = fatMes - 1;
-
-      // Se o fechamento é em um mês anterior ao vencimento
-      if (fechamentoDia >= vencimentoDia) {
-        fechamentoMesIndex -= 1;
-        if (fechamentoMesIndex < 0) {
-          fechamentoMesIndex = 11;
-          fechamentoAno -= 1;
-        }
-      }
-
-      const dataFechamentoFatura = new Date(fechamentoAno, fechamentoMesIndex, fechamentoDia, 23, 59, 59);
-      const estaFechada = hoje > dataFechamentoFatura;
-
-      return {
-        ...c,
-        limiteTotal,
-        limiteUsado,
-        limiteDisponivel,
-        faturaAtual: {
-          mesAno: proximaFatura.mesAno,
-          valor: proximaFatura.valor,
-          status: proximaFatura.status,
-          estaFechada,
-          dataFechamento: dataFechamentoFatura
-        }
-      };
-    });
-  }, [cartoesCadastrados, movimentacoesFiltradas]);
-
-  // AGRUPA FATURAS PARA A ABA "FLUXO"
   const itensFluxo = useMemo(() => {
-    const lista = [];
-    const faturasMap = {};
+    const lista = movimentacoesFiltradas.map(mov => ({ ...mov, isFatura: false }));
 
-    movimentacoesFiltradas.forEach(mov => {
-      if (mov.categoria === 'Cartão de Crédito') {
-        const mesAno = mov.data.slice(0, 7);
-        const partesDesc = mov.descricao.split(' - ');
-        const nomeCartao = partesDesc.length > 1 ? partesDesc[partesDesc.length - 1] : 'Cartão';
-        const key = `fatura-${nomeCartao}-${mesAno}`;
-        
-        if (!faturasMap[key]) {
-          faturasMap[key] = {
-            id: key,
-            isFatura: true,
-            data: mov.data,
-            descricao: `Fatura ${nomeCartao}`,
-            categoria: 'Cartão de Crédito',
-            tipo: 'Despesa Operacional',
-            valor: 0,
-            itens: [],
-            statusTransacao: 'Efetuado'
-          };
-          lista.push(faturasMap[key]);
-        }
-        
-        faturasMap[key].valor += parseSafeNumber(mov.valor);
-        faturasMap[key].itens.push(mov);
-        
-        if (mov.statusTransacao === 'Pendente') {
-          faturasMap[key].statusTransacao = 'Pendente';
-        }
-      } else {
-        lista.push({ ...mov, isFatura: false });
-      }
-    });
-
-    // ORDENAÇÃO INTELIGENTE: Futuros mais próximos acima; Passados mais recentes abaixo.
     const hoje = new Date().toISOString().split('T')[0];
     return lista.sort((a, b) => {
       const aFuturo = a.data >= hoje;
@@ -483,13 +240,6 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
       }
       return new Date(b.data) - new Date(a.data); // Passados: Mais recente primeiro (Decrescente)
     });
-  }, [movimentacoesFiltradas]);
-
-  // EXTRATO DE CARTÕES (MAIS ANTIGO PRIMEIRO)
-  const extratoCartoes = useMemo(() => {
-    return movimentacoesFiltradas
-      .filter(m => m.categoria === 'Cartão de Crédito')
-      .sort((a, b) => new Date(a.data) - new Date(b.data)); // Crescente
   }, [movimentacoesFiltradas]);
 
   const consolidadoIRPF = useMemo(() => {
@@ -524,221 +274,308 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
   const totaisGlobais = useMemo(() => {
     let aPagar = 0;
     let aReceber = 0;
-    let limiteUsado = 0;
-    let investido = 0;
-    const cofrinhos = {};
+    let realizadas = 0;
 
     movimentacoesFiltradas.forEach(m => {
       const val = parseSafeNumber(m.valor);
       
-      // 1. Dívidas e Recebimentos Pendentes
       if (m.statusTransacao === 'Pendente') {
         if (m.tipo === 'Receita') aReceber += val;
-        if (m.tipo.includes('Despesa')) {
-          if (m.categoria === 'Cartão de Crédito') limiteUsado += val;
-          else aPagar += val; // Boletos e contas normais
-        }
-      }
-      
-      // 2. Patrimônio Investido
-      if (m.tipo === 'Investimento') investido += val;
-      
-      // 3. Cofrinhos (Sempre pega a atualização de saldo mais recente)
-      if (m.tipo === 'Cofrinho') {
-        if (!cofrinhos[m.cofrinhoNome] || new Date(m.data) > new Date(cofrinhos[m.cofrinhoNome].data)) {
-          cofrinhos[m.cofrinhoNome] = m;
-        }
+        if (m.tipo.includes('Despesa')) aPagar += val; 
+      } else {
+        if (m.tipo.includes('Despesa')) realizadas += val;
       }
     });
 
-    const emCofrinho = Object.values(cofrinhos).reduce((sum, c) => sum + parseSafeNumber(c.valor), 0);
+    return { aPagar, aReceber, realizadas };
+  }, [movimentacoesFiltradas]);
 
-    return { aPagar, aReceber, limiteUsado, investido, emCofrinho };
+  const resumoMesAtual = useMemo(() => {
+    const mesAtualStr = new Date().toISOString().slice(0, 7); // Ex: "2026-08"
+    let receitas = 0;
+    let despesas = 0;
+
+    movimentacoesFiltradas.forEach(m => {
+      if (m.data.startsWith(mesAtualStr) && m.statusTransacao === 'Efetuado') {
+        if (m.tipo === 'Receita' || m.tipo === 'Aporte') receitas += parseSafeNumber(m.valor);
+        if (m.tipo.includes('Despesa') || m.tipo === 'Retirada') despesas += parseSafeNumber(m.valor);
+      }
+    });
+
+    return { receitas, despesas, saldo: receitas - despesas };
+  }, [movimentacoesFiltradas]);
+
+  const metricasFiscaisAno = useMemo(() => {
+    const dataHoje = new Date();
+    const anoAtual = dataHoje.getFullYear();
+    const anoAtualStr = anoAtual.toString();
+    let faturamentoAno = 0;
+
+    movimentacoesFiltradas.forEach(m => {
+      if (m.data.startsWith(anoAtualStr) && m.tipo === 'Receita' && m.statusTransacao === 'Efetuado') {
+        faturamentoAno += parseSafeNumber(m.valor);
+      }
+    });
+
+    // Extrai o Ano e o Mês a partir da string "2026-07"
+    const [anoAbertura, mesAbertura] = dataAberturaMei.split('-').map(Number);
+
+    let limiteMeiProporcional = 81000; // Começamos sempre assumindo o teto total
+
+    // Se o MEI foi aberto NO ANO ATUAL, calculamos o proporcional
+    if (anoAbertura === anoAtual) {
+      const mesesDeAtividade = 12 - mesAbertura + 1;
+      limiteMeiProporcional = mesesDeAtividade * 6750;
+    } 
+    // Segurança: se o ano de abertura estiver no futuro (não faz muito sentido, mas previne bugs)
+    else if (anoAbertura > anoAtual) {
+      limiteMeiProporcional = 0; 
+    }
+
+    return {
+      faturamentoAno,
+      limiteMei: limiteMeiProporcional,
+      usoLimiteMeiPercent: limiteMeiProporcional > 0 ? Math.min((faturamentoAno / limiteMeiProporcional) * 100, 100) : 0
+    };
+  }, [movimentacoesFiltradas, dataAberturaMei]);
+
+  // NOVO: Prepara os dados matemáticos dos últimos 6 meses para desenhar o gráfico
+  const dadosGrafico6Meses = useMemo(() => {
+    const mesesArr = [];
+    const hoje = new Date();
+    // Volta 5 meses no tempo até ao mês atual (6 meses no total)
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      mesesArr.push(d.toISOString().slice(0, 7)); 
+    }
+
+    return mesesArr.map(mesStr => {
+      let rec = 0;
+      let des = 0;
+      movimentacoesFiltradas.forEach(m => {
+        if (m.data.startsWith(mesStr) && m.statusTransacao === 'Efetuado') {
+          if (m.tipo === 'Receita' || m.tipo === 'Aporte') rec += parseSafeNumber(m.valor);
+          if (m.tipo.includes('Despesa') || m.tipo === 'Retirada') des += parseSafeNumber(m.valor);
+        }
+      });
+      // Pega a string "2026-07" e converte em "JUL"
+      const mesFormatado = new Date(mesStr + '-01T12:00:00').toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+      return { name: mesFormatado, Receitas: rec, Despesas: des };
+    });
   }, [movimentacoesFiltradas]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 w-full">
       
       {/* CABEÇALHO */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Wallet className="text-emerald-400" size={28} /> Gestão Financeira Individual
+            <Wallet className="text-emerald-400" size={28} /> Organização Financeira e Fiscal
           </h1>
-          <p className="text-gray-400 text-sm mt-1">Seu livro-caixa particular. Seguro, privado e organizado.</p>
+          <p className="text-gray-400 text-sm mt-1">Sua blindagem e organização contábil unificada.</p>
         </div>
         
-        {/* SELETOR DE CARTEIRA (PJ vs PF) */}
-        <div className="flex bg-black/40 p-1 rounded-xl border border-white/10 shadow-inner">
-          <button onClick={() => setCarteiraAtiva('PF')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PF' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
+        {/* SELETOR DE CARTEIRA DINÂMICO */}
+        <div className="flex bg-black/40 p-1 rounded-xl border border-white/10 shadow-inner w-full xl:w-auto">
+          <button 
+            onClick={() => {
+              setCarteiraAtiva('PF');
+              if (activeTab === 'irpf') setActiveTab('dashboard');
+            }} 
+            className={`flex-1 xl:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all flex justify-center items-center gap-2 ${carteiraAtiva === 'PF' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
+          >
             <User size={14} /> Caixa PF
           </button>
-          <button onClick={() => setCarteiraAtiva('PJ')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${carteiraAtiva === 'PJ' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
-            <Briefcase size={14} /> Caixa PJ
+          
+          {/* Aba Dinâmica: Mostra MEI ou SIMPLES com base no configurado pelo Admin */}
+          <button onClick={() => setCarteiraAtiva(carteiraPJ)} className={`flex-1 xl:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all flex justify-center items-center gap-2 ${carteiraAtiva === carteiraPJ ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
+            <Briefcase size={14} /> Caixa {carteiraPJ}
           </button>
         </div>
 
-        <div className="flex bg-black/40 p-1.5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto max-w-full custom-scrollbar">
+        <div className="flex bg-black/40 p-1.5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto w-full xl:w-auto max-w-full custom-scrollbar">
           <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
             <LayoutDashboard size={16} /> Início
           </button>
           <button onClick={() => setActiveTab('fluxo')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'fluxo' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
             <DollarSign size={16} /> Dia a Dia
           </button>
-          <button onClick={() => setActiveTab('cartoes')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'cartoes' ? 'bg-rose-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-            <CreditCard size={16} /> Cartões
-          </button>
-          <button onClick={() => setActiveTab('cofrinhos')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'cofrinhos' ? 'bg-amber-500 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-            <PiggyBank size={16} /> Cofrinhos
-          </button>
-          <button onClick={() => setActiveTab('investimentos')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'investimentos' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-            <TrendingUp size={16} /> Investimentos
-          </button>
-          <button onClick={() => setActiveTab('irpf')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'irpf' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-            <ShieldCheck size={16} /> Blindagem IRPF
-          </button>
+          
+          {carteiraAtiva !== 'PF' && (
+            <button onClick={() => setActiveTab('irpf')} className={`px-4 py-2 whitespace-nowrap text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'irpf' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+              <ShieldCheck size={16} /> Blindagem Fiscal (IRPF)
+            </button>
+          )}
         </div>
       </div>
 
-      {/* MÉTRICAS GLOBAIS (VISÍVEL EM TODAS AS ABAS) */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* 1. Total a Pagar (Boletos/Contas) */}
-        <div className="bg-rose-900/20 border border-rose-500/30 rounded-2xl p-4 shadow-sm">
-          <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1">A Pagar (Boletos)</p>
-          <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.aPagar)}</h3>
-        </div>
-        
-        {/* 2. Limite Usado (Cartões) */}
-        <div className="bg-purple-900/20 border border-purple-500/30 rounded-2xl p-4 shadow-sm">
-          <p className="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-1">Limite Usado</p>
-          <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.limiteUsado)}</h3>
-        </div>
-
-        {/* 3. Total a Receber */}
-        <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-2xl p-4 shadow-sm">
-          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1">A Receber</p>
-          <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.aReceber)}</h3>
-        </div>
-
-        {/* 4. Total em Cofrinhos */}
-        <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-4 shadow-sm">
-          <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-1">Em Cofrinhos</p>
-          <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.emCofrinho)}</h3>
-        </div>
-
-        {/* 5. Patrimônio Investido */}
-        <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-4 shadow-sm col-span-2 lg:col-span-1">
-          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1">Patrimônio Investido</p>
-          <h3 className="text-lg font-black text-white">{formatCurrency(totaisGlobais.investido)}</h3>
-        </div>
-      </div>
-
-      {/* ABA 0: DASHBOARD / TELA INICIAL */}
       {activeTab === 'dashboard' && (
         <div className="space-y-6 animate-in fade-in">
           
-          {/* Card de Boas-Vindas */}
-          <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
-            <h2 className="text-xl font-bold text-white mb-1">Olá! Bem-vindo ao seu painel.</h2>
-            <p className="text-gray-400 text-sm">Este é o ponto de partida das suas finanças particulares. Acompanhe a saúde dos seus limites abaixo.</p>
+          {/* Banner de Boas Vindas Compacto */}
+          <div className="bg-gradient-to-r from-indigo-900/30 to-transparent rounded-3xl border border-indigo-500/20 shadow-sm p-6 flex flex-col md:flex-row items-center md:items-start gap-6">
+            <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center shrink-0 border border-indigo-500/30 shadow-inner">
+              <ShieldCheck size={32} className="text-indigo-400" />
+            </div>
+            <div className="text-center md:text-left">
+              <h2 className="text-xl font-bold text-white mb-1">Painel de Controle: {carteiraAtiva === 'PF' ? 'Pessoa Física' : `Empresa (${carteiraAtiva})`}</h2>
+              <p className="text-gray-400 text-sm max-w-2xl">
+                Acompanhe a saúde financeira da sua {carteiraAtiva === 'PF' ? 'conta pessoal' : 'empresa'}. Mantenha as contas sempre separadas para garantir uma blindagem fiscal perfeita perante a Receita.
+              </p>
+            </div>
           </div>
 
-          {/* Seção dos Cartões de Crédito */}
-          <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-6">
-              <CreditCard size={20} className="text-rose-400" /> Visão de Cartões de Crédito ({carteiraAtiva})
-            </h3>
+          {/* MÉTRICAS GLOBAIS (Pendências e Custos Gerais) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-rose-900/20 border border-rose-500/30 rounded-2xl p-5 shadow-sm">
+              <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1 flex items-center gap-2"><ArrowDownCircle size={14}/>A Pagar (Pendente)</p>
+              <h3 className="text-2xl font-black text-white">{formatCurrency(totaisGlobais.aPagar)}</h3>
+            </div>
+            
+            <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-2xl p-5 shadow-sm">
+              <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1 flex items-center gap-2"><ArrowUpCircle size={14}/>A Receber (Pendente)</p>
+              <h3 className="text-2xl font-black text-white">{formatCurrency(totaisGlobais.aReceber)}</h3>
+            </div>
 
-            {dashboardCartoes.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <CreditCard size={48} className="mx-auto mb-3 opacity-30 animate-pulse" />
-                <p className="text-sm">Nenhum cartão cadastrado neste caixa. Vá na aba "Cartões" para começar.</p>
+            <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-5 shadow-sm">
+              <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1 flex items-center gap-2"><FileText size={14}/>Custos Realizados (Total)</p>
+              <h3 className="text-2xl font-black text-white">{formatCurrency(totaisGlobais.realizadas)}</h3>
+            </div>
+          </div>
+
+          {/* NOVO: INTELIGÊNCIA FISCAL (Exibe blocos diferentes dependendo da carteira) */}
+          {carteiraAtiva === 'MEI' && (
+            <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-5 shadow-sm">
+              <div className="flex justify-between items-end mb-3">
+                <div>
+                  <h4 className="text-sm font-bold text-amber-400 flex items-center gap-2"><Target size={16}/> Teto de Faturamento MEI</h4>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-[10px] text-gray-400">Data de abertura (Mês/Ano):</p>
+                    {/* ATUALIZADO: Uso do input de mês e ligação à função de salvar */}
+                    <input 
+                      type="month"
+                      value={dataAberturaMei} 
+                      onChange={e => handleSalvarAberturaMei(e.target.value)} 
+                      className="bg-black/40 text-amber-400 border border-amber-500/30 rounded px-2 py-0.5 outline-none text-[10px] font-bold cursor-pointer"
+                    />
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-bold text-white">{formatCurrency(metricasFiscaisAno.faturamentoAno)}</span>
+                  <span className="text-[10px] text-gray-500"> / {formatCurrency(metricasFiscaisAno.limiteMei)}</span>
+                </div>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {dashboardCartoes.map((card) => {
-                  const percLimite = card.limiteTotal > 0 ? (card.limiteUsado / card.limiteTotal) * 100 : 0;
-                  
-                  // Formatar mês/ano (ex: "AGOSTO/2026")
-                  const [fatAno, fatMes] = card.faturaAtual.mesAno.split('-').map(Number);
-                  const nomeMesStr = new Date(fatAno, fatMes - 1, 1)
-                    .toLocaleString('pt-BR', { month: 'long' })
-                    .toUpperCase();
+              <div className="w-full bg-black/40 rounded-full h-2.5 mt-2 overflow-hidden border border-white/5">
+                <div 
+                  className={`h-full rounded-full transition-all duration-1000 ${metricasFiscaisAno.usoLimiteMeiPercent > 85 ? 'bg-rose-500' : 'bg-amber-500'}`} 
+                  style={{ width: `${metricasFiscaisAno.usoLimiteMeiPercent}%` }}
+                ></div>
+              </div>
+              {metricasFiscaisAno.usoLimiteMeiPercent > 85 && (
+                <p className="text-[10px] text-rose-400 mt-2 font-bold animate-pulse">⚠️ Atenção: Você está muito próximo de estourar o teto do MEI proporcional!</p>
+              )}
+            </div>
+          )}
 
-                  return (
-                    <div key={card.id} className="bg-white/5 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-all flex flex-col justify-between">
-                      <div>
-                        {/* Identificadores do Cartão */}
-                        <div className="flex justify-between items-center mb-4">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs bg-purple-500/10 text-purple-400 font-bold px-2 py-1 rounded-lg border border-purple-500/20">
-                              {card.bandeira}
-                            </span>
-                            <span className="text-xs text-gray-400 font-mono">
-                              **** {card.finalCartao}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-gray-500 font-mono">
-                            Fech: Dia {card.diaFechamento} | Venc: Dia {card.diaVencimento}
-                          </span>
-                        </div>
+          {carteiraAtiva === 'SIMPLES' && (
+            <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h4 className="text-sm font-bold text-indigo-400 flex items-center gap-2"><Calculator size={16}/> Provisão de Impostos (Simples Nacional)</h4>
+                <p className="text-[10px] text-gray-400 mt-1">Estimativa de DAS baseada em 6% sobre o faturamento recebido neste mês.</p>
+              </div>
+              <div className="text-right bg-black/30 px-4 py-2 rounded-xl border border-white/5 w-full sm:w-auto">
+                <p className="text-[10px] uppercase font-bold text-gray-500">Guardar este mês</p>
+                <h3 className="text-xl font-black text-indigo-300">{formatCurrency(resumoMesAtual.receitas * 0.06)}</h3>
+              </div>
+            </div>
+          )}
 
-                        {/* Progresso do Limite Usado */}
-                        <div className="space-y-2 mb-6">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-400">Disponível: {formatCurrency(card.limiteDisponivel)}</span>
-                            <span className="text-purple-300 font-bold">Usado: {formatCurrency(card.limiteUsado)}</span>
-                          </div>
-                          <div className="w-full bg-black/40 rounded-full h-2">
-                            <div 
-                              className={`h-2 rounded-full transition-all ${
-                                percLimite > 85 ? 'bg-rose-500' : percLimite > 60 ? 'bg-amber-500' : 'bg-purple-500'
-                              }`}
-                              style={{ width: `${Math.min(percLimite, 100)}%` }}
-                            ></div>
-                          </div>
-                          <div className="flex justify-between text-[10px] text-gray-500">
-                            <span>0%</span>
-                            <span>Limite Total: {formatCurrency(card.limiteTotal)}</span>
-                          </div>
-                        </div>
+          {carteiraAtiva === 'PF' && (
+            <div className={`border rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${consolidadoIRPF.retiradas > consolidadoIRPF.lucroEvidenciado ? 'bg-rose-900/20 border-rose-500/30' : 'bg-emerald-900/20 border-emerald-500/30'}`}>
+              <div>
+                <h4 className={`text-sm font-bold flex items-center gap-2 ${consolidadoIRPF.retiradas > consolidadoIRPF.lucroEvidenciado ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  <ShieldCheck size={16}/> Limite de Isenção (Lucro da Empresa)
+                </h4>
+                <p className="text-[10px] text-gray-400 mt-1 max-w-md">
+                  Você já declarou ter transferido <b>{formatCurrency(consolidadoIRPF.retiradas)}</b> da Empresa para a PF. O lucro comprovado pelas despesas operacionais registradas na PJ é de <b>{formatCurrency(consolidadoIRPF.lucroEvidenciado)}</b>.
+                </p>
+              </div>
+              <div className="text-left sm:text-right bg-black/30 px-4 py-2 rounded-xl border border-white/5 w-full sm:w-auto shrink-0">
+                <p className="text-[10px] uppercase font-bold text-gray-500">Status Fiscal</p>
+                {consolidadoIRPF.retiradas > consolidadoIRPF.lucroEvidenciado ? (
+                  <h3 className="text-lg font-black text-rose-400 animate-pulse">Risco (Tributável)</h3>
+                ) : (
+                  <h3 className="text-lg font-black text-emerald-400">Seguro (Isento)</h3>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* SECÇÃO INFERIOR: Resumo do Mês, Gráfico e Últimas Atividades */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Esquerda: Gráfico de Evolução */}
+            <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6 flex flex-col h-full min-h-[350px]">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <TrendingUp size={18} className="text-indigo-400"/> Evolução (Últimos 6 meses)
+                </h3>
+              </div>
+              
+              {/* O componente ResponsiveContainer expande-se para ocupar o espaço disponível */}
+              <div className="flex-1 w-full relative min-h-[250px] h-[250px]">
+                <ResponsiveContainer width="99%" height="100%">
+                  <LineChart data={dadosGrafico6Meses} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                    <XAxis dataKey="name" stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
+                    <Tooltip 
+                      cursor={{ stroke: 'rgba(255,255,255,0.1)' }} 
+                      contentStyle={{ backgroundColor: 'rgba(11, 15, 25, 0.95)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', fontSize: '12px' }} 
+                    />
+                    <Line type="monotone" name="Receitas" dataKey="Receitas" stroke="#10B981" strokeWidth={3} dot={{r: 4, fill: '#10B981', strokeWidth: 0}} activeDot={{r: 6}} />
+                    <Line type="monotone" name="Saídas" dataKey="Despesas" stroke="#F43F5E" strokeWidth={3} dot={{r: 4, fill: '#F43F5E', strokeWidth: 0}} activeDot={{r: 6}} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Direita: Últimas Movimentações */}
+            <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
+              <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-4">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Activity size={18} className="text-indigo-400"/> Últimas Transações
+                </h3>
+                <button onClick={() => setActiveTab('fluxo')} className="text-xs text-indigo-400 hover:text-indigo-300 font-bold">Ver todas</button>
+              </div>
+
+              <div className="space-y-3">
+                {itensFluxo.slice(0, 4).map(mov => (
+                  <div key={mov.id} className="flex justify-between items-center p-3 bg-black/20 rounded-xl border border-white/5 hover:bg-white/5 transition-colors">
+                    <div className="flex items-center gap-3 truncate">
+                      <div className={`p-2 rounded-lg ${mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                        {mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? <ArrowUpCircle size={16}/> : <ArrowDownCircle size={16}/>}
                       </div>
-
-                      {/* Caixa de Destaque da Fatura */}
-                      <div className="bg-black/30 border border-white/5 rounded-xl p-4 mt-2">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                            Fatura {nomeMesStr}
-                          </span>
-                          {card.faturaAtual.estaFechada ? (
-                            <span className="text-[9px] bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold px-2 py-0.5 rounded-full">
-                              🔒 Fechada
-                            </span>
-                          ) : (
-                            <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold px-2 py-0.5 rounded-full">
-                              🔓 Aberta
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-baseline justify-between">
-                          <h4 className="text-lg font-black text-white">
-                            {formatCurrency(card.faturaAtual.valor)}
-                          </h4>
-                          <span className="text-[10px] text-gray-500">
-                            {card.faturaAtual.estaFechada 
-                              ? `Fechou em: ${card.faturaAtual.dataFechamento.toLocaleDateString('pt-BR')}` 
-                              : `Fecha em: ${card.faturaAtual.dataFechamento.toLocaleDateString('pt-BR')}`}
-                          </span>
-                        </div>
+                      <div className="truncate">
+                        <p className="text-sm font-bold text-white truncate">{mov.descricao}</p>
+                        <p className="text-[10px] text-gray-500">{new Date(mov.data + 'T12:00:00').toLocaleDateString('pt-BR')} • {mov.conta}</p>
                       </div>
-
                     </div>
-                  );
-                })}
+                    <div className="text-right shrink-0 ml-2">
+                      <p className={`text-sm font-bold ${mov.statusTransacao === 'Pendente' ? 'text-gray-500' : (mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? 'text-emerald-400' : 'text-rose-400')}`}>
+                        {mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? '+' : '-'} {formatCurrency(parseSafeNumber(mov.valor))}
+                      </p>
+                      {mov.statusTransacao === 'Pendente' && <p className="text-[9px] text-amber-400 uppercase font-bold">Pendente</p>}
+                    </div>
+                  </div>
+                ))}
+                {itensFluxo.length === 0 && (
+                  <p className="text-sm text-gray-500 text-center py-6 italic">Sem movimentos nesta carteira.</p>
+                )}
               </div>
-            )}
+            </div>
           </div>
-
         </div>
       )}
 
@@ -822,14 +659,20 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
             </h3>
             
             <form onSubmit={handleSalvar} className="space-y-4">
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Data</label>
-                <input type="date" required value={form.data} onChange={e => setForm({...form, data: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Data</label>
+                  <input type="date" required value={form.data} onChange={e => setForm({...form, data: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Conta / Banco / CDB</label>
+                  <input type="text" placeholder="Ex: Nubank, Inter, Caixa Físico..." required value={form.conta} onChange={e => setForm({...form, conta: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm" />
+                </div>
               </div>
 
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
-                <input type="text" placeholder="Ex: Pagamento Cliente X, Compra de Mouse..." required value={form.descricao} onChange={e => setForm({...form, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm" />
+                <input type="text" placeholder="Ex: Pagamento Cliente X, Rendimento CDB..." required value={form.descricao} onChange={e => setForm({...form, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm" />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -864,21 +707,20 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase">Frequência</label>
-                  <select value={form.recorrencia} onChange={e => setForm({...form, recorrencia: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
+                  <select value={form.recorrencia} onChange={e => setForm({...form, recorrencia: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer mb-1">
                     <option className="bg-gray-900" value="none">Único (Não repete)</option>
                     <option className="bg-gray-900" value="weekly">Semanal</option>
-                    <option className="bg-gray-900" value="monthly">Mensal</option>
+                    <option className="bg-gray-900" value="monthly">Mensal (Ideal p/ Guias MEI/DAS)</option>
                     <option className="bg-gray-900" value="yearly">Anual</option>
                   </select>
+                  {form.recorrencia !== 'none' && <p className="text-[9px] text-emerald-400">💡 Ao dar baixa neste lançamento, o próximo será gerado automaticamente.</p>}
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase">Link do Comprovante (Opcional)</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Anexar Comprovante (Imagem)</label>
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <LinkIcon size={14} className="text-gray-500" />
-                    </div>
-                    <input type="url" placeholder="https://drive.google.com/..." value={form.linkComprovante} onChange={e => setForm({...form, linkComprovante: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 pl-9 outline-none focus:border-indigo-500 mt-1 text-sm" />
+                    <input type="file" accept="image/*" onChange={handleUploadImagem} className="w-full bg-black/40 border border-white/10 text-gray-300 file:bg-indigo-600 file:text-white file:border-0 file:rounded-lg file:px-3 file:py-1 file:mr-3 rounded-xl p-2 outline-none focus:border-indigo-500 mt-1 text-xs cursor-pointer" />
                   </div>
+                  {form.linkComprovante && <p className="text-[9px] text-green-400 mt-1">✓ Imagem carregada pronta para salvar.</p>}
                 </div>
               </div>
 
@@ -918,9 +760,15 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                           <td className="p-4">
                             <div className="font-bold text-white text-sm">
                               {mov.descricao} 
-                              {mov.isFatura && <span className="ml-2 text-[10px] font-normal text-gray-400">({mov.itens.length} parcelas)</span>}
                             </div>
-                            <div className="text-[10px] text-gray-500 uppercase mt-0.5">{mov.categoria}</div>
+                            <div className="text-[10px] text-gray-500 uppercase mt-0.5 flex items-center gap-2">
+                              <span>{mov.categoria}</span>
+                              {mov.conta && (
+                                <span className="border-l border-white/10 pl-2 text-indigo-300 font-bold">
+                                  🏦 {mov.conta}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-4 text-center">
                             {mov.tipo === 'Receita' && <span className="text-green-400 bg-green-400/10 px-2 py-1 rounded text-[10px] font-bold"><ArrowUpCircle size={12} className="inline mr-1"/> Receita</span>}
@@ -968,9 +816,9 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
                                    </button>
                                  )}
                                  {mov.linkComprovante && (
-                                   <a href={mov.linkComprovante} target="_blank" rel="noopener noreferrer" className="p-2 text-indigo-300 hover:text-indigo-100 bg-indigo-500/20 hover:bg-indigo-500/40 rounded-xl transition-colors" title="Ver Comprovante">
+                                   <button onClick={() => setImagemExpandida(mov.linkComprovante)} className="p-2 text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/60 rounded-xl transition-colors" title="Ver Comprovante Anexado">
                                      <FileText size={14}/>
-                                   </a>
+                                   </button>
                                  )}
                                  <button onClick={() => setItemEditando(mov)} className="p-2 text-blue-400 hover:text-white bg-blue-500/20 hover:bg-blue-500/60 rounded-xl transition-colors" title="Editar">
                                    <Pencil size={14}/>
@@ -990,352 +838,6 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
           </div>
         </div>
       </div>
-      )}
-
-      {/* ABA CARTÕES DE CRÉDITO (EXTRATO) */}
-      {activeTab === 'cartoes' && (
-        <div className="space-y-6 animate-in fade-in">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-            {/* COLUNA ESQUERDA: FORMULÁRIOS (Ocupa 1 Coluna) */}
-            <div className="lg:col-span-1 flex flex-col gap-6">
-              
-              {/* Lançamento de Compra no Cartão */}
-              <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
-                  <CreditCard size={18} className="text-rose-400" /> Nova Compra no Cartão
-                </h3>
-                
-                <form onSubmit={handleSalvarCartao} className="space-y-4">
-                  
-                  {/* LINHA 1: Cartão e Data */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Selecione o Cartão</label>
-                      <select 
-                        required 
-                        value={formCartao.cartaoId} 
-                        onChange={e => setFormCartao({...formCartao, cartaoId: e.target.value})} 
-                        className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-sm cursor-pointer"
-                      >
-                        <option value="" className="bg-gray-900">Selecione...</option>
-                        {cartoesCadastrados.map(c => (
-                          <option key={c.id} value={c.id} className="bg-gray-900">
-                            {c.bandeira} (****{c.finalCartao})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Data da Compra</label>
-                      <input type="date" required value={formCartao.dataCompra} onChange={e => setFormCartao({...formCartao, dataCompra: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
-                    </div>
-                  </div>
-
-                  {/* LINHA 2: Descrição */}
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição da Compra</label>
-                    <input type="text" placeholder="Ex: Notebook M1, Supermercado..." required value={formCartao.descricao} onChange={e => setFormCartao({...formCartao, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm" />
-                  </div>
-
-                  {/* LINHA 3: Tipo, Valor e Parcelas */}
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] font-bold text-gray-400 uppercase">Tipo de Lançamento</label>
-                        <select value={formCartao.tipoCompra} onChange={e => setFormCartao({...formCartao, tipoCompra: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
-                          <option className="bg-gray-900" value="Parcelada">Compra Parcelada (Fim Definido)</option>
-                          <option className="bg-gray-900" value="Recorrente">Assinatura Mensal (Infinito)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-gray-400 uppercase">Valor (R$)</label>
-                        <input type="number" step="0.01" required value={formCartao.valorTotal} onChange={e => setFormCartao({...formCartao, valorTotal: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-rose-500 mt-1 text-sm font-bold" />
-                      </div>
-                    </div>
-
-                    {formCartao.tipoCompra === 'Parcelada' && (
-                      <div>
-                        <label className="text-[10px] font-bold text-gray-400 uppercase">Quantidade de Parcelas</label>
-                        <select value={formCartao.parcelas} onChange={e => setFormCartao({...formCartao, parcelas: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
-                          {[...Array(24)].map((_, i) => (
-                            <option key={i+1} className="bg-gray-900" value={i+1}>
-                              {i+1}x {formCartao.valorTotal ? `(${formatCurrency(parseSafeNumber(formCartao.valorTotal) / (i+1))})` : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm mt-2">
-                    Lançar na Fatura
-                  </button>
-                </form>
-              </div>
-
-              {/* Cadastro de Cartão Físico/Virtual */}
-              <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
-                  <Plus size={18} className="text-purple-400" /> Cadastrar Novo Cartão
-                </h3>
-                <form onSubmit={handleCadastrarCartao} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Bandeira</label>
-                      <select value={formNovoCartao.bandeira} onChange={e => setFormNovoCartao({...formNovoCartao, bandeira: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 mt-1 text-xs cursor-pointer">
-                        <option className="bg-gray-900" value="Visa">Visa</option>
-                        <option className="bg-gray-900" value="MasterCard">MasterCard</option>
-                        <option className="bg-gray-900" value="Elo">Elo</option>
-                        <option className="bg-gray-900" value="Amex">Amex</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Últimos 4 Dígitos</label>
-                      <input type="text" maxLength="4" placeholder="1234" required value={formNovoCartao.finalCartao} onChange={e => setFormNovoCartao({...formNovoCartao, finalCartao: e.target.value.replace(/\D/g, '')})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 mt-1 text-sm" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Limite (R$)</label>
-                      <input type="number" step="0.01" required value={formNovoCartao.limiteTotal} onChange={e => setFormNovoCartao({...formNovoCartao, limiteTotal: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 mt-1 text-xs" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Fecham. (Dia)</label>
-                      <input type="number" min="1" max="31" required value={formNovoCartao.diaFechamento} onChange={e => setFormNovoCartao({...formNovoCartao, diaFechamento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 mt-1 text-xs" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase">Vencim. (Dia)</label>
-                      <input type="number" min="1" max="31" required value={formNovoCartao.diaVencimento} onChange={e => setFormNovoCartao({...formNovoCartao, diaVencimento: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 mt-1 text-xs" />
-                    </div>
-                  </div>
-                  <button type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-sm">
-                    Salvar Cartão
-                  </button>
-                </form>
-              </div>
-            </div>
-
-            {/* COLUNA DIREITA: TABELA (Ocupa 2 Colunas) */}
-            <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg overflow-hidden h-max">
-              <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <CreditCard size={18} className="text-gray-400"/> Extrato de Compras ({carteiraAtiva})
-                </h3>
-              </div>              
-              <div className="overflow-x-auto custom-scrollbar max-h-[700px]">
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-[10px] uppercase tracking-wider z-10">
-                    <tr>
-                      <th className="p-4 pl-6 font-semibold">Vencimento</th>
-                      <th className="p-4 font-semibold">Descrição / Parcela</th>
-                      <th className="p-4 font-semibold text-center">Status</th>
-                      <th className="p-4 font-semibold text-right">Valor da Parcela</th>
-                      <th className="p-4 font-semibold text-center pr-6">Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {extratoCartoes.length === 0 ? (
-                      <tr><td colSpan="5" className="p-12 text-center text-gray-500">Nenhuma compra no cartão registrada.</td></tr>
-                    ) : (
-                      extratoCartoes.map(mov => (
-                        <tr key={mov.id} className="hover:bg-white/5 transition-colors">
-                          <td className="p-4 pl-6 text-sm font-bold text-gray-300 whitespace-nowrap">
-                            {new Date(mov.data + 'T12:00:00').toLocaleDateString('pt-BR')}
-                          </td>
-                          <td className="p-4">
-                            <div className="font-bold text-white text-sm">{mov.descricao}</div>
-                          </td>
-                          <td className="p-4 text-center">
-                            {mov.statusTransacao === 'Pendente' ? (
-                              <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-bold">A Pagar</span>
-                            ) : (
-                              <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded font-bold">Paga</span>
-                            )}
-                          </td>
-                          <td className="p-4 font-black text-right text-rose-400">
-                            - {formatCurrency(parseSafeNumber(mov.valor))}
-                          </td>
-                          <td className="p-4 pr-6 text-center flex items-center justify-center gap-2">
-                             <button onClick={() => setItemEditando(mov)} className="p-2 text-blue-400 hover:text-white bg-blue-500/20 hover:bg-blue-500/60 rounded-xl transition-colors" title="Editar Parcela">
-                               <Pencil size={14}/>
-                             </button>
-                             <button onClick={() => handleExcluir(mov.id)} className="p-2 text-gray-500 hover:text-red-400 bg-white/5 rounded-xl transition-colors" title="Excluir Parcela">
-                               <Trash2 size={14}/>
-                             </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ABA COFRINHOS (METAS E RENDIMENTOS) */}
-      {activeTab === 'cofrinhos' && (
-        <div className="space-y-6 animate-in fade-in">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            <div className="lg:col-span-1 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6 h-max">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
-                <PiggyBank size={18} className="text-amber-400" /> Atualizar Cofrinho
-              </h3>
-              <p className="text-xs text-gray-400 mb-4">Atualize o saldo do dia para o sistema calcular o quanto rendeu.</p>
-              
-              <form onSubmit={handleSalvarCofrinho} className="space-y-4">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Cofrinho</label>
-                  <input type="text" placeholder="Ex: Viagem Vitória 2026, Férias..." required value={formCofrinho.nome} onChange={e => setFormCofrinho({...formCofrinho, nome: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-amber-500 mt-1 text-sm" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase">Meta Total Desejada (R$)</label>
-                  <input type="number" step="0.01" value={formCofrinho.metaTotal} onChange={e => setFormCofrinho({...formCofrinho, metaTotal: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-amber-500 mt-1 text-sm" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Saldo Hoje (R$)</label>
-                    <input type="number" step="0.01" required value={formCofrinho.saldoInformado} onChange={e => setFormCofrinho({...formCofrinho, saldoInformado: e.target.value})} className="w-full bg-black/40 border border-white/10 text-amber-400 rounded-xl p-3 outline-none focus:border-amber-500 mt-1 text-sm font-bold" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Data Ref.</label>
-                    <input type="date" required value={formCofrinho.dataAtualizacao} onChange={e => setFormCofrinho({...formCofrinho, dataAtualizacao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-amber-500 mt-1 text-sm" />
-                  </div>
-                </div>
-                <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-black font-black py-3.5 rounded-xl transition-all shadow-md text-sm mt-2">
-                  Gravar Saldo Atual
-                </button>
-              </form>
-            </div>
-
-            <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                <Target size={18} className="text-gray-400"/> Meus Cofrinhos ({carteiraAtiva})
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {(() => {
-                  const historicoCofrinhos = movimentacoesFiltradas.filter(m => m.tipo === 'Cofrinho');
-                  if (historicoCofrinhos.length === 0) return <p className="text-gray-500 text-sm">Nenhum cofrinho registado.</p>;
-                  
-                  // Agrupa pelo nome para pegar sempre a última atualização
-                  const cofrinhosAgrupados = {};
-                  historicoCofrinhos.forEach(c => {
-                    if (!cofrinhosAgrupados[c.cofrinhoNome] || new Date(c.data) > new Date(cofrinhosAgrupados[c.cofrinhoNome].data)) {
-                      cofrinhosAgrupados[c.cofrinhoNome] = c;
-                    }
-                  });
-
-                  return Object.values(cofrinhosAgrupados).map((cofre, idx) => {
-                    const progresso = cofre.metaTotal > 0 ? Math.min((cofre.valor / cofre.metaTotal) * 100, 100) : 0;
-                    return (
-                      <div key={idx} className="bg-white/5 border border-white/10 rounded-2xl p-5 shadow-inner">
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="text-white font-bold">{cofre.cofrinhoNome}</h4>
-                          <span className="text-[10px] text-gray-500 uppercase bg-black/40 px-2 py-1 rounded">Atualizado: {new Date(cofre.data + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
-                        </div>
-                        <h2 className="text-3xl font-black text-amber-400">{formatCurrency(cofre.valor)}</h2>
-                        {cofre.metaTotal > 0 && (
-                          <div className="mt-4">
-                            <div className="flex justify-between text-xs text-gray-400 mb-1">
-                              <span>Progresso ({progresso.toFixed(1)}%)</span>
-                              <span>Meta: {formatCurrency(cofre.metaTotal)}</span>
-                            </div>
-                            <div className="w-full bg-black/40 rounded-full h-2">
-                              <div className="bg-gradient-to-r from-amber-600 to-amber-400 h-2 rounded-full" style={{ width: `${progresso}%` }}></div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ABA INVESTIMENTOS (PATRIMÓNIO) */}
-      {activeTab === 'investimentos' && (
-        <div className="space-y-6 animate-in fade-in">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            <div className="lg:col-span-1 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6 h-max">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
-                <TrendingUp size={18} className="text-blue-400" /> Registar Aplicação
-              </h3>
-              
-              <form onSubmit={handleSalvarInvestimento} className="space-y-4">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Ativo</label>
-                  <input type="text" placeholder="Ex: MXRF11, Tesouro Selic..." required value={formInvestimento.ativo} onChange={e => setFormInvestimento({...formInvestimento, ativo: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase">Categoria</label>
-                  <select value={formInvestimento.tipoAtivo} onChange={e => setFormInvestimento({...formInvestimento, tipoAtivo: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none mt-1 text-xs cursor-pointer">
-                    <option className="bg-gray-900" value="Renda Fixa (CDB/Tesouro)">Renda Fixa (CDB/Tesouro)</option>
-                    <option className="bg-gray-900" value="Fundos Imobiliários (FIIs)">Fundos Imobiliários (FIIs)</option>
-                    <option className="bg-gray-900" value="Ações">Ações</option>
-                    <option className="bg-gray-900" value="Criptomoedas">Criptomoedas</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Aplicado</label>
-                    <input type="number" step="0.01" required value={formInvestimento.valorAplicado} onChange={e => setFormInvestimento({...formInvestimento, valorAplicado: e.target.value})} className="w-full bg-black/40 border border-white/10 text-blue-400 rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm font-bold" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Data Compra</label>
-                    <input type="date" required value={formInvestimento.dataCompra} onChange={e => setFormInvestimento({...formInvestimento, dataCompra: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm" />
-                  </div>
-                </div>
-                <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-3.5 rounded-xl transition-all shadow-md text-sm mt-2">
-                  Adicionar à Carteira
-                </button>
-              </form>
-            </div>
-
-            <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg overflow-hidden">
-              <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2"><Briefcase size={18} className="text-gray-400"/> Carteira de Ativos ({carteiraAtiva})</h3>
-              </div>
-              <div className="overflow-x-auto custom-scrollbar max-h-[600px]">
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 bg-gray-900 border-b border-white/10 text-gray-400 text-[10px] uppercase tracking-wider z-10">
-                    <tr>
-                      <th className="p-4 pl-6 font-semibold">Data Compra</th>
-                      <th className="p-4 font-semibold">Ativo / Tipo</th>
-                      <th className="p-4 font-semibold text-right pr-6">Valor Aplicado</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {movimentacoesFiltradas.filter(m => m.tipo === 'Investimento').length === 0 ? (
-                      <tr><td colSpan="3" className="p-12 text-center text-gray-500">Nenhum investimento registado.</td></tr>
-                    ) : (
-                      movimentacoesFiltradas.filter(m => m.tipo === 'Investimento').map(inv => (
-                        <tr key={inv.id} className="hover:bg-white/5 transition-colors">
-                          <td className="p-4 pl-6 text-sm font-bold text-gray-300 whitespace-nowrap">
-                            {new Date(inv.data + 'T12:00:00').toLocaleDateString('pt-BR')}
-                          </td>
-                          <td className="p-4">
-                            <div className="font-bold text-white text-sm">{inv.descricao}</div>
-                            <div className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full inline-block mt-1">{inv.tipoAtivo}</div>
-                          </td>
-                          <td className="p-4 pr-6 font-black text-right text-blue-400">
-                            {formatCurrency(parseSafeNumber(inv.valor))}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* ABA 2: CONSOLIDADO ANUAL (BLINDAGEM IRPF) */}
@@ -1450,12 +952,15 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
             </h3>
             
             <form onSubmit={handleSalvarEdicao} className="space-y-4">
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Data (Vencimento/Compra)</label>
-                <input type="date" required value={itemEditando.data} onChange={e => setItemEditando({...itemEditando, data: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm" />
-                {itemEditando.categoria === 'Cartão de Crédito' && (
-                  <p className="text-[10px] text-blue-400 mt-1">Dica: Alterar a data moverá a parcela para a respectiva fatura de forma automática.</p>
-                )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Data</label>
+                  <input type="date" required value={itemEditando.data} onChange={e => setItemEditando({...itemEditando, data: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Conta / Banco</label>
+                  <input type="text" required value={itemEditando.conta || ''} onChange={e => setItemEditando({...itemEditando, conta: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-blue-500 mt-1 text-sm" />
+                </div>
               </div>
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
@@ -1482,6 +987,20 @@ export default function PersonalFinance({ db, currentUser, formatCurrency }) {
         </div>
       )}
 
+      {/* MODAL DE VISUALIZAÇÃO DE COMPROVANTE (IMAGEM) */}
+      {imagemExpandida && (
+        <div 
+          className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in zoom-in-95"
+          onClick={() => setImagemExpandida(null)}
+        >
+          <div className="relative max-w-3xl w-full max-h-[90vh] flex justify-center">
+            <button onClick={() => setImagemExpandida(null)} className="absolute -top-10 right-0 text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors">
+              <X size={24} />
+            </button>
+            <img src={imagemExpandida} alt="Comprovante" className="max-w-full max-h-[85vh] object-contain rounded-xl border border-white/20 shadow-2xl" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

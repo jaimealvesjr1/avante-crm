@@ -50,18 +50,14 @@ export default function TeamFeedView({
             if (store.arquivada) return;
             (store.checklists || []).forEach(task => {
                 
-                // CONDIÇÃO 1: Fui selecionado no dropdown de responsável por OUTRA pessoa
                 const isDelegatedToMe = (task.responsavel === myName || task.resp === myName) && task.criadoPor !== myName;
                 
-                // CONDIÇÃO 2: Fui mencionado manualmente no texto com @
                 const isMentionedInText = task.texto && (task.texto.includes(`@${myName}`) || task.texto.includes(`@${myFirstName}`));
 
                 const isRecurring = task.recorrencia && task.recorrencia !== 'none';
 
-                // CONDIÇÃO 3: Eu criei a tarefa, OUTRA pessoa concluiu, e NÃO é uma rotina
                 const iCreatedAndWasCompleted = task.feita && task.criadoPor === myName && (task.completedBy && task.completedBy !== myName) && !isRecurring;
 
-                // PROCESSA PENDENTES (Fazer)
                 if (!task.feita && (isDelegatedToMe || isMentionedInText)) {
                     if (!dismissedNotifs.includes(task.id)) {
                         notifs.push({
@@ -736,6 +732,7 @@ export default function TeamFeedView({
                 if (radarFilter === 'unassigned') {
                     return resp === '';
                 }
+                if (resp === '') return true;
 
                 return resp === filterTarget || 
                        (resp !== '' && filterTarget !== '' && (resp.includes(filterTarget) || filterTarget.includes(resp)));
@@ -820,14 +817,14 @@ export default function TeamFeedView({
                     <div className="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-lg relative overflow-hidden flex flex-col flex-1 min-h-[600px] lg:h-[calc(100vh-120px)]">
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-orange-500 to-blue-500"></div>
                         
-                        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-5 border-b border-gray-700 pb-4 mt-2 shrink-0">
+                        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-5 border-b border-gray-700 pb-4 mt-2 shrink-0">
                             <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
                                 <Clock size={18} className="text-indigo-400" />
                                 Radar de Tarefas
                                 <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">{deadlinesData.length}</span>
                             </h3>
                             
-                            <div className="flex w-full sm:w-auto items-center gap-3">
+                            <div className="flex w-full xl:w-auto items-center gap-3 flex-wrap">
                                 {canEdit && (
                                 <>
                                 <button 
@@ -866,7 +863,7 @@ export default function TeamFeedView({
 
                         {showClientTaskForm && canEdit && (
                             <form onSubmit={submitClientTask} className="bg-black/40 border border-blue-500/30 p-3 rounded-xl mb-5 mx-5 animate-in fade-in slide-in-from-top-2 shadow-inner">
-                                <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_2fr_1fr_auto] gap-3 w-full">
+                                <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_2fr_1fr_auto] gap-3 w-full">
                                     
                                     {/* COLUNA 1: Cliente (Cima) e Responsável (Baixo) */}
                                     <div className="flex flex-col justify-between gap-2">
@@ -960,7 +957,7 @@ export default function TeamFeedView({
                         )}
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
                                 {deadlinesData.map(item => {
                                     const isOverdue = item.statusColor === 'red';
                                     const isWarning = item.statusColor === 'orange';
@@ -1299,7 +1296,12 @@ export default function TeamFeedView({
                                         <div key={userName} 
                                             onClick={() => {
                                                 if (data.storeId) {
-                                                    const targetStore = stores.find(s => s.id === data.storeId);
+                                                    const targetStore = stores.find(s => String(s.id) === String(data.storeId));
+                                                    if (targetStore && openTaskModal) openTaskModal(targetStore);
+                                                } 
+                                                else if (data.texto && data.texto.includes(' | ')) {
+                                                    const storeName = data.texto.split(' | ')[1]?.trim();
+                                                    const targetStore = stores.find(s => s.store === storeName);
                                                     if (targetStore && openTaskModal) openTaskModal(targetStore);
                                                 }
                                             }}
