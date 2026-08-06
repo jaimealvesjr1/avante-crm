@@ -8,7 +8,8 @@ import autoTable from 'jspdf-autotable';
 
 export default function GoalsSettingsModal({ 
   isOpen, onClose, stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, 
-  historicalGoals = [], formatCurrency, db, activeEvent, scheduledEvents, handleEventAction, competenceMonth
+  historicalGoals = [], pastEventsGlobal = [],
+  formatCurrency, db, activeEvent, scheduledEvents, handleEventAction, competenceMonth
 }) {
   if (!isOpen) return null;
 
@@ -129,10 +130,18 @@ export default function GoalsSettingsModal({
   const pastEventsStats = useMemo(() => {
     const events = {};
 
+    // 1. CARREGA AS FOTOGRAFIAS (EVENTOS CONSOLIDADOS FIXOS)
+    pastEventsGlobal.forEach(ev => {
+      events[ev.name] = { ...ev };
+    });
+
+    // 2. CARREGA OS EVENTOS ANTIGOS (LEGADO DINÂMICO) PARA NÃO PERDERMOS O QUE JÁ FOI FEITO ANTES DA ATUALIZAÇÃO
     stores.forEach(s => {
       if (s.eventLogs) {
         Object.entries(s.eventLogs).forEach(([eName, data]) => {
           if (activeEvent && activeEvent.name === eName) return; 
+          // Se já carregamos a foto congelada deste evento, ignoramos o cálculo dinâmico
+          if (events[eName] && events[eName].isConsolidated) return; 
 
           if (!events[eName]) events[eName] = { name: eName, gmv: 0, target: 0, ads: 0, orders: 0, units: 0 };
           
@@ -141,13 +150,15 @@ export default function GoalsSettingsModal({
           events[eName].ads += Number(data.ads) || 0;
           events[eName].orders += Number(data.orders) || 0;
           events[eName].units += Number(data.units) || 0;
-        });}
+        });
+      }
 
       if (s.monthlyHistory) {
          s.monthlyHistory.forEach(mes => {
             if (mes.events) {
                Object.entries(mes.events).forEach(([eName, data]) => {
                   if (activeEvent && activeEvent.name === eName) return; 
+                  if (events[eName] && events[eName].isConsolidated) return;
                   
                   if (!events[eName]) events[eName] = { name: eName, gmv: 0, target: 0, ads: 0, orders: 0, units: 0 };
                   
@@ -162,7 +173,7 @@ export default function GoalsSettingsModal({
       }
     });
     return Object.values(events).sort((a, b) => b.gmv - a.gmv);
-  }, [stores, activeEvent]);
+  }, [stores, activeEvent, pastEventsGlobal]);
 
   const exportPastEventReport = async (eventName) => {
       toast.loading(`Gerando relatório de ${eventName}...`, { id: 'past-event-export' });
@@ -170,25 +181,35 @@ export default function GoalsSettingsModal({
           const docPdf = new jsPDF();
           const clientsGroup = {};
           
-          stores.forEach(store => {
-              let eventData = null;
+          const consolidatedEvent = pastEventsGlobal.find(e => e.name === eventName);
 
-              if (store.eventLogs && store.eventLogs[eventName]) {
-                  eventData = store.eventLogs[eventName];
-              } else if (store.monthlyHistory) {
-                  store.monthlyHistory.forEach(mes => {
-                      if (mes.events && mes.events[eventName]) {
-                          eventData = mes.events[eventName];
-                      }
-                  });
-              }
-
-              if (eventData) {
-                  const cName = store.client || 'Sem Cliente';
+          if (consolidatedEvent && consolidatedEvent.storeBreakdown) {
+              consolidatedEvent.storeBreakdown.forEach(s => {
+                  const cName = s.client || 'Sem Cliente';
                   if (!clientsGroup[cName]) clientsGroup[cName] = [];
-                  clientsGroup[cName].push({ ...store, reportEventData: eventData });
-              }
-          });
+                  clientsGroup[cName].push({ ...s, reportEventData: s });
+              });
+          } else {
+              stores.forEach(store => {
+                  let eventData = null;
+
+                  if (store.eventLogs && store.eventLogs[eventName]) {
+                      eventData = store.eventLogs[eventName];
+                  } else if (store.monthlyHistory) {
+                      store.monthlyHistory.forEach(mes => {
+                          if (mes.events && mes.events[eventName]) {
+                              eventData = mes.events[eventName];
+                          }
+                      });
+                  }
+
+                  if (eventData) {
+                      const cName = store.client || 'Sem Cliente';
+                      if (!clientsGroup[cName]) clientsGroup[cName] = [];
+                      clientsGroup[cName].push({ ...store, reportEventData: eventData });
+                  }
+              });
+          }
 
           const clientNames = Object.keys(clientsGroup).sort();
           if (clientNames.length === 0) throw new Error("Nenhum dado encontrado para este evento.");

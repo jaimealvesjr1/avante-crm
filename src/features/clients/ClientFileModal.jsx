@@ -12,7 +12,6 @@ import { enrichStoreMetrics } from '../../utils/calculations';
 import { processTaskCompletion, processTaskStart, processTaskPause, calculateNextAccess } from '../../utils/taskEngine';
 import ProductDrawer from './components/ProductDrawer';
 import ClientSidebar from './components/ClientSidebar';
-import StoreEntryRow from './components/StoreEntryRow';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'];
 const ALL_MARKETPLACES = ['shopee', 'mercado livre', 'tiktok shop', 'shein', 'amazon', 'magalu', 'netshoes', 'temu', 'kwai', 'aliexpress'];
@@ -32,7 +31,6 @@ export default function ClientFileModal({
   const [editingProductData, setEditingProductData] = useState(null);
   const [showProductHistoryId, setShowProductHistoryId] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null); 
-  const [marketplaceFilter, setMarketplaceFilter] = useState('all');
 
   // Tarefas e Acessos
   const [newLog, setNewLog] = useState('');
@@ -533,9 +531,6 @@ export default function ClientFileModal({
             <button onClick={() => setActiveTab('historico')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'historico' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
               <History size={16} /> Histórico & Tarefas
             </button>
-            <button onClick={() => setActiveTab('apuracao')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'apuracao' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
-              <Zap size={16} /> Lançamento Parcial
-            </button>
           </div>
         </div>
 
@@ -675,57 +670,6 @@ export default function ClientFileModal({
                       ) : <div className="flex items-center justify-center h-full text-gray-500 text-xs">Sem dados históricos.</div>}
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'apuracao' && (
-              <div className="space-y-6 animate-in fade-in">
-                <div className="bg-black/20 rounded-2xl border border-white/5 overflow-x-auto">
-                  <table className="w-full text-left border-collapse min-w-[700px]">
-                    <thead className="bg-black/40 text-gray-400 text-[10px] uppercase tracking-wider border-b border-white/5">
-                      <tr>
-                        <th className="p-4">Loja / Canal</th>
-                        <th className="p-4">Dia Final</th>
-                        <th className="p-4 text-blue-400">Fat. Acumulado</th>
-                        <th className="p-4 text-emerald-400">Pedidos</th>
-                        <th className="p-4 text-purple-400">Unidades</th>
-                        <th className="p-4 text-amber-400">Ads Acumulado</th>
-                        {/* Nova Coluna de Ação com o Filtro de Marketplace */}
-                        <th className="p-4 text-right flex items-center justify-end gap-2">
-                          <select 
-                            value={marketplaceFilter} 
-                            onChange={e => setMarketplaceFilter(e.target.value)}
-                            className="bg-gray-800 text-white text-[9px] rounded p-1 outline-none border border-gray-600 focus:border-indigo-500 cursor-pointer"
-                          >
-                            <option value="all">TODOS OS CANAIS</option>
-                            {/* Cria as opções do select com base nos marketplaces únicos cadastrados nestas lojas */}
-                            {Array.from(new Set(liveStores.map(s => s.marketplace).filter(Boolean))).map(mkt => (
-                               <option key={mkt} value={mkt}>{mkt.toUpperCase()}</option>
-                            ))}
-                          </select>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {/* Aplicamos o .filter() antes do .map() para mostrar apenas os canais selecionados */}
-                      {liveStores
-                        .filter(store => 
-                          marketplaceFilter === 'all' || 
-                          (store.marketplace && store.marketplace.toLowerCase() === marketplaceFilter.toLowerCase())
-                        )
-                        .map(store => (
-                        <StoreEntryRow 
-                          key={store.id} 
-                          store={store} 
-                          handleSaveIndividualEntry={handleSaveIndividualEntry} 
-                          formatCurrency={formatCurrency} 
-                          openTaskModal={openTaskModal}
-                          openHistoryModal={openHistoryModal}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
               </div>
             )}

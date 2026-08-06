@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Wallet, DollarSign, ArrowUpCircle, ArrowDownCircle, FileText, Calendar, Target, ShieldCheck, Plus, Trash2, Link as LinkIcon, 
-  Download, Briefcase, User, CreditCard, PiggyBank, TrendingUp, LayoutDashboard, Pencil, X, Activity, Calculator } from 'lucide-react';
+// IMPORTAÇÕES CORRIGIDAS: Activity e Calculator adicionados
+import { Wallet, DollarSign, ArrowUpCircle, ArrowDownCircle, FileText, Calendar, Target, ShieldCheck, Plus, Trash2, Link as LinkIcon, Download, Briefcase, User, CreditCard, PiggyBank, TrendingUp, LayoutDashboard, Pencil, X, Activity, Calculator } from 'lucide-react';
 import { collection, onSnapshot, doc, addDoc, deleteDoc, updateDoc, query, where } from 'firebase/firestore';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { toast } from 'react-hot-toast';
 
-export default function PersonalFinance({ db, currentUser, currentUserData, formatCurrency }) { // <-- 1. Recebe a nova prop
+export default function PersonalFinance({ db, currentUser, currentUserData, formatCurrency }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const carteiraPJ = currentUserData?.paymentConfig?.tipoConta || 'MEI';
   const [carteiraAtiva, setCarteiraAtiva] = useState('PF')
@@ -14,7 +14,7 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
   const dataInicialDefault = currentUserData?.dataAberturaMei || `${anoAtual}-01`;
   const [dataAberturaMei, setDataAberturaMei] = useState(dataInicialDefault);
 
-  // NOVO: Escuta as mudanças do Firebase. Assim que o perfil carrega, atualiza o ecrã.
+  // Sincroniza a data de abertura gravada no perfil
   useEffect(() => {
     if (currentUserData?.dataAberturaMei) {
       setDataAberturaMei(currentUserData.dataAberturaMei);
@@ -52,13 +52,32 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
   const [itemEditando, setItemEditando] = useState(null);
   const [imagemExpandida, setImagemExpandida] = useState(null);
 
+  // ATUALIZADO: Comprime a imagem antes de a guardar para evitar erros de limite de 1MB do Firebase
   const handleUploadImagem = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setForm({ ...form, linkComprovante: reader.result });
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800; // Reduz largura para otimização
+        const scaleSize = MAX_WIDTH / img.width;
+        
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // Converte para JPEG leve (70% de qualidade)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        setForm({ ...form, linkComprovante: dataUrl });
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSalvarEdicao = async (e) => {
@@ -102,20 +121,19 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
     const [year, month, day] = mov.data.split('-').map(Number);
     let nextDateObj = new Date(year, month - 1, day);
     
-    // Calcula a data do próximo lançamento baseado na regra
     if (mov.recorrencia === 'weekly') nextDateObj.setDate(nextDateObj.getDate() + 7);
     if (mov.recorrencia === 'monthly') nextDateObj.setMonth(nextDateObj.getMonth() + 1);
     if (mov.recorrencia === 'yearly') nextDateObj.setFullYear(nextDateObj.getFullYear() + 1);
 
     const nextDateStr = `${nextDateObj.getFullYear()}-${String(nextDateObj.getMonth() + 1).padStart(2, '0')}-${String(nextDateObj.getDate()).padStart(2, '0')}`;
 
-    // Remove campos visuais ou IDs do objeto original antes de clonar
-    const { id, isFatura, itens, ...dadosBase } = mov;
+    // ATUALIZADO: Extrai o linkComprovante para NÃO o clonar no mês seguinte
+    const { id, isFatura, itens, linkComprovante, ...dadosBase } = mov;
 
-    // Gera o próximo como Pendente
     await addDoc(collection(db, "financeiro_pessoal"), {
         ...dadosBase,
         data: nextDateStr,
+        linkComprovante: '', // Nasce vazio sem a foto do mês passado
         statusTransacao: 'Pendente',
         criadoEm: new Date().toISOString()
     });
@@ -182,7 +200,7 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
       }
 
       toast.success("Lançamento registrado!");
-      setForm({...form, descricao: '', valor: '', statusTransacao: 'Efetuado', recorrencia: 'none'});
+      setForm({...form, descricao: '', valor: '', statusTransacao: 'Efetuado', recorrencia: 'none', linkComprovante: ''});
     } catch (error) { toast.error("Erro ao salvar."); }
   };
 
@@ -226,19 +244,14 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
 
   const itensFluxo = useMemo(() => {
     const lista = movimentacoesFiltradas.map(mov => ({ ...mov, isFatura: false }));
-
     const hoje = new Date().toISOString().split('T')[0];
     return lista.sort((a, b) => {
       const aFuturo = a.data >= hoje;
       const bFuturo = b.data >= hoje;
-
-      if (aFuturo && !bFuturo) return -1; // Futuros acima dos passados
+      if (aFuturo && !bFuturo) return -1;
       if (!aFuturo && bFuturo) return 1;
-      
-      if (aFuturo && bFuturo) {
-        return new Date(a.data) - new Date(b.data); // Futuros: Mais próximo de hoje primeiro (Crescente)
-      }
-      return new Date(b.data) - new Date(a.data); // Passados: Mais recente primeiro (Decrescente)
+      if (aFuturo && bFuturo) return new Date(a.data) - new Date(b.data);
+      return new Date(b.data) - new Date(a.data);
     });
   }, [movimentacoesFiltradas]);
 
@@ -248,7 +261,6 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
 
     movimentacoesFiltradas.forEach(mov => {
       if (mov.statusTransacao === 'Pendente') return;
-      
       const dataMov = new Date(mov.data + 'T12:00:00');
       if (dataMov.getFullYear() !== anoAtual) return;
 
@@ -259,10 +271,10 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
       if (mov.tipo === 'Receita') {
         resumo.receitaTotal += val;
         resumo.meses[mesNome].receita += val;
-      } else if (mov.tipo === 'Despesa Operacional') {
+      } else if (mov.tipo === 'Despesa Operacional' || mov.tipo === 'Despesa') {
         resumo.despesaComprovada += val;
         resumo.meses[mesNome].despesa += val;
-      } else if (mov.tipo === 'Retirada (Sócio)') {
+      } else if (mov.tipo === 'Retirada') {
         resumo.retiradas += val;
         resumo.meses[mesNome].retirada += val;
       }
@@ -278,7 +290,6 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
 
     movimentacoesFiltradas.forEach(m => {
       const val = parseSafeNumber(m.valor);
-      
       if (m.statusTransacao === 'Pendente') {
         if (m.tipo === 'Receita') aReceber += val;
         if (m.tipo.includes('Despesa')) aPagar += val; 
@@ -286,12 +297,11 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
         if (m.tipo.includes('Despesa')) realizadas += val;
       }
     });
-
     return { aPagar, aReceber, realizadas };
   }, [movimentacoesFiltradas]);
 
   const resumoMesAtual = useMemo(() => {
-    const mesAtualStr = new Date().toISOString().slice(0, 7); // Ex: "2026-08"
+    const mesAtualStr = new Date().toISOString().slice(0, 7);
     let receitas = 0;
     let despesas = 0;
 
@@ -301,7 +311,6 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
         if (m.tipo.includes('Despesa') || m.tipo === 'Retirada') despesas += parseSafeNumber(m.valor);
       }
     });
-
     return { receitas, despesas, saldo: receitas - despesas };
   }, [movimentacoesFiltradas]);
 
@@ -317,18 +326,13 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
       }
     });
 
-    // Extrai o Ano e o Mês a partir da string "2026-07"
     const [anoAbertura, mesAbertura] = dataAberturaMei.split('-').map(Number);
+    let limiteMeiProporcional = 81000; 
 
-    let limiteMeiProporcional = 81000; // Começamos sempre assumindo o teto total
-
-    // Se o MEI foi aberto NO ANO ATUAL, calculamos o proporcional
     if (anoAbertura === anoAtual) {
       const mesesDeAtividade = 12 - mesAbertura + 1;
       limiteMeiProporcional = mesesDeAtividade * 6750;
-    } 
-    // Segurança: se o ano de abertura estiver no futuro (não faz muito sentido, mas previne bugs)
-    else if (anoAbertura > anoAtual) {
+    } else if (anoAbertura > anoAtual) {
       limiteMeiProporcional = 0; 
     }
 
@@ -339,11 +343,9 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
     };
   }, [movimentacoesFiltradas, dataAberturaMei]);
 
-  // NOVO: Prepara os dados matemáticos dos últimos 6 meses para desenhar o gráfico
   const dadosGrafico6Meses = useMemo(() => {
     const mesesArr = [];
     const hoje = new Date();
-    // Volta 5 meses no tempo até ao mês atual (6 meses no total)
     for (let i = 5; i >= 0; i--) {
       const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
       mesesArr.push(d.toISOString().slice(0, 7)); 
@@ -358,7 +360,6 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
           if (m.tipo.includes('Despesa') || m.tipo === 'Retirada') des += parseSafeNumber(m.valor);
         }
       });
-      // Pega a string "2026-07" e converte em "JUL"
       const mesFormatado = new Date(mesStr + '-01T12:00:00').toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
       return { name: mesFormatado, Receitas: rec, Despesas: des };
     });
@@ -371,12 +372,11 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Wallet className="text-emerald-400" size={28} /> Organização Financeira e Fiscal
+            <Wallet className="text-emerald-400" size={28} /> Organização Contábil
           </h1>
           <p className="text-gray-400 text-sm mt-1">Sua blindagem e organização contábil unificada.</p>
         </div>
         
-        {/* SELETOR DE CARTEIRA DINÂMICO */}
         <div className="flex bg-black/40 p-1 rounded-xl border border-white/10 shadow-inner w-full xl:w-auto">
           <button 
             onClick={() => {
@@ -388,7 +388,6 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
             <User size={14} /> Caixa PF
           </button>
           
-          {/* Aba Dinâmica: Mostra MEI ou SIMPLES com base no configurado pelo Admin */}
           <button onClick={() => setCarteiraAtiva(carteiraPJ)} className={`flex-1 xl:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all flex justify-center items-center gap-2 ${carteiraAtiva === carteiraPJ ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}>
             <Briefcase size={14} /> Caixa {carteiraPJ}
           </button>
@@ -412,178 +411,163 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
 
       {activeTab === 'dashboard' && (
         <div className="space-y-6 animate-in fade-in">
-          
-          {/* Banner de Boas Vindas Compacto */}
-          <div className="bg-gradient-to-r from-indigo-900/30 to-transparent rounded-3xl border border-indigo-500/20 shadow-sm p-6 flex flex-col md:flex-row items-center md:items-start gap-6">
-            <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center shrink-0 border border-indigo-500/30 shadow-inner">
-              <ShieldCheck size={32} className="text-indigo-400" />
-            </div>
-            <div className="text-center md:text-left">
-              <h2 className="text-xl font-bold text-white mb-1">Painel de Controle: {carteiraAtiva === 'PF' ? 'Pessoa Física' : `Empresa (${carteiraAtiva})`}</h2>
-              <p className="text-gray-400 text-sm max-w-2xl">
-                Acompanhe a saúde financeira da sua {carteiraAtiva === 'PF' ? 'conta pessoal' : 'empresa'}. Mantenha as contas sempre separadas para garantir uma blindagem fiscal perfeita perante a Receita.
-              </p>
-            </div>
-          </div>
-
-          {/* MÉTRICAS GLOBAIS (Pendências e Custos Gerais) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-rose-900/20 border border-rose-500/30 rounded-2xl p-5 shadow-sm">
-              <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1 flex items-center gap-2"><ArrowDownCircle size={14}/>A Pagar (Pendente)</p>
-              <h3 className="text-2xl font-black text-white">{formatCurrency(totaisGlobais.aPagar)}</h3>
-            </div>
-            
-            <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-2xl p-5 shadow-sm">
-              <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1 flex items-center gap-2"><ArrowUpCircle size={14}/>A Receber (Pendente)</p>
-              <h3 className="text-2xl font-black text-white">{formatCurrency(totaisGlobais.aReceber)}</h3>
-            </div>
-
-            <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-5 shadow-sm">
-              <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1 flex items-center gap-2"><FileText size={14}/>Custos Realizados (Total)</p>
-              <h3 className="text-2xl font-black text-white">{formatCurrency(totaisGlobais.realizadas)}</h3>
-            </div>
-          </div>
-
-          {/* NOVO: INTELIGÊNCIA FISCAL (Exibe blocos diferentes dependendo da carteira) */}
-          {carteiraAtiva === 'MEI' && (
-            <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-5 shadow-sm">
-              <div className="flex justify-between items-end mb-3">
-                <div>
-                  <h4 className="text-sm font-bold text-amber-400 flex items-center gap-2"><Target size={16}/> Teto de Faturamento MEI</h4>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-[10px] text-gray-400">Data de abertura (Mês/Ano):</p>
-                    {/* ATUALIZADO: Uso do input de mês e ligação à função de salvar */}
-                    <input 
-                      type="month"
-                      value={dataAberturaMei} 
-                      onChange={e => handleSalvarAberturaMei(e.target.value)} 
-                      className="bg-black/40 text-amber-400 border border-amber-500/30 rounded px-2 py-0.5 outline-none text-[10px] font-bold cursor-pointer"
-                    />
-                  </div>
+          <div className="flex flex-col xl:flex-row gap-6 items-start">
+            <div className="w-full xl:w-2/3 2xl:w-3/4 flex flex-col gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-rose-900/20 border border-rose-500/30 rounded-2xl p-5 shadow-sm">
+                  <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1 flex items-center gap-2"><ArrowDownCircle size={14}/>A Pagar (Pendente)</p>
+                  <h3 className="text-2xl font-black text-white">{formatCurrency(totaisGlobais.aPagar)}</h3>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs font-bold text-white">{formatCurrency(metricasFiscaisAno.faturamentoAno)}</span>
-                  <span className="text-[10px] text-gray-500"> / {formatCurrency(metricasFiscaisAno.limiteMei)}</span>
+                
+                <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-2xl p-5 shadow-sm">
+                  <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1 flex items-center gap-2"><ArrowUpCircle size={14}/>A Receber (Pendente)</p>
+                  <h3 className="text-2xl font-black text-white">{formatCurrency(totaisGlobais.aReceber)}</h3>
+                </div>
+
+                <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-5 shadow-sm">
+                  <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1 flex items-center gap-2"><FileText size={14}/>Custos Realizados (Total)</p>
+                  <h3 className="text-2xl font-black text-white">{formatCurrency(totaisGlobais.realizadas)}</h3>
                 </div>
               </div>
-              <div className="w-full bg-black/40 rounded-full h-2.5 mt-2 overflow-hidden border border-white/5">
-                <div 
-                  className={`h-full rounded-full transition-all duration-1000 ${metricasFiscaisAno.usoLimiteMeiPercent > 85 ? 'bg-rose-500' : 'bg-amber-500'}`} 
-                  style={{ width: `${metricasFiscaisAno.usoLimiteMeiPercent}%` }}
-                ></div>
-              </div>
-              {metricasFiscaisAno.usoLimiteMeiPercent > 85 && (
-                <p className="text-[10px] text-rose-400 mt-2 font-bold animate-pulse">⚠️ Atenção: Você está muito próximo de estourar o teto do MEI proporcional!</p>
-              )}
-            </div>
-          )}
 
-          {carteiraAtiva === 'SIMPLES' && (
-            <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <h4 className="text-sm font-bold text-indigo-400 flex items-center gap-2"><Calculator size={16}/> Provisão de Impostos (Simples Nacional)</h4>
-                <p className="text-[10px] text-gray-400 mt-1">Estimativa de DAS baseada em 6% sobre o faturamento recebido neste mês.</p>
+              {/* Gráfico de Evolução COM A CORREÇÃO DE ALTURA (height explícito na DIV pai) */}
+              <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6 flex flex-col min-h-[350px]">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <TrendingUp size={18} className="text-indigo-400"/> Evolução (Últimos 6 meses)
+                  </h3>
+                </div>
+                
+                <div className="w-full" style={{ height: 250 }}>
+                  <ResponsiveContainer width="99%" height="100%">
+                    <LineChart data={dadosGrafico6Meses} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                      <XAxis dataKey="name" stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
+                      <Tooltip 
+                        cursor={{ stroke: 'rgba(255,255,255,0.1)' }} 
+                        contentStyle={{ backgroundColor: 'rgba(11, 15, 25, 0.95)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', fontSize: '12px' }} 
+                      />
+                      <Line type="monotone" name="Receitas" dataKey="Receitas" stroke="#10B981" strokeWidth={3} dot={{r: 4, fill: '#10B981', strokeWidth: 0}} activeDot={{r: 6}} />
+                      <Line type="monotone" name="Saídas" dataKey="Despesas" stroke="#F43F5E" strokeWidth={3} dot={{r: 4, fill: '#F43F5E', strokeWidth: 0}} activeDot={{r: 6}} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-              <div className="text-right bg-black/30 px-4 py-2 rounded-xl border border-white/5 w-full sm:w-auto">
-                <p className="text-[10px] uppercase font-bold text-gray-500">Guardar este mês</p>
-                <h3 className="text-xl font-black text-indigo-300">{formatCurrency(resumoMesAtual.receitas * 0.06)}</h3>
-              </div>
-            </div>
-          )}
 
-          {carteiraAtiva === 'PF' && (
-            <div className={`border rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${consolidadoIRPF.retiradas > consolidadoIRPF.lucroEvidenciado ? 'bg-rose-900/20 border-rose-500/30' : 'bg-emerald-900/20 border-emerald-500/30'}`}>
-              <div>
-                <h4 className={`text-sm font-bold flex items-center gap-2 ${consolidadoIRPF.retiradas > consolidadoIRPF.lucroEvidenciado ? 'text-rose-400' : 'text-emerald-400'}`}>
-                  <ShieldCheck size={16}/> Limite de Isenção (Lucro da Empresa)
-                </h4>
-                <p className="text-[10px] text-gray-400 mt-1 max-w-md">
-                  Você já declarou ter transferido <b>{formatCurrency(consolidadoIRPF.retiradas)}</b> da Empresa para a PF. O lucro comprovado pelas despesas operacionais registradas na PJ é de <b>{formatCurrency(consolidadoIRPF.lucroEvidenciado)}</b>.
-                </p>
-              </div>
-              <div className="text-left sm:text-right bg-black/30 px-4 py-2 rounded-xl border border-white/5 w-full sm:w-auto shrink-0">
-                <p className="text-[10px] uppercase font-bold text-gray-500">Status Fiscal</p>
-                {consolidadoIRPF.retiradas > consolidadoIRPF.lucroEvidenciado ? (
-                  <h3 className="text-lg font-black text-rose-400 animate-pulse">Risco (Tributável)</h3>
-                ) : (
-                  <h3 className="text-lg font-black text-emerald-400">Seguro (Isento)</h3>
-                )}
-              </div>
             </div>
-          )}
 
-          {/* SECÇÃO INFERIOR: Resumo do Mês, Gráfico e Últimas Atividades */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Esquerda: Gráfico de Evolução */}
-            <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6 flex flex-col h-full min-h-[350px]">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <TrendingUp size={18} className="text-indigo-400"/> Evolução (Últimos 6 meses)
-                </h3>
-              </div>
+            <div className="w-full xl:w-1/3 2xl:w-1/4 flex flex-col gap-6 xl:sticky xl:top-[160px]">
               
-              {/* O componente ResponsiveContainer expande-se para ocupar o espaço disponível */}
-              <div className="flex-1 w-full relative min-h-[250px] h-[250px]">
-                <ResponsiveContainer width="99%" height="100%">
-                  <LineChart data={dadosGrafico6Meses} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                    <XAxis dataKey="name" stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} />
-                    <YAxis stroke="#9CA3AF" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
-                    <Tooltip 
-                      cursor={{ stroke: 'rgba(255,255,255,0.1)' }} 
-                      contentStyle={{ backgroundColor: 'rgba(11, 15, 25, 0.95)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', fontSize: '12px' }} 
-                    />
-                    <Line type="monotone" name="Receitas" dataKey="Receitas" stroke="#10B981" strokeWidth={3} dot={{r: 4, fill: '#10B981', strokeWidth: 0}} activeDot={{r: 6}} />
-                    <Line type="monotone" name="Saídas" dataKey="Despesas" stroke="#F43F5E" strokeWidth={3} dot={{r: 4, fill: '#F43F5E', strokeWidth: 0}} activeDot={{r: 6}} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Direita: Últimas Movimentações */}
-            <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
-              <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-4">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Activity size={18} className="text-indigo-400"/> Últimas Transações
-                </h3>
-                <button onClick={() => setActiveTab('fluxo')} className="text-xs text-indigo-400 hover:text-indigo-300 font-bold">Ver todas</button>
-              </div>
-
-              <div className="space-y-3">
-                {itensFluxo.slice(0, 4).map(mov => (
-                  <div key={mov.id} className="flex justify-between items-center p-3 bg-black/20 rounded-xl border border-white/5 hover:bg-white/5 transition-colors">
-                    <div className="flex items-center gap-3 truncate">
-                      <div className={`p-2 rounded-lg ${mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                        {mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? <ArrowUpCircle size={16}/> : <ArrowDownCircle size={16}/>}
-                      </div>
-                      <div className="truncate">
-                        <p className="text-sm font-bold text-white truncate">{mov.descricao}</p>
-                        <p className="text-[10px] text-gray-500">{new Date(mov.data + 'T12:00:00').toLocaleDateString('pt-BR')} • {mov.conta}</p>
+              {carteiraAtiva === 'MEI' && (
+                <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-5 shadow-sm">
+                  <div className="flex justify-between items-end mb-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-amber-400 flex items-center gap-2"><Target size={16}/> Teto de Faturamento MEI</h4>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-[10px] text-gray-400">Data de abertura (Mês/Ano):</p>
+                        <input 
+                          type="month"
+                          value={dataAberturaMei} 
+                          onChange={e => handleSalvarAberturaMei(e.target.value)} 
+                          className="bg-black/40 text-amber-400 border border-amber-500/30 rounded px-2 py-0.5 outline-none text-[10px] font-bold cursor-pointer"
+                        />
                       </div>
                     </div>
-                    <div className="text-right shrink-0 ml-2">
-                      <p className={`text-sm font-bold ${mov.statusTransacao === 'Pendente' ? 'text-gray-500' : (mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? 'text-emerald-400' : 'text-rose-400')}`}>
-                        {mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? '+' : '-'} {formatCurrency(parseSafeNumber(mov.valor))}
-                      </p>
-                      {mov.statusTransacao === 'Pendente' && <p className="text-[9px] text-amber-400 uppercase font-bold">Pendente</p>}
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-white">{formatCurrency(metricasFiscaisAno.faturamentoAno)}</span>
+                      <span className="text-[10px] text-gray-500"> / {formatCurrency(metricasFiscaisAno.limiteMei)}</span>
                     </div>
                   </div>
-                ))}
-                {itensFluxo.length === 0 && (
-                  <p className="text-sm text-gray-500 text-center py-6 italic">Sem movimentos nesta carteira.</p>
-                )}
+                  <div className="w-full bg-black/40 rounded-full h-2.5 mt-2 overflow-hidden border border-white/5">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-1000 ${metricasFiscaisAno.usoLimiteMeiPercent > 85 ? 'bg-rose-500' : 'bg-amber-500'}`} 
+                      style={{ width: `${metricasFiscaisAno.usoLimiteMeiPercent}%` }}
+                    ></div>
+                  </div>
+                  {metricasFiscaisAno.usoLimiteMeiPercent > 85 && (
+                    <p className="text-[10px] text-rose-400 mt-2 font-bold animate-pulse">⚠️ Atenção: Você está muito próximo de estourar o teto do MEI proporcional!</p>
+                  )}
+                </div>
+              )}
+
+              {carteiraAtiva === 'SIMPLES' && (
+                <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <h4 className="text-sm font-bold text-indigo-400 flex items-center gap-2"><Calculator size={16}/> Provisão de Impostos (Simples)</h4>
+                    <p className="text-[10px] text-gray-400 mt-1">Estimativa de DAS baseada em 6% sobre o faturamento recebido neste mês.</p>
+                  </div>
+                  <div className="text-right bg-black/30 px-4 py-2 rounded-xl border border-white/5 w-full sm:w-auto">
+                    <p className="text-[10px] uppercase font-bold text-gray-500">Guardar este mês</p>
+                    <h3 className="text-xl font-black text-indigo-300">{formatCurrency(resumoMesAtual.receitas * 0.06)}</h3>
+                  </div>
+                </div>
+              )}
+
+              {carteiraAtiva === 'PF' && (
+                <div className={`border rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${consolidadoIRPF.retiradas > consolidadoIRPF.lucroEvidenciado ? 'bg-rose-900/20 border-rose-500/30' : 'bg-emerald-900/20 border-emerald-500/30'}`}>
+                  <div>
+                    <h4 className={`text-sm font-bold flex items-center gap-2 ${consolidadoIRPF.retiradas > consolidadoIRPF.lucroEvidenciado ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      <ShieldCheck size={16}/> Limite de Isenção PJ
+                    </h4>
+                    <p className="text-[10px] text-gray-400 mt-1 max-w-md">
+                      A sua empresa comprovou lucro de <b>{formatCurrency(consolidadoIRPF.lucroEvidenciado)}</b> este ano.
+                    </p>
+                  </div>
+                  <div className="text-left sm:text-right bg-black/30 px-4 py-2 rounded-xl border border-white/5 w-full sm:w-auto shrink-0">
+                    <p className="text-[10px] uppercase font-bold text-gray-500">Status IRPF</p>
+                    {consolidadoIRPF.retiradas > consolidadoIRPF.lucroEvidenciado ? (
+                      <h3 className="text-lg font-black text-rose-400 animate-pulse">Risco (Tributável)</h3>
+                    ) : (
+                      <h3 className="text-lg font-black text-emerald-400">Seguro (Isento)</h3>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg p-6">
+                <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-4">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Activity size={18} className="text-indigo-400"/> Últimas Transações
+                  </h3>
+                  <button onClick={() => setActiveTab('fluxo')} className="text-xs text-indigo-400 hover:text-indigo-300 font-bold">Ver todas</button>
+                </div>
+
+                <div className="space-y-3">
+                  {itensFluxo.slice(0, 4).map(mov => (
+                    <div key={mov.id} className="flex justify-between items-center p-3 bg-black/20 rounded-xl border border-white/5 hover:bg-white/5 transition-colors">
+                      <div className="flex items-center gap-3 truncate">
+                        <div className={`p-2 rounded-lg ${mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                          {mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? <ArrowUpCircle size={16}/> : <ArrowDownCircle size={16}/>}
+                        </div>
+                        <div className="truncate">
+                          <p className="text-sm font-bold text-white truncate">{mov.descricao}</p>
+                          <p className="text-[10px] text-gray-500">{new Date(mov.data + 'T12:00:00').toLocaleDateString('pt-BR')} • {mov.conta}</p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 ml-2">
+                        <p className={`text-sm font-bold ${mov.statusTransacao === 'Pendente' ? 'text-gray-500' : (mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? 'text-emerald-400' : 'text-rose-400')}`}>
+                          {mov.tipo === 'Receita' || mov.tipo === 'Aporte' ? '+' : '-'} {formatCurrency(parseSafeNumber(mov.valor))}
+                        </p>
+                        {mov.statusTransacao === 'Pendente' && <p className="text-[9px] text-amber-400 uppercase font-bold">Pendente</p>}
+                      </div>
+                    </div>
+                  ))}
+                  {itensFluxo.length === 0 && (
+                    <p className="text-sm text-gray-500 text-center py-6 italic">Sem movimentos nesta carteira.</p>
+                  )}
+                </div>
               </div>
+
             </div>
           </div>
+
         </div>
       )}
 
-      {/* ABA 1: FLUXO DE CAIXA (O DIA A DIA) */}
       {activeTab === 'fluxo' && (
         <div className="space-y-6">
 
-          {/* CONTROLE DE IMPOSTOS (DAS MEI) - Apenas no Caixa PJ */}
           {carteiraAtiva === 'PJ' && (() => {
             const mesAtual = new Date().toISOString().slice(0, 7);
             const dasPago = movimentacoesFiltradas.some(m => 
@@ -619,7 +603,6 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
             );
           })()}
           
-          {/* AVISO DE PENDÊNCIAS DA AGÊNCIA */}
           {pendenciasAlocacao.length > 0 && (
             <div className="bg-indigo-900/40 border border-indigo-500/50 rounded-2xl p-5 shadow-lg">
               <h3 className="text-white font-bold mb-3 flex items-center gap-2">
@@ -652,7 +635,6 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* Formulário de Lançamento */}
           <div className="lg:col-span-1 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-6 h-max">
             <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4 border-b border-white/10 pb-3">
               <Plus size={18} className="text-indigo-400" /> Novo Lançamento
@@ -666,13 +648,13 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase">Conta / Banco / CDB</label>
-                  <input type="text" placeholder="Ex: Nubank, Inter, Caixa Físico..." required value={form.conta} onChange={e => setForm({...form, conta: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm" />
+                  <input type="text" placeholder="Ex: Nubank, Inter..." required value={form.conta} onChange={e => setForm({...form, conta: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm" />
                 </div>
               </div>
 
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
-                <input type="text" placeholder="Ex: Pagamento Cliente X, Rendimento CDB..." required value={form.descricao} onChange={e => setForm({...form, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm" />
+                <input type="text" placeholder="Ex: Pagamento Cliente X..." required value={form.descricao} onChange={e => setForm({...form, descricao: e.target.value})} className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-3 outline-none focus:border-indigo-500 mt-1 text-sm" />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -730,7 +712,6 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
             </form>
           </div>
 
-          {/* Tabela de Movimentações */}
           <div className="lg:col-span-2 bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden">
              <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2"><FileText size={18} className="text-gray-400"/> Livro Caixa ({carteiraAtiva})</h3>
@@ -892,7 +873,6 @@ export default function PersonalFinance({ db, currentUser, currentUserData, form
             </div>
           </div>
 
-          {/* Tabela de Resumo Mensal */}
           <div className="bg-[#0B0F19]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-lg overflow-hidden">
             <div className="p-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2"><Calendar size={18} className="text-gray-400"/> Resumo Mês a Mês</h3>

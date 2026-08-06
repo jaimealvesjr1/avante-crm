@@ -3,7 +3,7 @@ import {
   Search, Download, ArchiveRestore, CalendarDays, Eraser, LogOut,
   Key, Briefcase, Filter, AlertTriangle, Clock, CheckCircle, Shield, 
   Eye, EyeOff, Flame, Activity, PieChart as PieChartIcon, 
-  TrendingUp, DollarSign, Target, MessageCircle, Upload, Save, Plus, X, Trash2, Zap, Wallet
+  TrendingUp, DollarSign, Target, MessageCircle, Upload, Save, Plus, X, Trash2, Zap, Wallet, ListPlus
 } from 'lucide-react';
 
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "firebase/auth";
@@ -25,6 +25,7 @@ const WarRoom = lazy(() => import('./pages/WarRoom'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const TeamFeedView = lazy(() => import('./pages/TeamFeedView'));
 const PersonalFinance = lazy(() => import('./pages/PersonalFinance'));
+const DailyEntries = lazy(() => import('./pages/DailyEntries'));
 
 import ClientFileModal from './features/clients/ClientFileModal';
 import BatchEntry from './features/operations/BatchEntry';
@@ -53,7 +54,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.5 - Contábil';
+  const CURRENT_VERSION = '3.5.1 - Lançamentos';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -97,6 +98,7 @@ export default function App() {
   const [activeEvent, setActiveEvent] = useState(null);
   const [scheduledEvents, setScheduledEvents] = useState([]);
   const [scheduledVisits, setScheduledVisits] = useState([]);
+  const [pastEventsGlobal, setPastEventsGlobal] = useState([]);
 
   const activeEventStats = useMemo(() => {
     if (!activeEvent) return { gmv: 0, progress: 0 };
@@ -330,6 +332,7 @@ export default function App() {
         setActiveEvent(data.activeEvent || null);
         setScheduledEvents(data.scheduledEvents || []);
         setScheduledVisits(data.scheduledVisits || []);
+        setPastEventsGlobal(data.pastEventsGlobal || []);
         
         if (data.versao && data.versao !== CURRENT_VERSION) {
           const isPWA = window.matchMedia('(display-mode: standalone)').matches;
@@ -450,17 +453,62 @@ export default function App() {
       await setDoc(globalRef, { scheduledEvents: [...scheduledEvents, payload] }, { merge: true });
       toast.success("Evento agendado com sucesso!");
       sendGlobalNotification(`🔥 ${payload.name} agendado!`, 'alert');
+
     } else if (action === 'start') {
       const updatedScheduled = scheduledEvents.filter(e => e.id !== payload.id);
       await setDoc(globalRef, { activeEvent: payload, scheduledEvents: updatedScheduled }, { merge: true });
       setActiveView('war_room');
       toast.success(`Evento ${payload.name} iniciado! War Room aberta.`);
       sendGlobalNotification(`🔥 Iniciou o evento ${payload.name}! A War Room está aberta!`, 'alert');
+
     } else if (action === 'end') {
-      await setDoc(globalRef, { activeEvent: deleteField() }, { merge: true });
+      // 1. TIRA A FOTOGRAFIA (SNAPSHOT) DO EVENTO ANTES DE O ENCERRAR
+      let totalGmv = 0, totalTarget = payload.target || 0, totalAds = 0, totalOrders = 0, totalUnits = 0;
+      const storeBreakdown = []; // Guarda o desempenho individual de cada loja no evento
+
+      stores.forEach(s => {
+          if (s.eventLogs && s.eventLogs[payload.name]) {
+              const data = s.eventLogs[payload.name];
+              const gmv = Number(data.gmv) || 0;
+              
+              if (gmv > 0) {
+                  totalGmv += gmv;
+                  totalAds += Number(data.ads) || 0;
+                  totalOrders += Number(data.orders) || 0;
+                  totalUnits += Number(data.units) || 0;
+                  
+                  // Salva os dados estáticos desta loja
+                  storeBreakdown.push({
+                      client: s.client, store: s.store, marketplace: s.marketplace,
+                      gmv: gmv, ads: Number(data.ads) || 0, orders: Number(data.orders) || 0, units: Number(data.units) || 0
+                  });
+              }
+          }
+      });
+
+      // 2. CRIA O OBJETO CONGELADO DO EVENTO
+      const consolidatedEvent = {
+          id: Date.now(),
+          name: payload.name,
+          isConsolidated: true, // Esta flag avisa o sistema que é uma "fotografia" oficial
+          target: totalTarget, gmv: totalGmv, ads: totalAds, orders: totalOrders, units: totalUnits,
+          storeBreakdown: storeBreakdown,
+          closedAt: new Date().toISOString()
+      };
+
+      // Adiciona o novo evento consolidado à lista de eventos globais passados
+      const updatedPastEvents = [...pastEventsGlobal, consolidatedEvent];
+
+      // 3. ATUALIZA A BASE DE DADOS
+      await setDoc(globalRef, { 
+          activeEvent: deleteField(), // Remove o evento ativo
+          pastEventsGlobal: updatedPastEvents // Guarda a foto na caixa-forte
+      }, { merge: true });
+
       setActiveView('dashboard');
-      toast.success("Evento encerrado! War Room fechada.");
+      toast.success("Evento encerrado e arquivado de forma fixa com sucesso!");
       sendGlobalNotification(`${payload.name} encerrado!`, 'alert');
+
     } else if (action === 'delete') {
       const updatedScheduled = scheduledEvents.filter(e => e.id !== payload.id);
       await setDoc(globalRef, { scheduledEvents: updatedScheduled }, { merge: true });
@@ -751,7 +799,10 @@ export default function App() {
         history.push({
             id: Date.now() + Math.random(),
             day: d,
-            dailyRevenue: avgRev, 
+            dailyRevenue: avgRev,
+            dailyAds: avgAds,
+            dailyOrders: Math.round(avgOrd),
+            dailyUnits: Math.round(avgUni),
             revenue: prevRev + (avgRev * step), 
             ads: prevAds + (avgAds * step),
             orders: Math.round(prevOrd + (avgOrd * step)),
@@ -1534,20 +1585,31 @@ export default function App() {
     });
 
     const globalHistoryAggregation = {};
-    Object.entries(monthlyByClient).forEach(([month, clients]) => {
-        let globalGmv = 0;
-        let agencyRev = 0;
-        
-        Object.values(clients).forEach(clientData => {
-            globalGmv += clientData.gmv;
-            if (clientData.isFixed) {
-                agencyRev += clientData.fixedFee; 
-            } else {
-                agencyRev += clientData.gmv * (clientData.feePercent / 100);
-            }
-        });
-        
-        globalHistoryAggregation[month] = { month, ReceitaGlobal: globalGmv, ReceitaAgencia: agencyRev };
+    
+    stores.forEach(s => {
+      if (s.monthlyHistory) {
+          s.monthlyHistory.forEach(hist => {
+              let stdMonth = normalizeMonthYear(hist.month);
+              if (!stdMonth.includes('/')) {
+                  stdMonth = `${stdMonth}/${String(new Date().getFullYear()).slice(-2)}`;
+              }
+
+              if (!globalHistoryAggregation[stdMonth]) {
+                  globalHistoryAggregation[stdMonth] = { month: stdMonth, ReceitaGlobal: 0, ReceitaAgencia: 0 };
+              }
+              
+              const gmvDoMes = Number(hist.gmv) || 0;
+              globalHistoryAggregation[stdMonth].ReceitaGlobal += gmvDoMes;
+              
+              if (hist.agencyRevenue !== undefined) {
+                  globalHistoryAggregation[stdMonth].ReceitaAgencia += Number(hist.agencyRevenue);
+              } else {
+                  const isFixed = s.feeType === 'fixed' || (Number(s.fixedFee) > 0);
+                  const clientStoresCount = stores.filter(x => x.client === s.client).length || 1;
+                  globalHistoryAggregation[stdMonth].ReceitaAgencia += isFixed ? (Number(s.fixedFee) / clientStoresCount) : gmvDoMes * (Number(s.feePercent) / 100);
+              }
+          });
+      }
     });
 
     const monthsOrder = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
@@ -1571,8 +1633,8 @@ export default function App() {
 
     historicalChartData.push({
       month: 'Atual',
-      ReceitaGlobal: absoluteCurrentRevenue, // Usa o valor absoluto imune ao arquivamento
-      ReceitaAgencia: absoluteAgencyRevenue, // Usa o valor absoluto imune ao arquivamento
+      ReceitaGlobal: absoluteCurrentRevenue, 
+      ReceitaAgencia: absoluteAgencyRevenue, 
       ProjecaoGlobal: totalProjected,
       MetaGlobal: totalTarget,
       ProjecaoAgencia: totalAgencyRevenue,
@@ -1585,7 +1647,7 @@ export default function App() {
       globalRoas: totalGlobalAds > 0 ? (totalCurrentRevenue / totalGlobalAds).toFixed(1) : 0,
       globalCpa: totalUnits > 0 ? (totalGlobalAds / totalUnits) : 0,
       rankingMarketplaces: Object.values(mktPerformance).sort((a, b) => b.atual - a.atual),
-      historicalChartData
+      historicalChartData // Envia a tabela corrigida e cravada em pedra
     };
   }, [stores, globalGrowth, clientGrowthMap, marketplaceGrowthMap, daysInMonth, currentDay, searchTerm, sortBy, statusFilter, mktFilter, myName, competenceMonth]);
 
@@ -1708,6 +1770,16 @@ export default function App() {
               </button>
             )}
 
+            {(!isVisitante && canEdit && !activeEvent) && (
+              <button 
+                onClick={() => setActiveView('lancamentos')} 
+                className={`p-2 xl:px-4 xl:py-1.5 rounded-full text-sm font-medium flex items-center justify-center gap-2 transition-all shrink-0 ${activeView === 'lancamentos' ? 'bg-indigo-900 text-indigo-100 shadow-md border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                title="Lançamentos Diários"
+              >
+                <ListPlus size={18} className="shrink-0" /> <span className="hidden xl:inline">Lançamentos</span>
+              </button>
+            )}
+
             {!isVisitante && (
               <button 
                 onClick={() => setActiveView('pessoal')} 
@@ -1808,7 +1880,7 @@ export default function App() {
 
       <main className="flex-1 w-full max-w-[2560px] px-4 md:px-8 2xl:px-12 min-[2000px]:px-16 pt-6 relative mx-auto flex flex-col">
         <ErrorBoundary>
-          {['dashboard', 'operacional', 'feed_equipe', 'financeiro', 'war_room'].includes(activeView) && (
+          {['dashboard', 'operacional', 'feed_equipe', 'financeiro', 'war_room', 'lancamentos'].includes(activeView) && (
             <div className="sticky top-[70px] md:top-20 z-30 bg-[#0B0F19]/80 backdrop-blur-xl p-3 xl:p-5 rounded-2xl xl:rounded-3xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] mb-6 w-full animate-in fade-in duration-300">
               <div className="flex flex-wrap lg:flex-nowrap items-center gap-4 justify-between w-full">
                 <div className="flex items-center gap-3 flex-1 min-w-[280px] w-full lg:w-auto">
@@ -1997,6 +2069,19 @@ export default function App() {
               />
             )}
 
+            {activeView === 'lancamentos' && !activeEvent && canEdit && (
+              <DailyEntries 
+                filteredStores={dashboardData.flatFilteredStores} 
+                handleSaveIndividualEntry={handleSaveIndividualEntry}
+                formatCurrency={safeFormatCurrency}
+                openTaskModal={(storeRow) => { 
+                  setActiveTaskStoreId(storeRow.id); 
+                  setTaskModalOpen(true); 
+                }}
+                openHistoryModal={openHistoryModal}
+              />
+            )}
+
           </Suspense> 
           <br></br>
         </ErrorBoundary>
@@ -2153,7 +2238,7 @@ export default function App() {
       <GoalsSettingsModal 
         isOpen={isGoalsModalOpen}
         onClose={() => setIsGoalsModalOpen(false)}
-        stores={stores.filter(s => !s.arquivada)}
+        stores={stores} 
         globalGrowth={globalGrowth}
         clientGrowthMap={clientGrowthMap}
         marketplaceGrowthMap={marketplaceGrowthMap}
@@ -2163,6 +2248,7 @@ export default function App() {
         scheduledEvents={scheduledEvents}
         handleEventAction={handleEventAction}
         historicalGoals={historicalGoals}
+        pastEventsGlobal={pastEventsGlobal} 
         competenceMonth={competenceMonth}
       />
     </div>
