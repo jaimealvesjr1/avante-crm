@@ -39,18 +39,23 @@ export default function DailyEntries({
 
     // Ordenação inteligente das lojas (mantida igual)
     const sortedStores = useMemo(() => {
-        const today = new Date();
-        
         return [...filteredStores].sort((a, b) => {
-            const dateA = a.dataUltimoAcesso ? new Date(a.dataUltimoAcesso) : new Date(0);
-            const dateB = b.dataUltimoAcesso ? new Date(b.dataUltimoAcesso) : new Date(0);
-            
-            const daysOutdatedA = Math.floor(Math.abs(today - dateA) / (1000 * 60 * 60 * 24));
-            const daysOutdatedB = Math.floor(Math.abs(today - dateB) / (1000 * 60 * 60 * 24));
+            // Encontra o último dia registrado da loja A (retorna 0 se não houver)
+            const lastDayA = a.history && a.history.length > 0 
+                ? Math.max(...a.history.map(h => Number(h.day) || 0)) 
+                : 0;
 
-            if (daysOutdatedA !== daysOutdatedB) {
-                return daysOutdatedB - daysOutdatedA; 
+            // Encontra o último dia registrado da loja B (retorna 0 se não houver)
+            const lastDayB = b.history && b.history.length > 0 
+                ? Math.max(...b.history.map(h => Number(h.day) || 0)) 
+                : 0;
+
+            // Se os dias forem diferentes, ordena do menor para o maior
+            if (lastDayA !== lastDayB) {
+                return lastDayA - lastDayB; 
             }
+            
+            // Critério de desempate: Ordem alfabética
             return (a.client || '').localeCompare(b.client || '');
         });
     }, [filteredStores]);
@@ -64,7 +69,7 @@ export default function DailyEntries({
                         <Zap className="text-indigo-400" size={28} /> Lançamento Dinâmico Global
                     </h2>
                     <p className="text-sm text-gray-400">
-                        A lista obedece ao filtro global do topo da página. Lojas mais desatualizadas aparecem primeiro.
+                        A lista obedece ao filtro global do topo da página. Lojas com lançamentos mais atrasados (menor dia) aparecem primeiro.
                     </p>
                 </div>
 

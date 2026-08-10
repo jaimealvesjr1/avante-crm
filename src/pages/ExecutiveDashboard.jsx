@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { toast } from 'react-hot-toast';
 import { TrendingUp, ShoppingCart, Activity, CreditCard, Clock, Zap, Target, Settings, Crown, Store, Filter } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Area, Line, Legend, Tooltip, Cell, LineChart, ReferenceLine } from 'recharts';
 
@@ -100,12 +101,14 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
     } else {
       let storesList = dashboardData.flatFilteredStores.map(s => {
         const cpa = s.orders > 0 ? (Number(s.adsInvestment) || 0) / s.orders : 0;
+        const currentRev = Number(s.currentRevenue) || 0; // Puxando o faturamento atual
+        
         return {
           id: s.id,
           name: s.store,
           subtitle: s.client,
-          value: storeMetric === 'gmv' ? s.projectedGmv : cpa,
-          metricLabel: storeMetric === 'gmv' ? formatCurrency(s.projectedGmv) : formatCurrency(cpa),
+          value: storeMetric === 'gmv' ? currentRev : cpa,
+          metricLabel: storeMetric === 'gmv' ? formatCurrency(currentRev) : formatCurrency(cpa),
           orders: s.orders
         };
       });
@@ -118,6 +121,61 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
       return storesList;
     }
   }, [dashboardData, rankingType, storeMetric, mesPassadoExato, formatCurrency]);
+
+  // Lógica para detectar ultrapassagem no ranking de clientes e disparar notificação
+  const prevClientRanking = useRef([]);
+  // Guarda o timestamp da última notificação entre dois clientes para evitar spam
+  const cooldowns = useRef(new Map()); 
+
+  useEffect(() => {
+    // Só fazemos a verificação se estivermos na aba de clientes
+    if (rankingType === 'client' && rankingData.length > 0) {
+      const currentOrder = rankingData.map(r => r.id);
+      const prevOrder = prevClientRanking.current;
+
+      // prevOrder.length === currentOrder.length previne alertas falsos ao mudar filtros/meses
+      if (prevOrder.length > 0 && prevOrder.length === currentOrder.length) {
+        currentOrder.forEach((clientId, currentIndex) => {
+          const prevIndex = prevOrder.indexOf(clientId);
+          
+          // Se o cliente subiu de posição (o index diminuiu)
+          if (prevIndex > -1 && currentIndex < prevIndex) {
+            // Descobre quem ele ultrapassou
+            const overtakenClient = prevOrder[currentIndex]; 
+            
+            if (overtakenClient && overtakenClient !== clientId) {
+              const eventKey = `${clientId}-${overtakenClient}`;
+              const reverseKey = `${overtakenClient}-${clientId}`;
+              const now = Date.now();
+              const lastNotified = cooldowns.current.get(eventKey) || 0;
+              
+              // Cooldown de 10 minutos (600000 ms) para o efeito ping-pong
+              if (now - lastNotified > 600000) {
+                toast(`🏆 ${clientId} ultrapassou ${overtakenClient} no faturamento!`, {
+                  icon: '🚀',
+                  duration: 6000,
+                  style: {
+                    borderRadius: '10px',
+                    background: '#1e1b4b',
+                    color: '#fff',
+                    border: '1px solid rgba(99, 102, 241, 0.4)'
+                  },
+                });
+                
+                // Registra o momento da notificação para bloquear spam
+                cooldowns.current.set(eventKey, now);
+                // Bloqueia também a volta imediata (ping-pong reverso)
+                cooldowns.current.set(reverseKey, now);
+              }
+            }
+          }
+        });
+      }
+      
+      // Atualiza a memória para a próxima renderização
+      prevClientRanking.current = currentOrder;
+    }
+  }, [rankingData, rankingType]);
 
   const renderGlobalProgressBar = () => {
     const target = dashboardData.totalTarget || 0;
@@ -489,7 +547,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                   onChange={(e) => setStoreMetric(e.target.value)}
                   className="bg-transparent text-[10px] font-bold text-gray-300 outline-none cursor-pointer hover:text-white transition-colors uppercase tracking-wider"
                 >
-                  <option value="gmv" className="bg-gray-900">Faturamento Projetado</option>
+                  <option value="gmv" className="bg-gray-900">Faturamento Atual</option>
                   <option value="cpa" className="bg-gray-900">Custo p/ Conversão (CPA)</option>
                 </select>
               </div>
