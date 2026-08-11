@@ -98,7 +98,10 @@ export default function FinanceDashboard({ db, dashboardData, formatCurrency, ca
     }
   }, [mesFolha, dashboardData]);
 
-  const projecaoReceitaAgencia = dashboardData.totalAgencyRevenue || 0;
+  const historicalTarget = dashboardData?.historicalChartData?.find(h => h.month === mesFolha);
+  const projecaoReceitaAgencia = mesFolha === 'Atual' 
+    ? (dashboardData.totalAgencyRevenue || 0) 
+    : (historicalTarget?.ProjecaoAgencia || metricasFolha.faturamentoBruto || 0);
   const totalReceitaAgencia = mesFolha === 'Atual' ? dashboardData.totalAgencyRevenueActual : metricasFolha.faturamentoBruto;
   const metaAgencia = mesFolha === 'Atual' ? dashboardData.agencyTarget : metricasFolha.metaAgenciaHistorica;
 

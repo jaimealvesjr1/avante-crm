@@ -5,15 +5,29 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Compos
 
 export default function ExecutiveDashboard({ dashboardData, formatCurrency, formatNumber, pieData, roasData, COLORS, currentDay, daysInMonth, canEdit, openGoalsModal, showValues, competenceMonth }) {
   
-  const predictedOrders = currentDay > 0 ? Math.round((dashboardData.totalOrders / currentDay) * daysInMonth) : 0;
-  const avgAdsCostPerOrder = dashboardData.totalOrders > 0 ? dashboardData.totalGlobalAds / dashboardData.totalOrders : 0;
-  const ticketMedioGlobal = dashboardData.totalOrders > 0 ? dashboardData.totalCurrentRevenue / dashboardData.totalOrders : 0;
+  const smartCurrentDay = useMemo(() => {
+    let maxD = Number(currentDay) > 0 ? Number(currentDay) : 1;
+    dashboardData?.flatFilteredStores?.forEach(s => {
+      if (s.history && s.history.length > 0) {
+        const maxStoreDay = Math.max(...s.history.map(h => Number(h.day) || 1));
+        if (maxStoreDay > maxD) maxD = maxStoreDay;
+      }
+    });
+    return maxD;
+  }, [currentDay, dashboardData]);
+
+  const safeDaysInMonth = Number(daysInMonth) > 0 ? Number(daysInMonth) : 30;
+
+  // 2. Trocamos safeCurrentDay por smartCurrentDay
+  const predictedOrders = Math.round(((Number(dashboardData.totalOrders) || 0) / smartCurrentDay) * safeDaysInMonth);
+  const avgAdsCostPerOrder = dashboardData.totalOrders > 0 ? (Number(dashboardData.totalGlobalAds) || 0) / dashboardData.totalOrders : 0;
+  const ticketMedioGlobal = dashboardData.totalOrders > 0 ? (Number(dashboardData.totalCurrentRevenue) || 0) / dashboardData.totalOrders : 0;
   
   const avgRoas = useMemo(() => {
-    return roasData.length > 0 ? roasData.reduce((acc, curr) => acc + curr.roas, 0) / roasData.length : 0;
+    return roasData.length > 0 ? roasData.reduce((acc, curr) => acc + Number(curr.roas || 0), 0) / roasData.length : 0;
   }, [roasData]);
 
-  const dailyTargetAvg = daysInMonth > 0 ? (dashboardData.totalTarget || 0) / daysInMonth : 0;
+  const dailyTargetAvg = (Number(dashboardData.totalTarget) || 0) / safeDaysInMonth;
 
   const glassTooltipStyle = {
     backgroundColor: 'rgba(11, 15, 25, 0.95)',
@@ -52,8 +66,9 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
       }
     });
 
-    const totalGmv = days.reduce((acc, d) => acc + d.gmv, 0);
-    const avgGmv = maxDay > 0 ? totalGmv / maxDay : 0;
+    const totalGmv = days.reduce((acc, d) => acc + (Number(d.gmv) || 0), 0);
+    
+    const avgGmv = totalGmv / smartCurrentDay;
     
     days.forEach(d => {
       if (d.gmv > avgGmv * 1.5) d.isEvent = true;
@@ -571,7 +586,7 @@ export default function ExecutiveDashboard({ dashboardData, formatCurrency, form
                     
                     {rankingType === 'client' && (
                       <span className={`text-[10px] font-bold px-1.5 py-[1px] rounded ${item.evolution >= 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
-                        {item.evolution > 0 ? '+' : ''}{item.evolution.toFixed(1)}% Share
+                        {item.evolution > 0 ? '+' : ''}{item.evolution.toFixed(1)}%
                       </span>
                     )}
                   </div>

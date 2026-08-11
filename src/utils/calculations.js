@@ -36,7 +36,20 @@ export const enrichStoreMetrics = (store, currentDay, daysInMonth, globalGrowth,
 
   // 2. Cálculo Estatístico de Projeção Linear para o Fim do Mês
   const currentRevenue = Number(store.currentRevenue) || 0;
-  const projectedGmv = currentDay > 0 ? (currentRevenue / currentDay) * daysInMonth : 0;
+  
+  let safeCurrentDay = Number(currentDay) > 0 ? Number(currentDay) : 1;
+  
+  // Auto-correção: Se o histórico desta loja vai além do dia configurado globalmente, usamos o dia do histórico
+  if (store.history && store.history.length > 0) {
+    const maxHistoryDay = Math.max(...store.history.map(h => Number(h.day) || 1));
+    if (maxHistoryDay > safeCurrentDay) {
+      safeCurrentDay = maxHistoryDay;
+    }
+  }
+
+  const safeDaysInMonth = Number(daysInMonth) > 0 ? Number(daysInMonth) : 30;
+  
+  const projectedGmv = (currentRevenue / safeCurrentDay) * safeDaysInMonth;
   
   // 3. Porcentagem de Atingimento da Meta Proposta
   const percentReached = gmvTarget > 0 ? (projectedGmv / gmvTarget) * 100 : 0;

@@ -105,20 +105,6 @@ export default function TeamFeedView({
     const [animatingTasks, setAnimatingTasks] = useState([]);
     const [pendingStartInfo, setPendingStartInfo] = useState(null);
 
-    const minhasTarefasPausadas = useMemo(() => {
-        const pausadas = [];
-        stores.forEach(store => {
-            if (store.checklists) {
-                store.checklists.forEach(task => {
-                    if (!task.feita && task.executingStatus === 'paused' && (task.responsavel === myName || task.startedBy === myName)) {
-                        pausadas.push({ storeId: store.id, storeName: store.store, ...task });
-                    }
-                });
-            }
-        });
-        return pausadas;
-    }, [stores, myName]);
-
     const [showClientTaskForm, setShowClientTaskForm] = useState(false);
     const [clientTaskForm, setClientTaskForm] = useState(() => {
         const now = new Date();
@@ -1323,45 +1309,14 @@ export default function TeamFeedView({
 
                     {/* RADAR DA EQUIPE */}
                     <div className="bg-gray-800/80 p-4 xl:p-5 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-fit">
-                        
-                        <div className="flex items-center justify-between mb-3 border-b border-gray-700 pb-3 shrink-0">
-                            <h3 className="text-sm font-bold tracking-wider text-emerald-400 uppercase flex items-center gap-1.5">
-                                <Activity size={14} /> Trabalhando Agora
-                            </h3>
-                            
-                            {minhasTarefasPausadas.length > 0 && (
-                                <button 
-                                    onClick={() => setShowPausedTasks(!showPausedTasks)}
-                                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition-colors flex items-center gap-1 outline-none ${showPausedTasks ? 'text-amber-400 bg-amber-500/10' : 'text-gray-400 hover:text-white'}`}
-                                    title="Ver minhas tarefas pausadas"
-                                >
-                                    PAUSADAS ({minhasTarefasPausadas.length}) {showPausedTasks ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
-                                </button>
-                            )}
-                        </div>
+                
+                    <div className="flex items-center justify-between mb-3 border-b border-gray-700 pb-3 shrink-0">
+                        <h3 className="text-sm font-bold tracking-wider text-emerald-400 uppercase flex items-center gap-1.5">
+                            <Activity size={14} /> Trabalhando Agora
+                        </h3>
+                    </div>
 
-                        <div className="flex flex-col overflow-y-auto custom-scrollbar pr-1 gap-1">
-                            {/* LISTA DE PAUSADAS */}
-                            {showPausedTasks && minhasTarefasPausadas.length > 0 && (
-                                <div className="mb-2 flex flex-col gap-1 border-b border-gray-700/50 pb-2 animate-in fade-in slide-in-from-top-1">
-                                    {minhasTarefasPausadas.map(task => (
-                                        <div key={task.id} className="flex items-center justify-between bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/10 p-2 rounded-lg transition-colors">
-                                            <div className="flex flex-col overflow-hidden pr-2">
-                                                <span className="text-[9px] text-amber-500/70 font-bold uppercase tracking-widest truncate">{task.storeName}</span>
-                                                <span className="text-[11px] text-gray-300 font-medium truncate" title={task.texto}>{task.texto}</span>
-                                            </div>
-                                            <button 
-                                                onClick={(e) => handleToggleTimer(e, task.storeId, task.id)}
-                                                className="w-6 h-6 flex items-center justify-center bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-md transition-colors shrink-0"
-                                                title="Retomar Tarefa"
-                                            >
-                                                <Play size={12} className="ml-0.5" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            
+                    <div className="flex flex-col overflow-y-auto custom-scrollbar pr-1 gap-1">
                             {/* LISTA DE ATIVAS */}
                             {Object.keys(liveStatus).length > 0 ? (
                                 Object.entries(liveStatus).map(([userName, data]) => {
