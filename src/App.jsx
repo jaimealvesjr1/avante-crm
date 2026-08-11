@@ -36,6 +36,7 @@ import ExportModal from './features/finance/ExportModal';
 import GoalsSettingsModal from './features/finance/GoalsSettingsModal';
 import CloseMonthModal from './features/finance/CloseMonthModal';
 import StoreHistoryModal from './features/clients/StoreHistoryModal';
+import DailyDiaryDrawer from './components/DailyDiaryDrawer';
 
 import { useAvanteData } from './hooks/useAvanteData';
 import { normalizeMonthYear } from './utils/dateUtils';
@@ -54,7 +55,7 @@ export const getVisualRole = (role) => {
 };
 
 export default function App() {
-  const CURRENT_VERSION = '3.5.1';
+  const CURRENT_VERSION = '3.5.2';
 
   const parseSafeNumber = (val) => {
       if (typeof val === 'number') return val;
@@ -121,7 +122,9 @@ export default function App() {
     activeView, setActiveView,
     isSimulating, setIsSimulating,
     searchTerm, setSearchTerm,
-    showValues, toggleShowValues
+    showValues, toggleShowValues,
+    isDiaryOpen, setIsDiaryOpen,
+    isDayStarted
   } = useAppStore();
 
   useEffect(() => {
@@ -1825,20 +1828,25 @@ export default function App() {
 
           {/* PERFIL E AÇÕES - Esconde o nome do usuário em telas menores */}
           <div className="flex items-center gap-2 xl:gap-4 shrink-0">
+            
+            {/* DESTAQUE: BOTÃO MEU DIÁRIO (Substituindo o antigo Backup) */}
+            {!isVisitante && (
+              <button 
+                onClick={() => setIsDiaryOpen(true)} 
+                className={`p-2 sm:px-4 sm:py-1.5 rounded-full text-sm font-bold flex items-center justify-center gap-2 transition-all shrink-0 ${isDayStarted ? 'bg-emerald-900/60 text-emerald-300 shadow-md border border-emerald-500/40' : 'bg-gray-800/80 text-gray-400 border border-gray-600 hover:text-white hover:bg-gray-700'}`}
+                title="Meu Diário (Roteiro)"
+              >
+                {isDayStarted ? <Zap size={18} className="shrink-0 animate-pulse text-emerald-400" /> : <Clock size={18} className="shrink-0" />} 
+                <span className="hidden sm:inline">Meu Diário</span>
+              </button>
+            )}
+
+            {/* BOTÃO DE EXPORTAR RELATÓRIOS */}
             {canEdit && (
-              <div className="hidden xl:flex gap-1 items-center shrink-0">
+              <div className="hidden xl:flex gap-1 items-center shrink-0 ml-1">
                 <button onClick={() => setIsExportModalOpen(true)} className="text-orange-600 hover:text-orange-400 p-2 rounded-full hover:bg-orange-500/10 transition-all border border-transparent hover:border-orange-500/30" title="Exportar Relatórios">
                   <Download size={18} />
                 </button>
-                {isManager && (
-                  <>
-                    <div className="w-px h-4 bg-white/10 mx-1"></div>
-                    <input type="file" accept=".json" ref={fileInputRef} onChange={importBackup} className="hidden" />
-                    <button onClick={() => fileInputRef.current.click()} className="text-gray-400 hover:text-gray-200 p-2 rounded-full hover:bg-gray-700/50 transition-all border border-transparent hover:border-gray-600" title="Restaurar Backup">
-                      <ArchiveRestore size={18} />
-                    </button>
-                  </>
-                )}
               </div>
             )}
 
@@ -2086,6 +2094,17 @@ export default function App() {
           <br></br>
         </ErrorBoundary>
       </main>
+
+      {/* NOVO: RENDERIZA O DRAWER DO DIÁRIO */}
+      <DailyDiaryDrawer 
+        isOpen={isDiaryOpen} 
+        onClose={() => setIsDiaryOpen(false)} 
+        stores={stores} 
+        setStores={setStores} 
+        updateStoreInCloud={updateStoreInCloud} 
+        currentUserData={currentUserData} 
+        broadcastTaskFocus={broadcastTaskFocus} 
+      />
 
       <footer className="w-full border-t border-white/5 bg-black/40 py-6 mt-auto shrink-0 z-20 relative">
         <div className="w-full max-w-[2560px] mx-auto px-4 md:px-8 2xl:px-12 min-[2000px]:px-16 flex flex-col md:flex-row items-center justify-between gap-4">

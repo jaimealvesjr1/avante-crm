@@ -80,16 +80,17 @@ export const processTaskStart = (store, task, myName) => {
     const updatedChecklists = store.checklists.map(c => 
         c.id === task.id ? { 
             ...c, 
-            startedAt: now.toISOString(), 
+            startedAt: c.startedAt || now.toISOString(), // Mantém o início original se for uma retomada
             executingStatus: 'playing', 
-            startedBy: myName 
+            startedBy: myName,
+            responsavel: myName // Garante que quem iniciou é o dono no roteiro
         } : c
     );
 
     const newLog = { 
         id: Date.now() + Math.random(), 
         data: now.toLocaleString('pt-BR'), 
-        texto: `▶️ Iniciou a tarefa: "${task.texto}"`, 
+        texto: `▶️ Iniciou a execução da tarefa: "${task.texto}"`, 
         author: myName 
     };
 
@@ -137,4 +138,25 @@ export const calculateNextAccess = (checklists) => {
     }
     
     return ''; 
+};
+
+export const processTaskSchedule = (store, task, myName) => {
+    const now = new Date();
+    
+    const updatedChecklists = store.checklists.map(c => 
+        c.id === task.id ? { 
+            ...c, 
+            executingStatus: 'scheduled', // Muda o status para programada
+            responsavel: myName // O usuário que puxou assume a responsabilidade
+        } : c
+    );
+
+    const newLog = { 
+        id: Date.now() + Math.random(), 
+        data: now.toLocaleString('pt-BR'), 
+        texto: `📅 Puxou a tarefa para o Roteiro Diário: "${task.texto}"`, 
+        author: myName 
+    };
+
+    return { updatedChecklists, newLog };
 };

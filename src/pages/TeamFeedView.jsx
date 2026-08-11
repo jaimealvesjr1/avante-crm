@@ -1025,6 +1025,46 @@ export default function TeamFeedView({
                                                 </div>
                                             </div>
 
+                                            {/* NOVO: INDICADOR DE STATUS DA ESTEIRA (PIPELINE) */}
+                                            {!isRoutine && (
+                                                <div className="mb-2 mt-1 w-full px-0.5">
+                                                    {/* Pontos e Linhas */}
+                                                    <div className="flex items-center w-full">
+                                                        {/* PONTO 1: Criada (Sempre aceso) */}
+                                                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 z-10 shadow-sm border-[1.5px] border-[#0B0F19]"></div>
+                                                        
+                                                        {/* LINHA 1 -> 2 */}
+                                                        <div className={`flex-1 h-[2px] -mx-0.5 z-0 transition-colors duration-500 ${['scheduled', 'playing', 'paused'].includes(item.executingStatus) ? 'bg-indigo-500' : 'bg-gray-700'}`}></div>
+                                                        
+                                                        {/* PONTO 2: Programada (Acende se agendada, pausada ou executando) */}
+                                                        <div className={`w-2.5 h-2.5 rounded-full z-10 border-[1.5px] border-[#0B0F19] transition-colors duration-500 ${['scheduled', 'playing', 'paused'].includes(item.executingStatus) ? 'bg-indigo-500 shadow-sm' : 'bg-gray-700'}`}></div>
+                                                        
+                                                        {/* LINHA 2 -> 3 */}
+                                                        <div className={`flex-1 h-[2px] -mx-0.5 z-0 transition-colors duration-500 ${['playing', 'paused'].includes(item.executingStatus) ? (item.executingStatus === 'playing' ? 'bg-emerald-500' : 'bg-amber-500') : 'bg-gray-700'}`}></div>
+                                                        
+                                                        {/* PONTO 3: Fazendo/Pausada (Verde pulsante para Play, Amarelo para Pause) */}
+                                                        <div className={`w-2.5 h-2.5 rounded-full z-10 border-[1.5px] border-[#0B0F19] transition-all duration-500 ${
+                                                            item.executingStatus === 'playing' ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 
+                                                            item.executingStatus === 'paused' ? 'bg-amber-500 shadow-sm' : 
+                                                            'bg-gray-700'
+                                                        }`}></div>
+                                                    </div>
+                                                    
+                                                    {/* Rótulos (Textos abaixo da esteira) */}
+                                                    <div className="flex justify-between w-full mt-1">
+                                                        <span className={`text-[8px] font-black uppercase tracking-wider ${!item.executingStatus || item.executingStatus === 'none' ? 'text-indigo-300' : 'text-gray-500'}`}>Criada</span>
+                                                        <span className={`text-[8px] font-black uppercase tracking-wider text-center ${item.executingStatus === 'scheduled' ? 'text-indigo-400' : 'text-gray-600'}`}>Programada</span>
+                                                        <span className={`text-[8px] font-black uppercase tracking-wider text-right ${
+                                                            item.executingStatus === 'playing' ? 'text-emerald-400' : 
+                                                            item.executingStatus === 'paused' ? 'text-amber-400' : 
+                                                            'text-gray-600'
+                                                        }`}>
+                                                            {item.executingStatus === 'playing' ? 'Fazendo' : item.executingStatus === 'paused' ? 'Pausada' : 'Fazendo'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             {/* CORPO: Descrição da Tarefa */}
                                             <p className={`text-xs font-medium leading-relaxed line-clamp-2 flex-1 ${isRoutine ? 'italic text-gray-400' : 'text-gray-300'}`} title={item.title}>
                                                 {item.title}
@@ -1044,17 +1084,47 @@ export default function TeamFeedView({
                                                                 <button onClick={(e) => { const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 6); }} className="text-[10px] font-bold text-gray-400 hover:text-indigo-400 hover:bg-white/10 px-2 py-1 border-r border-white/5 transition-colors">+6h</button>
                                                                 <button onClick={(e) => { const s = stores.find(x => x.id === item.storeId); const t = s?.checklists?.find(x => x.id === item.originalTaskId); if (s && t) handlePostponeTask(s, t, 24); }} className="text-[10px] font-bold text-gray-400 hover:text-red-400 hover:bg-white/10 px-2 py-1 transition-colors">+24h</button>
                                                             </div>
-                                                            <button
-                                                                onClick={(e) => handleToggleTimer(e, item.storeId, item.originalTaskId)}
-                                                                className={`p-1.5 rounded-md transition-colors ${item.executingStatus === 'playing' ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'}`}
-                                                            >
-                                                                {item.executingStatus === 'playing' ? <Pause size={14} /> : <Play size={14} />}
-                                                            </button>
+
+                                                            {/* BOTÃO INTELIGENTE DE INSERIR/REMOVER DO DIÁRIO NO RADAR */}
+                                                            {(!item.executingStatus || item.executingStatus === 'none') ? (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const s = stores.find(x => x.id === item.storeId);
+                                                                        const t = s?.checklists?.find(x => x.id === item.originalTaskId);
+                                                                        if (!s || !t) return;
+                                                                        const updated = s.checklists.map(c => c.id === t.id ? { ...c, executingStatus: 'scheduled', responsavel: myName } : c);
+                                                                        updateStoreInCloud({ ...s, checklists: updated });
+                                                                        toast.success("Tarefa inserida no seu diário!");
+                                                                    }}
+                                                                    className="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-300 rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
+                                                                    title="Inserir no Meu Diário"
+                                                                >
+                                                                    + Diário
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const s = stores.find(x => x.id === item.storeId);
+                                                                        const t = s?.checklists?.find(x => x.id === item.originalTaskId);
+                                                                        if (!s || !t) return;
+                                                                        const updated = s.checklists.map(c => c.id === t.id ? { ...c, executingStatus: 'none', startedAt: null } : c);
+                                                                        updateStoreInCloud({ ...s, checklists: updated });
+                                                                        if (t.executingStatus === 'playing' && broadcastTaskFocus) broadcastTaskFocus('', 'clear');
+                                                                        toast.success("Tarefa removida do seu diário.");
+                                                                    }}
+                                                                    className="px-2 py-1 bg-red-600/20 hover:bg-red-600/40 border border-red-500/30 text-red-400 rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
+                                                                    title="Remover do Meu Diário"
+                                                                >
+                                                                    - Diário
+                                                                </button>
+                                                            )}
                                                         </>
                                                     )}
                                                     {isAdmin && (
                                                         <button onClick={(e) => handleDeleteSpecificTask(e, item.storeId, item.originalTaskId, isRoutine)} className="text-gray-500 hover:text-red-400 p-1.5 ml-1 transition-colors">
-                                                            <X size={14} />
+                                                            <X size= {14} />
                                                         </button>
                                                     )}
                                                 </div>
