@@ -424,8 +424,16 @@ export default function TeamFeedView({
         if (store) {
             try {
                 const updatedChecklists = (store.checklists || []).filter(t => t.id !== taskId);
+                
+                const nextAccess = calculateNextAccess(updatedChecklists);
+
                 const storeRef = doc(db, "stores", storeId.toString());
-                await updateDoc(storeRef, { checklists: updatedChecklists });
+                
+                await updateDoc(storeRef, { 
+                    checklists: updatedChecklists,
+                    dataProximoAcesso: nextAccess || '' 
+                });
+                
                 toast.success("Tarefa removida com sucesso!");
             } catch (error) {
                 console.error("Erro ao remover tarefa:", error);
