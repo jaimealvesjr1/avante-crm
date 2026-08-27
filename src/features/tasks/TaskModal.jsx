@@ -637,7 +637,7 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
                   // Separa as tarefas por status do Pipeline
                   const backlogTasks = baseTasks.filter(t => !t.feita && (!t.executingStatus || t.executingStatus === 'none'));
                   const scheduledTasks = baseTasks.filter(t => !t.feita && ['scheduled', 'playing', 'paused'].includes(t.executingStatus));
-                  const completedTasks = baseTasks.filter(t => t.feita && (!t.recorrencia || t.recorrencia === 'none')).slice(-10); // Máx 10 para não lotar
+                  const completedTasks = baseTasks.filter(t => t.feita && (!t.recorrencia || t.recorrencia === 'none')).slice(-5); // Mostrar apenas as últimas 5
 
                   // Ordena o Roteiro: Rodando primeiro, Pausado depois, Programado no final
                   scheduledTasks.sort((a, b) => {
@@ -676,12 +676,25 @@ export default function TaskModal({ store, onClose, updateStoreInCloud, stores, 
 
                       {/* COLUNA 3: CONCLUÍDAS */}
                       <div className="bg-emerald-900/10 border border-emerald-500/20 rounded-xl p-3 flex flex-col gap-3 overflow-hidden shadow-inner">
-                        <h5 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest border-b border-emerald-500/20 pb-2">✅ Concluídas ({completedTasks.length})</h5>
+                        <h5 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest border-b border-emerald-500/20 pb-2">✅ Últimas Concluídas ({completedTasks.length})</h5>
                         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-1">
                           {completedTasks.length === 0 ? (
                             <p className="text-[10px] text-emerald-600/40 italic text-center py-4">Nenhuma entrega ainda.</p>
                           ) : (
-                            completedTasks.map(task => renderTaskCard(task))
+                            completedTasks.map(task => (
+                              <div key={task.id} className="bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-lg flex items-center justify-between gap-2 group transition-colors hover:bg-emerald-500/10">
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                  <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
+                                  <span className="text-[11px] text-gray-400 line-through truncate" title={task.texto}>
+                                    {task.texto}
+                                  </span>
+                                </div>
+                                {/* Botão para reabrir caso tenha concluído por acidente */}
+                                <button onClick={() => handleCheckClick(task.id, true)} className="text-emerald-500/30 hover:text-emerald-400 shrink-0 opacity-0 group-hover:opacity-100 transition-all p-1" title="Desfazer e voltar ao backlog">
+                                  <X size={10} />
+                                </button>
+                              </div>
+                            ))
                           )}
                         </div>
                       </div>
